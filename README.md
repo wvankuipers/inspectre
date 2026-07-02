@@ -69,7 +69,7 @@ Project ──▶ Suite ──▶ Run ──▶ Test
 Two URL namespaces:
 
 - **`/api/*`** — SPA endpoints; can evolve freely
-- **Legacy (un-prefixed)** — frozen contract for CI clients: `POST /runs`, `POST /tests`, `PATCH /tests/:id`, `GET /tests/:id/status`, `GET /baselines/:key`
+- **Legacy (un-prefixed)** — frozen contract for CI clients: `POST /runs`, `POST /tests`, `GET /tests/:id/status`, `PATCH /tests/:id`, `GET /baselines/:key.png`, `GET /baselines/:key.json`
 
 ---
 
@@ -214,6 +214,30 @@ done
 ```
 
 The `pass` field in the final response is `true` if the diff percentage is below the threshold.
+
+---
+
+## CI/CD
+
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs lint and tests on every push and pull request to `main`, then builds and pushes multi-arch Docker images to Docker Hub on successful merges to `main`.
+
+### Required repository secrets
+
+| Secret               | How to obtain                                                  |
+| -------------------- | -------------------------------------------------------------- |
+| `DOCKERHUB_USERNAME` | Your Docker Hub username                                       |
+| `DOCKERHUB_TOKEN`    | Docker Hub → Account Settings → Security → New Access Token   |
+
+Set these under **Settings → Secrets and variables → Actions** in the GitHub repository.
+
+### Published images
+
+| Image                                | Tag                    |
+| ------------------------------------ | ---------------------- |
+| `<DOCKERHUB_USERNAME>/inspectre`     | `api-latest`           |
+| `<DOCKERHUB_USERNAME>/inspectre`     | `api-$VERSION`         |
+| `<DOCKERHUB_USERNAME>/inspectre`     | `spa-latest`           |
+| `<DOCKERHUB_USERNAME>/inspectre`     | `spa-$VERSION`         |
 
 ---
 
