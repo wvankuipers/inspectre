@@ -1,0 +1,20 @@
+{# Used by ProjectAdmin and SuiteAdmin via RenameWarningMixin. #}
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block field_sets %}
+  {% if show_rename_warning %}
+    <div class="messagelist" style="margin: 0 0 1em 0;">
+      <p class="warning" style="background:#fff8e1; border-left:4px solid #f0b400; padding:1em;">
+        <strong>Renaming severs baselines.</strong>
+        Changing <code>name</code> auto-updates the slug. Every <em>future</em> Test
+        ingested into this {{ opts.verbose_name }} will compute a new
+        <code>key</code>, leaving any existing Baseline orphaned. Consider deleting
+        stale Baselines before renaming, or accept that the next run will
+        self-baseline against the new key (you'll see the "new baseline" badge on
+        the run page).
+      </p>
+    </div>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

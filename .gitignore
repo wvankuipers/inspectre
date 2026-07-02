@@ -1,0 +1,31 @@
+# See https://help.github.com/articles/ignoring-files for more about ignoring files.
+
+# ---- Shared -----------------------------------------------------------------
+
+.env
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+PLAN.md
+docs/superpowers/
+
+# ---- Backend (Django) ------------------------------------------------------
+
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/staticfiles/
+backend/.coverage
+backend/htmlcov/
+
+# ---- Frontend (Angular) ----------------------------------------------------
+
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+perf/.venv/
+.superpowers/

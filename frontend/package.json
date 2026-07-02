@@ -1,0 +1,44 @@
+{
+  "name": "inspectre-frontend",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "prestart": "node scripts/gen-build-info.js",
+    "start": "ng serve",
+    "prebuild": "node scripts/gen-build-info.js",
+    "build": "ng build",
+    "pretest": "node scripts/gen-build-info.js",
+    "test": "ng test",
+    "prewatch": "node scripts/gen-build-info.js",
+    "watch": "ng build --watch --configuration development",
+    "lint": "ng lint"
+  },
+  "private": true,
+  "packageManager": "npm@10.9.8",
+  "dependencies": {
+    "@angular/animations": "^22.0.1",
+    "@angular/cdk": "^22.0.1",
+    "@angular/common": "^22.0.0",
+    "@angular/compiler": "^22.0.0",
+    "@angular/core": "^22.0.0",
+    "@angular/forms": "^22.0.0",
+    "@angular/material": "^22.0.1",
+    "@angular/platform-browser": "^22.0.0",
+    "@angular/router": "^22.0.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.0.1",
+    "@angular/cli": "^22.0.1",
+    "@angular/compiler-cli": "^22.0.0",
+    "@eslint/js": "^10.0.1",
+    "angular-eslint": "22.0.0",
+    "eslint": "^10.3.0",
+    "jsdom": "^28.0.0",
+    "prettier": "^3.8.1",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "8.60.1",
+    "vitest": "^4.0.8"
+  }
+}

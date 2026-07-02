@@ -1,0 +1,147 @@
+services:
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: runtime
+    env_file: ../.env
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      # Wait for the bucket-creation one-shot to finish. This also tells
+      # `up --wait` that minio-init exiting 0 is expected (not a failure).
+      minio-init:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    # The api container is the single migration owner (start.sh runs migrate +
+    # ensure_admin_user). This healthcheck only flips to healthy once gunicorn
+    # is serving, i.e. after migrations finish — so `up --wait` can block on it
+    # instead of racing a second migrate. No curl in the runtime image; use Python.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/projects/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  # Same image as api but with pytest/factory-boy/ruff installed. Used by
+  # `make test-fast`, `make test-slow`, `make lint`. Doesn't expose ports —
+  # runs one-off commands. The backend source is bind-mounted so test runs
+  # see local edits without an image rebuild and `lint-fix` writes back to
+  # the working tree.
+  api-dev:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: dev
+    env_file: ../.env
+    volumes:
+      - ../backend:/app:rw
+      - api-dev-venv:/app/.venv   # don't let the bind mount blow away the venv
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    profiles: ["dev"]   # not started by `docker compose up`
+
+  spa:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "4200:8080"
+
+  # Node-based image for `make lint` and `make test-frontend`. Uses node:22 directly
+  # (the production spa image is nginx-only). Bind-mounts the source so lint --fix
+  # writes back to the working tree; named volume preserves node_modules across runs.
+  spa-dev:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ../frontend:/app:rw
+      - spa-dev-node-modules:/app/node_modules
+    profiles: ["dev"]
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: inspectre
+      POSTGRES_USER: inspectre
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inspectre"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do sleep 1; done;
+      /usr/bin/mc mb --ignore-existing local/inspectre-screenshots;
+      /usr/bin/mc anonymous set download local/inspectre-screenshots;
+      "
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: runtime
+    command: celery -A inspectre worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
+    env_file: ../.env
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  minio-data:
+  api-dev-venv:   # named volume preserves the image's /app/.venv across bind mounts
+  spa-dev-node-modules:   # cache npm install across spa-dev runs

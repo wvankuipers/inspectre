@@ -1,0 +1,159 @@
+<main class="page">
+  <app-breadcrumb [segments]="[
+    { label: 'Projects', link: '/projects' },
+    { label: run()?.project_name ?? projectSlug() },
+    { label: suiteSlug(), link: ['/projects', projectSlug(), 'suites', suiteSlug()] },
+    { label: '#' + seqId() }
+  ]" />
+
+  @if (run(); as r) {
+    <div class="page-header">
+      <div class="page-header-title">
+        <h1>{{ r.project_name }} — {{ suiteSlug() }} — Run #{{ r.sequential_id }}</h1>
+        <span class="muted">{{ r.created_at | date:'medium' }}</span>
+      </div>
+      @if (r.tests.length > 0) {
+        <div class="header-controls">
+          <div class="status-chips">
+            <button mat-stroked-button
+                    [attr.aria-pressed]="activeStatuses().has('pass')"
+                    [class.active-chip-pass]="activeStatuses().has('pass')"
+                    (click)="toggleStatus('pass')">Pass</button>
+            <button mat-stroked-button
+                    [attr.aria-pressed]="activeStatuses().has('fail')"
+                    [class.active-chip-fail]="activeStatuses().has('fail')"
+                    (click)="toggleStatus('fail')">Fail</button>
+            <button mat-stroked-button
+                    [attr.aria-pressed]="activeStatuses().has('new')"
+                    [class.active-chip-new]="activeStatuses().has('new')"
+                    (click)="toggleStatus('new')">New</button>
+          </div>
+          <app-search-field [value]="searchTerm()" label="Search by test name" (valueChange)="onSearch($event)" />
+        </div>
+      }
+    </div>
+
+    @if (r.tests.length > 0) {
+      @if (visibleTests().length > 0) {
+      <div class="inspectre-card">
+        <table mat-table matSort
+               [matSortActive]="sortState().active" [matSortDirection]="sortState().direction"
+               (matSortChange)="onSortChange($event)"
+               [dataSource]="visibleTests()"
+               [trackBy]="trackByTestId">
+          <ng-container matColumnDef="name">
+            <th mat-header-cell mat-sort-header *matHeaderCellDef>Test</th>
+            <td mat-cell *matCellDef="let t">
+              <div class="test-name">
+                {{ t.name }}
+                @if (t.baseline_url === null) {
+                  <span class="chip chip-new-baseline">New baseline</span>
+                }
+              </div>
+              <div class="test-meta">{{ t.browser }} · {{ t.size }}</div>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="baseline">
+            <th mat-header-cell *matHeaderCellDef>Baseline</th>
+            <td mat-cell *matCellDef="let t">
+              @if (t.status === 'done' || t.status === 'failed') {
+                <ng-container
+                  [ngTemplateOutlet]="thumbCell"
+                  [ngTemplateOutletContext]="{ thumb: t.baseline_thumb_url, test: t, slot: 'baseline' }"
+                />
+              } @else {
+                <span class="muted">—</span>
+              }
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="screenshot">
+            <th mat-header-cell *matHeaderCellDef>Comparison</th>
+            <td mat-cell *matCellDef="let t">
+              @if (t.status === 'done' || t.status === 'failed') {
+                <ng-container
+                  [ngTemplateOutlet]="thumbCell"
+                  [ngTemplateOutletContext]="{ thumb: t.screenshot_thumb_url, test: t, slot: 'comparison' }"
+                />
+              } @else {
+                <span class="muted">—</span>
+              }
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="diff">
+            <th mat-header-cell *matHeaderCellDef>Diff</th>
+            <td mat-cell *matCellDef="let t">
+              @if (t.status === 'done' || t.status === 'failed') {
+                <ng-container
+                  [ngTemplateOutlet]="thumbCell"
+                  [ngTemplateOutletContext]="{ thumb: t.diff_thumb_url, test: t, slot: 'diff' }"
+                />
+              } @else {
+                <span class="muted">—</span>
+              }
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="result">
+            <th mat-header-cell mat-sort-header *matHeaderCellDef>Result</th>
+            <td mat-cell *matCellDef="let t">
+              @if (t.status === 'pending' || t.status === 'processing') {
+                <span class="chip chip-none">Processing…</span>
+              } @else {
+                <div class="diff-pct">
+                  @if (t.diff > 0) { {{ t.diff }}% diff }
+                  @else { No difference }
+                </div>
+                <span [class]="t.passed ? 'chip chip-pass' : 'chip chip-fail'">
+                  {{ t.passed ? 'Pass' : 'Fail' }}
+                </span>
+                @if (!t.passed && !pendingId().has(t.id)) {
+                  <button
+                    mat-stroked-button
+                    color="primary"
+                    class="rebaseline-btn"
+                    (click)="rebaseline(t)"
+><svg xmlns="http://www.w3.org/2000/svg" height="18" width="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="vertical-align:middle;margin-right:4px"><path d="M22 5.18 10.59 16.6l-4.24-4.24 1.41-1.41 2.83 2.83 10-10zM12 20c-4.41 0-8-3.59-8-8s3.59-8 8-8c1.57 0 3.04.46 4.28 1.25l1.45-1.45A9.956 9.956 0 0 0 12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10h-2c0 4.41-3.59 8-8 8"/></svg>Set as baseline</button>
+                }
+                @if (pendingId().has(t.id)) {
+                  <span class="muted">Promoting…</span>
+                }
+              }
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="columns"></tr>
+          <tr mat-row *matRowDef="let t; columns: columns"></tr>
+        </table>
+      </div>
+      } @else {
+        <p class="muted">No tests match your filters.</p>
+      }
+    } @else {
+      <p class="muted">No tests in this run.</p>
+    }
+  } @else if (loadError()) {
+    <p class="load-error">Failed to load run data. Please refresh the page.</p>
+  }
+</main>
+
+<ng-template #thumbCell let-thumb="thumb" let-test="test" let-slot="slot">
+  @if (thumb) {
+    <button class="thumb-btn"
+            [attr.aria-label]="'View ' + slot + ' for ' + test.name"
+            [attr.data-testid]="'thumb-' + slot"
+            (click)="openViewer(test, slot)">
+      <div [class]="thumbLoaded().has(thumb) ? 'img-loaded' : 'img-skeleton'">
+        <img [src]="thumb"
+             loading="lazy"
+             (load)="onImgLoad(thumb)"
+             (error)="onImgError($event); onImgLoad(thumb)"
+             alt="" />
+      </div>
+    </button>
+  } @else {
+    <span class="muted">—</span>
+  }
+</ng-template>

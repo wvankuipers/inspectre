@@ -1,0 +1,8 @@
+<app-toolbar [backLink]="backLink()" />
+@if (loading()) {
+  <mat-progress-bar mode="indeterminate" />
+}
+<router-outlet />
+<div class="footer-wrap">
+  <app-page-footer />
+</div>
