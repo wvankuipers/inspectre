@@ -11,6 +11,7 @@
     "test": "ng test",
     "prewatch": "node scripts/gen-build-info.js",
     "watch": "ng build --watch --configuration development",
+    "prelint": "node scripts/gen-build-info.js",
     "lint": "ng lint"
   },
   "private": true,

@@ -1,7 +1,14 @@
 const { execSync } = require('child_process');
-const { writeFileSync } = require('fs');
+const { readFileSync, writeFileSync } = require('fs');
 const { join } = require('path');
-const { version } = require('../package.json');
+
+let version;
+try {
+  version = readFileSync(join(__dirname, '../../VERSION'), 'utf8').trim();
+} catch {
+  console.error('Error: VERSION file not found at repo root');
+  process.exit(1);
+}
 
 let sha = 'dev';
 try {

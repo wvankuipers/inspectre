@@ -52,8 +52,8 @@ services:
 
   spa:
     build:
-      context: ../frontend
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: frontend/Dockerfile
     ports:
       - "4200:8080"
 
@@ -66,6 +66,7 @@ services:
     volumes:
       - ../frontend:/app:rw
       - spa-dev-node-modules:/app/node_modules
+      - ../VERSION:/VERSION:ro
     profiles: ["dev"]
 
   db:
