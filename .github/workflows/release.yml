@@ -203,3 +203,18 @@ jobs:
             --tag "$REPO:spa-$VERSION" \
             "$REPO:spa-$VERSION-amd64" \
             "$REPO:spa-$VERSION-arm64"
+
+  update-dockerhub-description:
+    runs-on: ubuntu-latest
+    if: github.event.release.prerelease == false
+    needs: [manifest-api, manifest-spa]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/inspectre
+          readme-filepath: README.md
