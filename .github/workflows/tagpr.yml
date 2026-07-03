@@ -17,4 +17,8 @@ jobs:
           persist-credentials: false
       - uses: Songmu/tagpr@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Must be a PAT (not GITHUB_TOKEN) so the GitHub Release tagpr creates
+          # can trigger the release.yml workflow via the release:published event.
+          # Create a fine-grained PAT with contents:write and pull-requests:write,
+          # then store it as the TAGPR_TOKEN repository secret.
+          GITHUB_TOKEN: ${{ secrets.TAGPR_TOKEN }}

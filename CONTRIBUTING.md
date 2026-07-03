@@ -10,11 +10,12 @@ Thank you for your interest in contributing!
 
 ## Development setup
 
-1. Clone the repository and copy the example env file:
+1. Fork the repository on GitHub, then clone your fork and add upstream as a remote:
 
    ```bash
-   git clone https://github.com/wvankuipers/inspectre.git
+   git clone https://github.com/<your-username>/inspectre.git
    cd inspectre
+   git remote add upstream https://github.com/wvankuipers/inspectre.git
    cp .env.example .env
    ```
 

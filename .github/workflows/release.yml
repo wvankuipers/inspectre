@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   build-api-amd:
     runs-on: ubuntu-latest
@@ -19,14 +23,23 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Compute tags
+        id: tags
+        run: |
+          TAGS="${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-${{ github.ref_name }}-amd64"
+          if [ "${{ github.event.release.prerelease }}" = "false" ]; then
+            TAGS="$TAGS
+          ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-amd64"
+          fi
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7
         with:
           context: backend
           target: runtime
           push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-amd64
-            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-${{ github.ref_name }}-amd64
+          tags: ${{ steps.tags.outputs.tags }}
           platforms: linux/amd64
           cache-from: type=gha,scope=api-amd64
           cache-to: type=gha,mode=max,scope=api-amd64
@@ -42,14 +55,23 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Compute tags
+        id: tags
+        run: |
+          TAGS="${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-${{ github.ref_name }}-arm64"
+          if [ "${{ github.event.release.prerelease }}" = "false" ]; then
+            TAGS="$TAGS
+          ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-arm64"
+          fi
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7
         with:
           context: backend
           target: runtime
           push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-arm64
-            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-${{ github.ref_name }}-arm64
+          tags: ${{ steps.tags.outputs.tags }}
           platforms: linux/arm64
           cache-from: type=gha,scope=api-arm64
           cache-to: type=gha,mode=max,scope=api-arm64
@@ -65,14 +87,23 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Compute tags
+        id: tags
+        run: |
+          TAGS="${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-${{ github.ref_name }}-amd64"
+          if [ "${{ github.event.release.prerelease }}" = "false" ]; then
+            TAGS="$TAGS
+          ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-amd64"
+          fi
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7
         with:
           context: .
           file: frontend/Dockerfile
           push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-amd64
-            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-${{ github.ref_name }}-amd64
+          tags: ${{ steps.tags.outputs.tags }}
           platforms: linux/amd64
           cache-from: type=gha,scope=spa-amd64
           cache-to: type=gha,mode=max,scope=spa-amd64
@@ -88,20 +119,30 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Compute tags
+        id: tags
+        run: |
+          TAGS="${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-${{ github.ref_name }}-arm64"
+          if [ "${{ github.event.release.prerelease }}" = "false" ]; then
+            TAGS="$TAGS
+          ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-arm64"
+          fi
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7
         with:
           context: .
           file: frontend/Dockerfile
           push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-arm64
-            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-${{ github.ref_name }}-arm64
+          tags: ${{ steps.tags.outputs.tags }}
           platforms: linux/arm64
           cache-from: type=gha,scope=spa-arm64
           cache-to: type=gha,mode=max,scope=spa-arm64
 
   manifest-api:
     runs-on: ubuntu-latest
+    if: github.event.release.prerelease == false
     needs: [build-api-amd, build-api-arm]
     env:
       VERSION: ${{ github.ref_name }}
@@ -124,6 +165,7 @@ jobs:
 
   manifest-spa:
     runs-on: ubuntu-latest
+    if: github.event.release.prerelease == false
     needs: [build-spa-amd, build-spa-arm]
     env:
       VERSION: ${{ github.ref_name }}
