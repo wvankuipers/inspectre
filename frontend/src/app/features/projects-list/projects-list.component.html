@@ -1,0 +1,76 @@
+<main class="page">
+  <div class="page-header">
+    <h1>Projects</h1>
+    <div class="header-controls">
+      <div class="status-chips">
+        <button mat-stroked-button
+                [attr.aria-pressed]="activeStatuses().has('pass')"
+                [class.active-chip-pass]="activeStatuses().has('pass')"
+                (click)="toggleStatus('pass')">Pass</button>
+        <button mat-stroked-button
+                [attr.aria-pressed]="activeStatuses().has('fail')"
+                [class.active-chip-fail]="activeStatuses().has('fail')"
+                (click)="toggleStatus('fail')">Fail</button>
+        <button mat-stroked-button
+                [attr.aria-pressed]="activeStatuses().has('new')"
+                [class.active-chip-new]="activeStatuses().has('new')"
+                (click)="toggleStatus('new')">New</button>
+      </div>
+      <app-search-field [value]="searchTerm()" (valueChange)="onSearch($event)" />
+    </div>
+  </div>
+
+  @if (rows().length > 0 || searchTerm() || activeStatuses().size > 0) {
+    <div class="inspectre-card">
+      <table mat-table matSort [matSortActive]="sortState().active" [matSortDirection]="sortState().direction"
+             [dataSource]="dataSource">
+        <ng-container matColumnDef="project">
+          <th mat-header-cell mat-sort-header *matHeaderCellDef>Project</th>
+          <td mat-cell *matCellDef="let row">{{ row.project.name }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="suite">
+          <th mat-header-cell mat-sort-header *matHeaderCellDef>Suite</th>
+          <td mat-cell *matCellDef="let row">
+            <a [routerLink]="['/projects', row.project.slug, 'suites', row.suite.slug]">{{ row.suite.name }}</a>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="latestRun">
+          <th mat-header-cell mat-sort-header *matHeaderCellDef>Last run</th>
+          <td mat-cell *matCellDef="let row">
+            @if (row.suite.latest_run; as run) {
+              <a [routerLink]="['/projects', row.project.slug, 'suites', row.suite.slug, 'runs', run.sequential_id]">#{{ run.sequential_id }}</a>
+              <div class="run-date muted">{{ run.created_at | date:'medium' }}</div>
+            } @else {
+              <span class="muted">—</span>
+            }
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let row">
+            @if (row.suite.latest_run; as run) {
+              <app-run-stats-chips [stats]="run" />
+            }
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="columns"></tr>
+        <tr mat-row *matRowDef="let row; columns: columns"></tr>
+        <tr class="mat-row" *matNoDataRow>
+          <td class="mat-cell muted" [attr.colspan]="columns.length">
+            @if (searchTerm()) {
+              No results for "{{ searchTerm() }}"
+            } @else {
+              No results for selected filters
+            }
+          </td>
+        </tr>
+      </table>
+    </div>
+  } @else if (!loading()) {
+    <p class="muted">No projects yet. Post a run to <code>/runs</code> to get started.</p>
+  }
+</main>

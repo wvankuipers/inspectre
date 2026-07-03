@@ -1,0 +1,27 @@
+.page { max-width: 1400px; margin: 24px auto; padding: 0 16px; }
+table { width: 100%; }
+.run-date { font-size: 0.8em; margin-top: 2px; }
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0 24px;
+
+  h1 { font-weight: 400; margin: 0; }
+
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .status-chips { display: flex; gap: 6px; }
+
+  .active-chip-pass { background: #dcfce7 !important; color: #166534 !important; border-color: #166534 !important; }
+  .active-chip-fail { background: #fee2e2 !important; color: #991b1b !important; border-color: #991b1b !important; }
+  .active-chip-new  { background: #e0f2fe !important; color: #0369a1 !important; border-color: #0369a1 !important; }
+}

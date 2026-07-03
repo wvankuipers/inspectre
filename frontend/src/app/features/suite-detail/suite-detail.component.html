@@ -1,0 +1,92 @@
+<main class="page">
+  <app-breadcrumb [segments]="[
+    { label: 'Projects', link: '/projects' },
+    { label: suite()?.project_name ?? projectSlug() },
+    { label: suiteSlug() }
+  ]" />
+
+  @if (suite(); as s) {
+    <h1>{{ s.project_name }} — {{ s.name }}</h1>
+
+    <mat-tab-group [preserveContent]="true">
+      <mat-tab label="Latest runs">
+        @if (s.latest_runs.length > 0) {
+          <div class="inspectre-card tab-card">
+            <table mat-table matSort #runsSort="matSort"
+                   [matSortActive]="runSortState().active" [matSortDirection]="runSortState().direction"
+                   (matSortChange)="onRunSortChange($event)"
+                   [dataSource]="sortedRuns()">
+              <ng-container matColumnDef="seq">
+                <th mat-header-cell mat-sort-header *matHeaderCellDef>Run</th>
+                <td mat-cell *matCellDef="let r">
+                  <a [routerLink]="['/projects', projectSlug(), 'suites', suiteSlug(), 'runs', r.sequential_id]">#{{ r.sequential_id }}</a>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="when">
+                <th mat-header-cell mat-sort-header *matHeaderCellDef>When</th>
+                <td mat-cell *matCellDef="let r">{{ r.created_at | date:'medium' }}</td>
+              </ng-container>
+              <ng-container matColumnDef="status">
+                <th mat-header-cell *matHeaderCellDef>Status</th>
+                <td mat-cell *matCellDef="let r">
+                  <app-run-stats-chips [stats]="r" />
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="runColumns"></tr>
+              <tr mat-row *matRowDef="let r; columns: runColumns"></tr>
+            </table>
+          </div>
+        } @else {
+          <p class="muted">No runs yet for this suite.</p>
+        }
+      </mat-tab>
+
+      <mat-tab label="Baselines">
+        @if (s.baselines.length > 0 || baselinesSearchTerm()) {
+          <div class="tab-toolbar">
+            <app-search-field [value]="baselinesSearchTerm()" (valueChange)="onBaselinesSearch($event)" />
+          </div>
+
+          <div class="inspectre-card tab-card">
+            <table mat-table matSort #baselinesSort="matSort"
+                   [matSortActive]="baselineSortState().active" [matSortDirection]="baselineSortState().direction"
+                   [dataSource]="baselinesDataSource">
+              <ng-container matColumnDef="name">
+                <th mat-header-cell mat-sort-header *matHeaderCellDef>Name</th>
+                <td mat-cell *matCellDef="let b">{{ b.name }}</td>
+              </ng-container>
+              <ng-container matColumnDef="browser">
+                <th mat-header-cell mat-sort-header *matHeaderCellDef>Browser</th>
+                <td mat-cell *matCellDef="let b">{{ b.browser }}</td>
+              </ng-container>
+              <ng-container matColumnDef="size">
+                <th mat-header-cell mat-sort-header *matHeaderCellDef>Size</th>
+                <td mat-cell *matCellDef="let b">{{ b.size }}</td>
+              </ng-container>
+              <ng-container matColumnDef="thumb">
+                <th mat-header-cell *matHeaderCellDef>Screenshot</th>
+                <td mat-cell *matCellDef="let b">
+                  @if (b.thumbnail_url) {
+                    <a [href]="b.screenshot_url" target="_blank" rel="noopener noreferrer"
+                       [attr.aria-label]="'View full screenshot for ' + b.name">
+                      <img [src]="b.thumbnail_url" loading="lazy" alt="" />
+                    </a>
+                  }
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="baselineColumns"></tr>
+              <tr mat-row *matRowDef="let b; columns: baselineColumns"></tr>
+              <tr class="mat-row" *matNoDataRow>
+                <td class="mat-cell muted" [attr.colspan]="baselineColumns.length">
+                  No results for "{{ baselinesSearchTerm() }}"
+                </td>
+              </tr>
+            </table>
+          </div>
+        } @else {
+          <p class="muted">No baselines yet.</p>
+        }
+      </mat-tab>
+    </mat-tab-group>
+  }
+</main>

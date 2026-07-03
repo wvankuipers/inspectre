@@ -1,0 +1,276 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  read-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: read
+        run: echo "version=$(cat VERSION | xargs)" >> $GITHUB_OUTPUT
+
+  lint-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+        working-directory: backend
+      - name: ruff check
+        run: ruff check .
+        working-directory: backend
+      - name: ruff format check
+        run: ruff format --check .
+        working-directory: backend
+
+  test-backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: inspectre
+          POSTGRES_USER: inspectre
+          POSTGRES_PASSWORD: inspectre
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U inspectre"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://inspectre:inspectre@localhost:5432/inspectre
+      DJANGO_SECRET_KEY: ci-only-not-for-production
+      DEBUG: "0"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      REDIS_URL: memory://
+      S3_BUCKET_NAME: inspectre-screenshots
+      S3_ACCESS_KEY_ID: ci
+      S3_SECRET_ACCESS_KEY: ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install imagemagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+        working-directory: backend
+      - name: Run tests
+        run: pytest -n auto
+        working-directory: backend
+
+  lint-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Lint
+        run: npm run lint
+        working-directory: frontend
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Run tests
+        run: npm test -- --watch=false
+        working-directory: frontend
+
+  build-api-amd:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [read-version, lint-backend, test-backend, lint-frontend, test-frontend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: runtime
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-amd64
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-${{ needs.read-version.outputs.version }}-amd64
+          platforms: linux/amd64
+          cache-from: type=gha,scope=api-amd64
+          cache-to: type=gha,mode=max,scope=api-amd64
+
+  build-api-arm:
+    runs-on: ubuntu-24.04-arm
+    if: github.ref == 'refs/heads/main'
+    needs: [read-version, lint-backend, test-backend, lint-frontend, test-frontend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: runtime
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-arm64
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-${{ needs.read-version.outputs.version }}-arm64
+          platforms: linux/arm64
+          cache-from: type=gha,scope=api-arm64
+          cache-to: type=gha,mode=max,scope=api-arm64
+
+  build-spa-amd:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [read-version, lint-backend, test-backend, lint-frontend, test-frontend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-amd64
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-${{ needs.read-version.outputs.version }}-amd64
+          platforms: linux/amd64
+          cache-from: type=gha,scope=spa-amd64
+          cache-to: type=gha,mode=max,scope=spa-amd64
+
+  build-spa-arm:
+    runs-on: ubuntu-24.04-arm
+    if: github.ref == 'refs/heads/main'
+    needs: [read-version, lint-backend, test-backend, lint-frontend, test-frontend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-arm64
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-${{ needs.read-version.outputs.version }}-arm64
+          platforms: linux/arm64
+          cache-from: type=gha,scope=spa-arm64
+          cache-to: type=gha,mode=max,scope=spa-arm64
+
+  manifest-api:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [read-version, build-api-amd, build-api-arm]
+    env:
+      VERSION: ${{ needs.read-version.outputs.version }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Create and push multi-arch manifests
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-arm64
+          docker buildx imagetools create \
+            --tag ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-"$VERSION" \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-"$VERSION"-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-"$VERSION"-arm64
+
+  manifest-spa:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [read-version, build-spa-amd, build-spa-arm]
+    env:
+      VERSION: ${{ needs.read-version.outputs.version }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Create and push multi-arch manifests
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-arm64
+          docker buildx imagetools create \
+            --tag ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-"$VERSION" \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-"$VERSION"-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-"$VERSION"-arm64

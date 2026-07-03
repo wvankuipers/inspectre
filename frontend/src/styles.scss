@@ -1,0 +1,130 @@
+@use '@angular/material' as mat;
+
+html {
+  color-scheme: light;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$cyan-palette,
+        tertiary: mat.$cyan-palette,
+      ),
+      typography: system-ui,
+      density: 0,
+    )
+  );
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f1f5f9;
+}
+
+mat-toolbar {
+  background: #0f172a !important;
+  color: #f1f5f9 !important;
+}
+
+.inspectre-card {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+// Snackbar variant used by errorInterceptor.
+.error-snack {
+  --mdc-snackbar-container-color: var(--mat-sys-error);
+  --mdc-snackbar-supporting-text-color: var(--mat-sys-on-error);
+}
+
+// Shared link colour used across feature pages.
+a {
+  color: var(--mat-sys-primary);
+}
+
+// Muted secondary text used across feature pages.
+.muted {
+  color: var(--mat-sys-outline);
+}
+
+// Status chips used in run/suite tables.
+.chip {
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  display: inline-block;
+  margin-right: 3px;
+}
+
+.chip-pass { background: #dcfce7; color: #166534; }
+.chip-fail { background: #fee2e2; color: #991b1b; }
+.chip-new  { background: #e0f2fe; color: #0369a1; }
+.chip-none { background: #f1f5f9; color: #64748b; }
+
+// Breadcrumb navigation used on detail pages.
+.breadcrumb {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--mat-sys-outline);
+  margin-top: 16px;
+
+  a {
+    color: var(--mat-sys-primary);
+    text-decoration: none;
+  }
+}
+
+// Shared search field layout used on projects-list, suite-detail, and run-detail.
+.search-field { width: 100%; max-width: 400px; margin-bottom: 16px; display: block; }
+
+// Hover highlight on all mat-table data rows.
+.mat-mdc-row:hover { background: #e2e8f0; }
+
+// Remove default padding/radius so ImageViewerComponent fills the viewport edge-to-edge.
+.image-viewer-panel .mat-mdc-dialog-container {
+  padding: 0;
+  border-radius: 0;
+}
+
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.img-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #1e293b;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(56, 189, 248, 0.08) 50%, transparent 100%);
+    transform: translateX(-100%);
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  img {
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+}
+
+.img-loaded {
+  background: transparent;
+
+  &::after {
+    display: none;
+  }
+
+  img {
+    opacity: 1;
+    transition: opacity 0.2s;
+  }
+}

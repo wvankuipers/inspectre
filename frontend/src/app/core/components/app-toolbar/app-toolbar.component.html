@@ -1,0 +1,31 @@
+<mat-toolbar>
+  @if (backLink()) {
+    <a [routerLink]="backLink()" class="brand">
+      <ng-container *ngTemplateOutlet="logoMark" />
+    </a>
+  } @else {
+    <div class="brand">
+      <ng-container *ngTemplateOutlet="logoMark" />
+    </div>
+  }
+</mat-toolbar>
+
+<ng-template #logoMark>
+  <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+    <circle cx="11" cy="11" r="7.5" stroke="#94a3b8" stroke-width="1.8"/>
+    <rect x="6.5" y="6.5"   width="2.5" height="2.5" rx="0.3" fill="#475569"/>
+    <rect x="9.5" y="6.5"   width="2.5" height="2.5" rx="0.3" fill="#475569"/>
+    <rect x="12.5" y="6.5"  width="2.5" height="2.5" rx="0.3" fill="#38bdf8"/>
+    <rect x="6.5" y="9.5"   width="2.5" height="2.5" rx="0.3" fill="#475569"/>
+    <rect x="9.5" y="9.5"   width="2.5" height="2.5" rx="0.3" fill="#475569"/>
+    <rect x="12.5" y="9.5"  width="2.5" height="2.5" rx="0.3" fill="#475569"/>
+    <rect x="6.5" y="12.5"  width="2.5" height="2.5" rx="0.3" fill="#475569"/>
+    <rect x="9.5" y="12.5"  width="2.5" height="2.5" rx="0.3" fill="#38bdf8"/>
+    <rect x="12.5" y="12.5" width="2.5" height="2.5" rx="0.3" fill="#475569"/>
+    <line x1="17" y1="17" x2="23.5" y2="23.5" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+  </svg>
+  <div class="wordmark">
+    <span class="wordmark-name">Inspectre</span>
+    <span class="wordmark-tag">Visual Regression</span>
+  </div>
+</ng-template>

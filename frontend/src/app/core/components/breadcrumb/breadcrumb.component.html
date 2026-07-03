@@ -1,0 +1,12 @@
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  @for (segment of segments(); track $index) {
+    @if ($index > 0) {
+      <span>›</span>
+    }
+    @if (segment.link) {
+      <a [routerLink]="segment.link">{{ segment.label }}</a>
+    } @else {
+      <span>{{ segment.label }}</span>
+    }
+  }
+</nav>
