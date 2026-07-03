@@ -3,7 +3,7 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-COPY VERSION ./VERSION
+COPY VERSION /VERSION
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
