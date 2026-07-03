@@ -1,0 +1,24 @@
+name: tagpr
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  tagpr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: Songmu/tagpr@v1
+        env:
+          # Must be a PAT (not GITHUB_TOKEN) so the GitHub Release tagpr creates
+          # can trigger the release.yml workflow via the release:published event.
+          # Create a fine-grained PAT with contents:write and pull-requests:write,
+          # then store it as the TAGPR_TOKEN repository secret.
+          GITHUB_TOKEN: ${{ secrets.TAGPR_TOKEN }}

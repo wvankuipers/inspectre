@@ -1,0 +1,220 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build-api-amd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Compute tags
+        id: tags
+        env:
+          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/inspectre
+          VERSION: ${{ github.ref_name }}
+          IS_STABLE: ${{ github.event.release.prerelease == false }}
+        run: |
+          TAGS="$REPO:api-$VERSION-amd64"
+          if [ "$IS_STABLE" = "true" ]; then
+            TAGS="$TAGS
+          $REPO:api-latest-amd64"
+          fi
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        with:
+          context: backend
+          target: runtime
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64
+          cache-from: type=gha,scope=api-amd64
+          cache-to: type=gha,mode=max,scope=api-amd64
+
+  build-api-arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Compute tags
+        id: tags
+        env:
+          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/inspectre
+          VERSION: ${{ github.ref_name }}
+          IS_STABLE: ${{ github.event.release.prerelease == false }}
+        run: |
+          TAGS="$REPO:api-$VERSION-arm64"
+          if [ "$IS_STABLE" = "true" ]; then
+            TAGS="$TAGS
+          $REPO:api-latest-arm64"
+          fi
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        with:
+          context: backend
+          target: runtime
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/arm64
+          cache-from: type=gha,scope=api-arm64
+          cache-to: type=gha,mode=max,scope=api-arm64
+
+  build-spa-amd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Compute tags
+        id: tags
+        env:
+          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/inspectre
+          VERSION: ${{ github.ref_name }}
+          IS_STABLE: ${{ github.event.release.prerelease == false }}
+        run: |
+          TAGS="$REPO:spa-$VERSION-amd64"
+          if [ "$IS_STABLE" = "true" ]; then
+            TAGS="$TAGS
+          $REPO:spa-latest-amd64"
+          fi
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64
+          cache-from: type=gha,scope=spa-amd64
+          cache-to: type=gha,mode=max,scope=spa-amd64
+
+  build-spa-arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Compute tags
+        id: tags
+        env:
+          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/inspectre
+          VERSION: ${{ github.ref_name }}
+          IS_STABLE: ${{ github.event.release.prerelease == false }}
+        run: |
+          TAGS="$REPO:spa-$VERSION-arm64"
+          if [ "$IS_STABLE" = "true" ]; then
+            TAGS="$TAGS
+          $REPO:spa-latest-arm64"
+          fi
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/arm64
+          cache-from: type=gha,scope=spa-arm64
+          cache-to: type=gha,mode=max,scope=spa-arm64
+
+  manifest-api:
+    runs-on: ubuntu-latest
+    if: github.event.release.prerelease == false
+    needs: [build-api-amd, build-api-arm]
+    env:
+      REPO: ${{ secrets.DOCKERHUB_USERNAME }}/inspectre
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Create and push multi-arch manifests
+        run: |
+          docker buildx imagetools create \
+            --tag "$REPO:api-latest" \
+            "$REPO:api-latest-amd64" \
+            "$REPO:api-latest-arm64"
+          docker buildx imagetools create \
+            --tag "$REPO:api-$VERSION" \
+            "$REPO:api-$VERSION-amd64" \
+            "$REPO:api-$VERSION-arm64"
+
+  manifest-spa:
+    runs-on: ubuntu-latest
+    if: github.event.release.prerelease == false
+    needs: [build-spa-amd, build-spa-arm]
+    env:
+      REPO: ${{ secrets.DOCKERHUB_USERNAME }}/inspectre
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Create and push multi-arch manifests
+        run: |
+          docker buildx imagetools create \
+            --tag "$REPO:spa-latest" \
+            "$REPO:spa-latest-amd64" \
+            "$REPO:spa-latest-arm64"
+          docker buildx imagetools create \
+            --tag "$REPO:spa-$VERSION" \
+            "$REPO:spa-$VERSION-amd64" \
+            "$REPO:spa-$VERSION-arm64"
+
+  update-dockerhub-description:
+    runs-on: ubuntu-latest
+    if: github.event.release.prerelease == false
+    needs: [manifest-api, manifest-spa]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/inspectre
+          readme-filepath: README.md
