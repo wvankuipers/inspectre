@@ -13,6 +13,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "node"
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
