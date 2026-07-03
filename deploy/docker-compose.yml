@@ -57,11 +57,11 @@ services:
     ports:
       - "4200:8080"
 
-  # Node-based image for `make lint` and `make test-frontend`. Uses node:22 directly
+  # Node-based image for `make lint` and `make test-frontend`. Uses node:24 directly
   # (the production spa image is nginx-only). Bind-mounts the source so lint --fix
   # writes back to the working tree; named volume preserves node_modules across runs.
   spa-dev:
-    image: node:22-alpine
+    image: node:24-alpine
     working_dir: /app
     volumes:
       - ../frontend:/app:rw

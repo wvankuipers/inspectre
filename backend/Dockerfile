@@ -1,5 +1,5 @@
 # ---- Stage 1: build deps with pip into a virtualenv -------------------------
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -20,7 +20,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # ---- Stage 2 (runtime): production image ------------------------------------
-FROM python:3.12-slim AS runtime
+FROM python:3.13-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         imagemagick \

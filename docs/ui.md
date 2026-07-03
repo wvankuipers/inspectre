@@ -1,6 +1,6 @@
 # Web UI
 
-The SPA is an **Angular 22** application served by nginx at port 4200 in the Docker stack. It talks exclusively to the Django REST backend via `HttpClient`. The legacy Rails ERB/jQuery frontend is no longer in use.
+The SPA is an **Angular** application served by nginx at port 4200 in the Docker stack. It talks exclusively to the Django REST backend via `HttpClient`. The legacy Rails ERB/jQuery frontend is no longer in use.
 
 ## Visual conventions
 
@@ -263,4 +263,4 @@ export const appConfig: ApplicationConfig = {
 };
 ```
 
-`provideZonelessChangeDetection()` — Angular 22 zoneless mode. Change detection is signal-driven; there is no `NgZone` and no `zone.js` in the bundle.
+`provideZonelessChangeDetection()` — Angular zoneless mode. Change detection is signal-driven; there is no `NgZone` and no `zone.js` in the bundle.

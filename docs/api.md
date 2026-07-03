@@ -217,7 +217,7 @@ Clients have no other obligations — Spectre handles baselining server-side.
 - `POST /tests` stages the file to S3 and enqueues a Celery task immediately. The view returns `status: "pending"` without waiting for the pipeline. The worker sets `status: "done"` when complete.
 - Skip CSRF on the API endpoints (DRF's default `SessionAuthentication` only enforces CSRF for cookie-based requests; if you don't add session auth at all, CSRF is moot).
 - **Legacy URLs are preserved** ([decisions.md](decisions.md) #7). `POST /runs`, `POST /tests`, `PATCH /tests/:id`, and `GET /baselines/:key` keep their un-prefixed paths and field shapes so existing CI clients keep working without changes. New SPA-only endpoints sit under `/api/` to avoid colliding with the legacy surface.
-- Frontend (Angular 22) consumes:
+- Frontend (Angular) consumes:
   - `GET /api/projects/` (list)
   - `GET /api/projects/<slug>/suites/<slug>/` (suite detail w/ recent runs + baselines)
   - `GET /api/projects/<slug>/suites/<slug>/runs/<seq_id>/` (run detail w/ tests)
@@ -665,4 +665,4 @@ Not in scope for the rebuild docs themselves; flagged here so it doesn't get los
 ## CSRF, CORS, and content-types
 
 - Today: CSRF is per-form, the API endpoints opt out, JSON wrap_parameters is on. No CORS config (browser-side AJAX is same-origin).
-- Rebuild: with a separate Angular 22 frontend on a different origin/port, CORS becomes mandatory. Configure `django-cors-headers` to allow the SPA origin.
+- Rebuild: with a separate Angular frontend on a different origin/port, CORS becomes mandatory. Configure `django-cors-headers` to allow the SPA origin.

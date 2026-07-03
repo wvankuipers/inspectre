@@ -2,10 +2,10 @@
 
 ## Stack
 
-- **Backend:** Python 3.12 / Django 5.1 / gunicorn
-- **Task queue:** Celery 5.4 workers, Valkey 8 broker
-- **Frontend:** Angular 22 SPA served by nginx
-- **Database:** PostgreSQL 16
+- **Backend:** Python / Django / gunicorn
+- **Task queue:** Celery workers, Valkey broker
+- **Frontend:** Angular SPA served by nginx
+- **Database:** PostgreSQL
 - **Object storage:** S3-compatible (MinIO in dev, AWS S3 in prod)
 - **Orchestration:** Docker Compose (single-host), see `deploy/docker-compose.yml`
 

@@ -84,7 +84,7 @@ End-to-end (Playwright against the Angular SPA):
 
 ### Frontend (Angular)
 
-Unit (use whatever the Angular 22 CLI's `ng test` defaults to at the time of build — Karma/Jasmine has been deprecated; the modern path is Vitest or Web Test Runner via `@angular/build:unit-test`):
+Unit (use whatever the Angular CLI's `ng test` defaults to at the time of build — Karma/Jasmine has been deprecated; the modern path is Vitest or Web Test Runner via `@angular/build:unit-test`):
 - Filter component reactive-forms wiring.
 - Test row component renders pass/fail correctly, hides the "Set as baseline" button when appropriate.
 
