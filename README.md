@@ -1,4 +1,16 @@
-# Inspectre
+<p align="center">
+  <img src="https://raw.githubusercontent.com/wvankuipers/inspectre/main/frontend/public/favicon.svg" width="80" alt="Inspectre logo">
+</p>
+
+<h1 align="center">Inspectre</h1>
+
+<p align="center">
+  <a href="https://github.com/wvankuipers/inspectre/actions/workflows/ci.yml"><img src="https://github.com/wvankuipers/inspectre/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwvankuipers%2Finspectre%2Fmain%2FVERSION&search=%5E(.%2B)%24&replace=%241&label=version&color=38bdf8" alt="Version">
+  <a href="https://hub.docker.com/r/wvankuipers/inspectre"><img src="https://img.shields.io/docker/image-size/wvankuipers/inspectre/api-latest?label=api%20image" alt="API image size"></a>
+  <a href="https://hub.docker.com/r/wvankuipers/inspectre"><img src="https://img.shields.io/docker/image-size/wvankuipers/inspectre/spa-latest?label=spa%20image" alt="SPA image size"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
+</p>
 
 **Visual regression testing as a service.** CI pipelines POST screenshots to Inspectre; Inspectre diffs them against approved baselines and reports pass/fail. A web UI lets your team review failures, inspect diff images, and promote new baselines with one click.
 
@@ -30,15 +42,15 @@ The first submission for any (project, suite, name, browser, size) combination h
 
 ## Architecture
 
-| Layer          | Technology                                                     |
-| -------------- | -------------------------------------------------------------- |
-| API server     | Python, Django, Django REST Framework                          |
-| Task queue     | Celery + Valkey (Redis-protocol broker)                        |
-| Web UI         | Angular, standalone/zoneless components, Angular Material      |
-| Database       | PostgreSQL                                                     |
-| Object storage | S3-compatible — MinIO in dev, AWS S3 in prod                   |
-| Serving        | gunicorn (API) + nginx (SPA + reverse proxy)                   |
-| Orchestration  | Docker Compose                                                 |
+| Layer          | Technology                                                |
+| -------------- | --------------------------------------------------------- |
+| API server     | Python, Django, Django REST Framework                     |
+| Task queue     | Celery + Valkey (Redis-protocol broker)                   |
+| Web UI         | Angular, standalone/zoneless components, Angular Material |
+| Database       | PostgreSQL                                                |
+| Object storage | S3-compatible — MinIO in dev, AWS S3 in prod              |
+| Serving        | gunicorn (API) + nginx (SPA + reverse proxy)              |
+| Orchestration  | Docker Compose                                            |
 
 ### Domain model
 
@@ -70,6 +82,25 @@ Two URL namespaces:
 
 - **`/api/*`** — SPA endpoints; can evolve freely
 - **Legacy (un-prefixed)** — frozen contract for CI clients: `POST /runs`, `POST /tests`, `GET /tests/:id/status`, `PATCH /tests/:id`, `GET /baselines/:key.png`, `GET /baselines/:key.json`
+
+### Docker images
+
+| Image                                                                     | Tags                          |
+| ------------------------------------------------------------------------- | ----------------------------- |
+| [`wvankuipers/inspectre`](https://hub.docker.com/r/wvankuipers/inspectre) | `api-latest`, `api-<version>` |
+| [`wvankuipers/inspectre`](https://hub.docker.com/r/wvankuipers/inspectre) | `spa-latest`, `spa-<version>` |
+
+### Documentation
+
+- [Overview](docs/overview.md)
+- [API reference](docs/api.md)
+- [Data model](docs/data-model.md)
+- [Image diffing](docs/image-diffing.md)
+- [Storage & thumbnails](docs/storage-and-thumbnails.md)
+- [Deployment & config](docs/deployment-and-config.md)
+- [UI](docs/ui.md)
+- [Tests & fixtures](docs/tests-and-fixtures.md)
+- [Architecture decisions](docs/decisions.md)
 
 ---
 
@@ -223,21 +254,21 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) runs lint and tests on 
 
 ### Required repository secrets
 
-| Secret               | How to obtain                                                  |
-| -------------------- | -------------------------------------------------------------- |
-| `DOCKERHUB_USERNAME` | Your Docker Hub username                                       |
-| `DOCKERHUB_TOKEN`    | Docker Hub → Account Settings → Security → New Access Token   |
+| Secret               | How to obtain                                               |
+| -------------------- | ----------------------------------------------------------- |
+| `DOCKERHUB_USERNAME` | Your Docker Hub username                                    |
+| `DOCKERHUB_TOKEN`    | Docker Hub → Account Settings → Security → New Access Token |
 
 Set these under **Settings → Secrets and variables → Actions** in the GitHub repository.
 
 ### Published images
 
-| Image                                | Tag                    |
-| ------------------------------------ | ---------------------- |
-| `<DOCKERHUB_USERNAME>/inspectre`     | `api-latest`           |
-| `<DOCKERHUB_USERNAME>/inspectre`     | `api-$VERSION`         |
-| `<DOCKERHUB_USERNAME>/inspectre`     | `spa-latest`           |
-| `<DOCKERHUB_USERNAME>/inspectre`     | `spa-$VERSION`         |
+| Image                            | Tag            |
+| -------------------------------- | -------------- |
+| `<DOCKERHUB_USERNAME>/inspectre` | `api-latest`   |
+| `<DOCKERHUB_USERNAME>/inspectre` | `api-$VERSION` |
+| `<DOCKERHUB_USERNAME>/inspectre` | `spa-latest`   |
+| `<DOCKERHUB_USERNAME>/inspectre` | `spa-$VERSION` |
 
 ---
 
