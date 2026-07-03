@@ -1,4 +1,6 @@
+from django import forms
 from django.contrib import admin
+from django.db import models as db_models
 
 from core.models import Baseline, Project, Run, Suite, Test
 
@@ -56,8 +58,18 @@ class RunAdmin(admin.ModelAdmin):
         return obj.tests.count()
 
 
+class _URLFieldHttps(forms.URLField):
+    # Opt into Django 6 URLField behaviour: assume https when no scheme given.
+    # Silences RemovedInDjango60Warning without relying on undocumented
+    # formfield_overrides kwarg-forwarding behaviour.
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("assume_scheme", "https")
+        super().__init__(*args, **kwargs)
+
+
 @admin.register(Test)
 class TestAdmin(admin.ModelAdmin):
+    formfield_overrides = {db_models.URLField: {"form_class": _URLFieldHttps}}
     list_display = ("name", "browser", "size", "passed", "diff_pct", "run_label", "created_at")
     list_filter = ("passed", "browser", "run__suite__project")
     search_fields = ("name", "key", "run__suite__name", "run__suite__project__name")
