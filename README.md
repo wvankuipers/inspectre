@@ -32,10 +32,10 @@ The first submission for any (project, suite, name, browser, size) combination h
 
 | Layer          | Technology                                                     |
 | -------------- | -------------------------------------------------------------- |
-| API server     | Python 3.12, Django 5.1, Django REST Framework 3.17            |
-| Task queue     | Celery 5.4 + Valkey 8 (Redis-protocol broker)                  |
-| Web UI         | Angular 22, standalone/zoneless components, Angular Material 3 |
-| Database       | PostgreSQL 16                                                  |
+| API server     | Python, Django, Django REST Framework                          |
+| Task queue     | Celery + Valkey (Redis-protocol broker)                        |
+| Web UI         | Angular, standalone/zoneless components, Angular Material      |
+| Database       | PostgreSQL                                                     |
 | Object storage | S3-compatible — MinIO in dev, AWS S3 in prod                   |
 | Serving        | gunicorn (API) + nginx (SPA + reverse proxy)                   |
 | Orchestration  | Docker Compose                                                 |

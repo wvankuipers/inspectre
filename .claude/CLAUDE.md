@@ -22,7 +22,7 @@ Visual regression testing SaaS. CI pipelines upload screenshots directly via the
 
 ## Backend
 
-**Language / Framework:** Python 3.12, Django 5.1, Django REST Framework 3.17
+**Language / Framework:** Python 3.13+, Django 5.1, Django REST Framework
 
 **Single app:** `core` — all models, views, serializers, and services live here.
 
@@ -85,16 +85,16 @@ Run with: `cd backend && pytest` (or `make test-fast` / `make test-slow`)
 
 - **Fast** (~1 s): serializers, SPA API, admin, models — no real ImageMagick
 - **Slow** (~5 s): legacy API, screenshot comparison, seed — real `convert`/`compare` shell-outs
-- Framework: pytest 8.3 + pytest-django + factory-boy; parallel via `pytest -n auto`
+- Framework: pytest + pytest-django + factory-boy; parallel via `pytest -n auto`
 - Lint: `ruff check` (rules E, F, I, B, UP, DJ; line length 120)
 
 ---
 
 ## Frontend
 
-**Framework:** Angular 22, standalone/zoneless components, Angular Material 3
-**Testing:** Vitest 4.0.8 + jsdom
-**Lint:** Angular ESLint 22 + Prettier
+**Framework:** Angular, standalone/zoneless components, Angular Material
+**Testing:** Vitest + jsdom
+**Lint:** Angular ESLint + Prettier
 
 Run tests: `cd frontend && npm test`
 
@@ -134,7 +134,7 @@ Run tests: `cd frontend && npm test`
 | ------------ | ------------------------------------------------------ | -------------------- |
 | `api`        | Django / gunicorn                                      | 8000                 |
 | `spa`        | nginx serving Angular bundle + reverse-proxy           | 4200                 |
-| `db`         | PostgreSQL 16                                          | —                    |
+| `db`         | PostgreSQL                                             | —                    |
 | `minio`      | S3-compatible image storage (dev)                      | 9000, 9001 (console) |
 | `minio-init` | Creates `inspectre-screenshots` bucket on first boot   | —                    |
 | `api-dev`    | api + dev tools, bind-mounted source (`--profile dev`) | —                    |
