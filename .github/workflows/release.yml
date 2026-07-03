@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build-api-amd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: backend
+          target: runtime
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-amd64
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-${{ github.ref_name }}-amd64
+          platforms: linux/amd64
+          cache-from: type=gha,scope=api-amd64
+          cache-to: type=gha,mode=max,scope=api-amd64
+
+  build-api-arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: backend
+          target: runtime
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-arm64
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-${{ github.ref_name }}-arm64
+          platforms: linux/arm64
+          cache-from: type=gha,scope=api-arm64
+          cache-to: type=gha,mode=max,scope=api-arm64
+
+  build-spa-amd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-amd64
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-${{ github.ref_name }}-amd64
+          platforms: linux/amd64
+          cache-from: type=gha,scope=spa-amd64
+          cache-to: type=gha,mode=max,scope=spa-amd64
+
+  build-spa-arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-arm64
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-${{ github.ref_name }}-arm64
+          platforms: linux/arm64
+          cache-from: type=gha,scope=spa-arm64
+          cache-to: type=gha,mode=max,scope=spa-arm64
+
+  manifest-api:
+    runs-on: ubuntu-latest
+    needs: [build-api-amd, build-api-arm]
+    env:
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Create and push multi-arch manifests
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-latest-arm64
+          docker buildx imagetools create \
+            --tag ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-"$VERSION" \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-"$VERSION"-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:api-"$VERSION"-arm64
+
+  manifest-spa:
+    runs-on: ubuntu-latest
+    needs: [build-spa-amd, build-spa-arm]
+    env:
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Create and push multi-arch manifests
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-latest-arm64
+          docker buildx imagetools create \
+            --tag ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-"$VERSION" \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-"$VERSION"-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/inspectre:spa-"$VERSION"-arm64
