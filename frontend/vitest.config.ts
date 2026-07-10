@@ -5,6 +5,8 @@ export default defineConfig({
     coverage: {
       provider: 'istanbul',
       reporter: ['text', 'lcov', 'cobertura'],
+      reportOnFailure: true,
+      reportsDirectory: 'coverage/inspectre-frontend',
     },
   },
 });

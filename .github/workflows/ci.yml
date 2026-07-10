@@ -82,6 +82,7 @@ jobs:
         run: pytest -n auto --cov=core --cov-report=xml
         working-directory: backend
       - name: Upload backend coverage
+        if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
           files: backend/coverage.xml
@@ -124,6 +125,7 @@ jobs:
         run: npm test -- --watch=false --coverage
         working-directory: frontend
       - name: Upload frontend coverage
+        if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
           files: frontend/coverage/inspectre-frontend/cobertura-coverage.xml
