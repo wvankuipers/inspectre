@@ -53,3 +53,19 @@ filterwarnings = [
     # Our test classes are named TestRunsCreate / TestProjectsList / etc.
     "ignore:cannot collect test class.*has a __init__ constructor:pytest.PytestCollectionWarning",
 ]
+
+[tool.coverage.run]
+source = ["core"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "inspectre/settings.py",
+    "inspectre/wsgi.py",
+    "inspectre/asgi.py",
+    "inspectre/celery.py",
+    "manage.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

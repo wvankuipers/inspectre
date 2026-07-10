@@ -79,8 +79,15 @@ jobs:
         run: pip install -r requirements.txt -r requirements-dev.txt
         working-directory: backend
       - name: Run tests
-        run: pytest -n auto
+        run: pytest -n auto --cov=core --cov-report=xml
         working-directory: backend
+      - name: Upload backend coverage
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: backend/coverage.xml
+          flags: backend
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   lint-frontend:
     runs-on: ubuntu-latest
@@ -115,5 +122,12 @@ jobs:
         run: npm ci
         working-directory: frontend
       - name: Run tests
-        run: npm test -- --watch=false
+        run: npm test -- --watch=false --coverage
         working-directory: frontend
+      - name: Upload frontend coverage
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: frontend/coverage/inspectre-frontend/cobertura-coverage.xml
+          flags: frontend
+          token: ${{ secrets.CODECOV_TOKEN }}

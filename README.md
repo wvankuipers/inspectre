@@ -6,7 +6,8 @@
 
 <p align="center">
   <a href="https://github.com/wvankuipers/inspectre/actions/workflows/ci.yml"><img src="https://github.com/wvankuipers/inspectre/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwvankuipers%2Finspectre%2Fmain%2FVERSION&search=%5E(.%2B)%24&replace=%241&label=version&color=38bdf8" alt="Version">
+  <a href="https://codecov.io/gh/wvankuipers/inspectre"><img src="https://codecov.io/gh/wvankuipers/inspectre/graph/badge.svg" alt="Coverage"></a>
+  <img src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwvankuipers%2Finspectre%2Fmain%2FVERSION&search=(.%2B)&replace=%241&label=version&color=38bdf8" alt="Version">
   <a href="https://hub.docker.com/r/wvankuipers/inspectre"><img src="https://img.shields.io/docker/image-size/wvankuipers/inspectre/api-latest?label=api%20image" alt="API image size"></a>
   <a href="https://hub.docker.com/r/wvankuipers/inspectre"><img src="https://img.shields.io/docker/image-size/wvankuipers/inspectre/spa-latest?label=spa%20image" alt="SPA image size"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>

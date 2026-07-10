@@ -20,6 +20,7 @@ backend/.ruff_cache/
 backend/staticfiles/
 backend/.coverage
 backend/htmlcov/
+backend/coverage.xml
 
 # ---- Frontend (Angular) ----------------------------------------------------
 
