@@ -9,14 +9,15 @@ IAM authentication to ElastiCache for Valkey/Redis.
 import boto3
 from botocore.model import ServiceId
 from botocore.signers import RequestSigner
+from django.conf import settings
 from redis.credentials import CredentialProvider
 
 
 class IAMElastiCacheCredentialProvider(CredentialProvider):
-    def __init__(self, user_id: str, replication_group_id: str, region: str):
-        self._user_id = user_id
-        self._replication_group_id = replication_group_id
-        self._region = region
+    def __init__(self):
+        self._user_id = settings.REDIS_IAM_USERNAME
+        self._replication_group_id = settings.REDIS_HOST
+        self._region = settings.AWS_REGION
 
     def get_credentials(self) -> tuple[str, str]:
         session = boto3.session.Session()

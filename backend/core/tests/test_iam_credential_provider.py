@@ -4,12 +4,11 @@ from core.cache_backends.iam_credential_provider import IAMElastiCacheCredential
 
 
 class TestGetCredentials:
-    def test_returns_username_and_generated_token(self):
-        provider = IAMElastiCacheCredentialProvider(
-            user_id="iam-cache-user",
-            replication_group_id="inspectre-valkey",
-            region="eu-west-1",
-        )
+    def test_returns_username_and_generated_token(self, settings):
+        settings.REDIS_IAM_USERNAME = "iam-cache-user"
+        settings.REDIS_HOST = "inspectre-valkey"
+        settings.AWS_REGION = "eu-west-1"
+        provider = IAMElastiCacheCredentialProvider()
 
         mock_session = MagicMock()
         mock_signer = MagicMock()
