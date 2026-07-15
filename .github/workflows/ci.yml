@@ -83,7 +83,7 @@ jobs:
         working-directory: backend
       - name: Upload backend coverage
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: backend/coverage.xml
           flags: backend
@@ -126,7 +126,7 @@ jobs:
         working-directory: frontend
       - name: Upload frontend coverage
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: frontend/coverage/inspectre-frontend/cobertura-coverage.xml
           flags: frontend
