@@ -58,7 +58,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "inspectre.wsgi.application"
 
-DATABASES = {"default": env.db("DATABASE_URL", default="postgres://inspectre:inspectre@db:5432/inspectre")}
+if AWS_IAM_AUTH_ENABLED:
+    DATABASES = {
+        "default": {
+            "ENGINE": "core.db_backends.iam_postgres",
+            "NAME": env("DATABASE_NAME"),
+            "USER": env("DATABASE_USER"),
+            "HOST": env("DATABASE_HOST"),
+            "PORT": env("DATABASE_PORT", default="5432"),
+        }
+    }
+else:
+    DATABASES = {"default": env.db("DATABASE_URL", default="postgres://inspectre:inspectre@db:5432/inspectre")}
 
 STORAGES = {
     "default": {"BACKEND": "storages.backends.s3.S3Storage"},
