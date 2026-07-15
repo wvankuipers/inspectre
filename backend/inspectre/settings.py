@@ -127,7 +127,21 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 IMAGEMAGICK_TIMEOUT_SECONDS = env.int("IMAGEMAGICK_TIMEOUT_SECONDS", default=60)
 
-CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+if AWS_IAM_AUTH_ENABLED:
+    from core.cache_backends.iam_credential_provider import IAMElastiCacheCredentialProvider
+
+    _redis_host = env("REDIS_HOST")
+    _redis_port = env.int("REDIS_PORT", default=6379)
+    CELERY_BROKER_URL = f"rediss://{_redis_host}:{_redis_port}/0"
+    CELERY_BROKER_TRANSPORT_OPTIONS = {
+        "credential_provider": IAMElastiCacheCredentialProvider(
+            user_id=env("REDIS_IAM_USERNAME"),
+            replication_group_id=_redis_host,
+            region=AWS_REGION,
+        ),
+    }
+else:
+    CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = None
 CELERY_TASK_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
