@@ -10,6 +10,9 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-only-not-for-production")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
+AWS_IAM_AUTH_ENABLED = env.bool("AWS_IAM_AUTH_ENABLED", default=False)
+AWS_REGION = env("AWS_REGION", default="us-east-1")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -64,8 +67,9 @@ STORAGES = {
 AWS_STORAGE_BUCKET_NAME = env("S3_BUCKET_NAME", default="inspectre-screenshots")
 AWS_S3_REGION_NAME = env("S3_REGION", default="us-east-1")
 AWS_S3_ENDPOINT_URL = env("S3_ENDPOINT_URL", default=None)
-AWS_ACCESS_KEY_ID = env("S3_ACCESS_KEY_ID", default="")
-AWS_SECRET_ACCESS_KEY = env("S3_SECRET_ACCESS_KEY", default="")
+if not AWS_IAM_AUTH_ENABLED:
+    AWS_ACCESS_KEY_ID = env("S3_ACCESS_KEY_ID", default="")
+    AWS_SECRET_ACCESS_KEY = env("S3_SECRET_ACCESS_KEY", default="")
 AWS_DEFAULT_ACL = None
 AWS_QUERYSTRING_AUTH = False
 # Browser-reachable URL prefix. Set S3_PUBLIC_BASE_URL to the full URL prefix in dev
