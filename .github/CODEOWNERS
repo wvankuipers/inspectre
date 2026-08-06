@@ -1,0 +1,9 @@
+# Dependabot PRs modify these files; owning them here requests review
+# automatically since dependabot.yml's `reviewers` field is deprecated.
+/.github/dependabot.yml               @wvankuipers
+/frontend/package-lock.json           @wvankuipers
+/frontend/Dockerfile                  @wvankuipers
+/backend/Dockerfile                   @wvankuipers
+/backend/requirements.txt             @wvankuipers
+/deploy/docker-compose.yml            @wvankuipers
+/.github/workflows/                   @wvankuipers
