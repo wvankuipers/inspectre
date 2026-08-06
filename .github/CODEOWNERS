@@ -7,3 +7,4 @@
 /backend/requirements.txt             @wvankuipers
 /deploy/docker-compose.yml            @wvankuipers
 /.github/workflows/                   @wvankuipers
+/.github/CODEOWNERS                   @wvankuipers
