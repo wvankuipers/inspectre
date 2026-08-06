@@ -6,17 +6,17 @@
 #
 amqp==5.3.1
     # via kombu
-asgiref==3.11.1
+asgiref==3.12.1
     # via
     #   django
     #   django-cors-headers
 billiard==4.2.4
     # via celery
-boto3==1.43.62
+boto3==1.43.65
     # via
     #   django-storages
     #   inspectre (pyproject.toml)
-botocore==1.43.48
+botocore==1.43.65
     # via
     #   boto3
     #   s3transfer
@@ -34,7 +34,7 @@ click-plugins==1.1.1.2
     # via celery
 click-repl==0.3.0
     # via celery
-django==6.0.7
+django==6.1
     # via
     #   django-cors-headers
     #   django-storages
@@ -46,7 +46,7 @@ django-environ==0.14.0
     # via inspectre (pyproject.toml)
 django-storages[s3]==1.14.6
     # via inspectre (pyproject.toml)
-djangorestframework==3.17.1
+djangorestframework==3.17.2
     # via inspectre (pyproject.toml)
 gunicorn==26.0.0
     # via inspectre (pyproject.toml)
@@ -56,11 +56,11 @@ jmespath==1.1.0
     #   botocore
 kombu[redis]==5.6.2
     # via celery
-packaging==26.2
+packaging==26.3
     # via
     #   gunicorn
     #   kombu
-prompt-toolkit==3.0.52
+prompt-toolkit==3.0.53
     # via click-repl
 psycopg[binary]==3.3.4
     # via inspectre (pyproject.toml)
@@ -74,7 +74,7 @@ python-json-logger==4.1.0
     # via inspectre (pyproject.toml)
 redis==6.4.0
     # via kombu
-s3transfer==0.19.0
+s3transfer==0.19.2
     # via boto3
 six==1.17.0
     # via python-dateutil
