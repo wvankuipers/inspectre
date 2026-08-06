@@ -117,7 +117,7 @@ python-json-logger==4.1.0
     # via inspectre (pyproject.toml)
 redis==6.4.0
     # via kombu
-ruff==0.15.20
+ruff==0.15.21
     # via inspectre (pyproject.toml)
 s3transfer==0.19.0
     # via boto3
