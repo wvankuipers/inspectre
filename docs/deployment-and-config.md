@@ -9,6 +9,11 @@
 - **Object storage:** S3-compatible (MinIO in dev, AWS S3 in prod)
 - **Orchestration:** Docker Compose (single-host), see `deploy/docker-compose.yml`
 
+The `spa` image renders its nginx config from `frontend/nginx.spa.conf.template`
+at container start (via the base image's built-in envsubst-on-templates
+entrypoint), substituting `API_UPSTREAM` and `RESOLVER_ADDRESS`. Everything
+else in the config is static.
+
 ---
 
 ## Local Development
@@ -82,6 +87,8 @@ All runtime config is passed via `.env` (dev) or environment variables (prod).
 | `GUNICORN_WORKERS`           | no       | `3`                               | Number of gunicorn worker processes                                                           |
 | `REDIS_URL`                  | no       | `redis://localhost:6379/0`        | Valkey/Redis broker URL; use `redis://valkey:6379/0` in Docker Compose                       |
 | `CELERY_WORKER_CONCURRENCY`  | no       | `2`                               | Parallel ImageMagick pipelines per worker container                                           |
+| `API_UPSTREAM`               | no       | `http://api:8000`                 | SPA nginx's backend proxy target. Override when `spa` is the only publicly reachable container (e.g. Kubernetes) and `api` lives at a different address — see "Deploying with a separate public/private split" below |
+| `RESOLVER_ADDRESS`           | no       | `127.0.0.11`                      | DNS resolver nginx uses to re-resolve `API_UPSTREAM`'s hostname at request time. `127.0.0.11` is Docker Compose's embedded DNS; override to match the target platform's DNS server |
 
 ---
 
@@ -123,3 +130,26 @@ Migrations run inside the container against the live database. Always back up fi
 docker compose -f deploy/docker-compose.yml exec db pg_dump -U inspectre inspectre > backup.sql
 docker compose -f deploy/docker-compose.yml exec api python manage.py migrate
 ```
+
+### Deploying with a separate public/private split (e.g. Kubernetes)
+
+Some hosting platforms only expose one container/service publicly. If `api`
+is deployed separately (e.g. its own Kubernetes Deployment behind a
+`ClusterIP` Service) and only `spa` has a public Ingress, `spa`'s nginx must
+be told where to find `api` and how to resolve it — Docker Compose's
+embedded DNS (`127.0.0.11`) and service-name resolution (`api`) don't exist
+outside Compose.
+
+Set on the `spa` container/pod:
+
+| Variable           | Example (Kubernetes)                              |
+|--------------------|-----------------------------------------------------|
+| `API_UPSTREAM`     | `http://api.<namespace>.svc.cluster.local:8000`    |
+| `RESOLVER_ADDRESS` | `kube-dns.kube-system.svc.cluster.local` (or the cluster's actual DNS Service address — commonly `coredns` on some distributions) |
+
+docker-compose deployments need no changes: the Dockerfile's defaults
+(`http://api:8000` / `127.0.0.11`) already match Compose's service name and
+embedded DNS.
+
+Kubernetes manifests (Deployment/Service/Ingress) themselves are managed
+outside this repo.
