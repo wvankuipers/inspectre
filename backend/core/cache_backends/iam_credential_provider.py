@@ -4,13 +4,6 @@ ElastiCache IAM auth tokens are short-lived presigned request URLs (not real
 HTTP requests) generated via botocore's request signer for the
 "elasticache:connect" action, following the same mechanism AWS documents for
 IAM authentication to ElastiCache for Valkey/Redis.
-
-The presigned URL's host must be the *cache name* (the replication group id),
-not the endpoint the client connects to. The host is part of what SigV4 signs,
-so signing the endpoint produces a signature the server cannot reproduce, and
-it reports that as "invalid username-password pair or user is disabled" — the
-same error as a genuinely wrong password. Note this differs from RDS IAM auth,
-where generate_db_auth_token does take the connection hostname.
 """
 
 import boto3
