@@ -39,7 +39,7 @@ click-repl==0.3.0
     # via celery
 coverage==7.15.3
     # via pytest-cov
-django==6.1
+django==6.0.8
     # via
     #   django-cors-headers
     #   django-storages
