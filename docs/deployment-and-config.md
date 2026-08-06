@@ -9,6 +9,11 @@
 - **Object storage:** S3-compatible (MinIO in dev, AWS S3 in prod)
 - **Orchestration:** Docker Compose (single-host), see `deploy/docker-compose.yml`
 
+The `spa` image renders its nginx config from `frontend/nginx.spa.conf.template`
+at container start (via the base image's built-in envsubst-on-templates
+entrypoint), substituting `API_UPSTREAM` and `RESOLVER_ADDRESS`. Everything
+else in the config is static.
+
 ---
 
 ## Local Development
@@ -82,6 +87,8 @@ All runtime config is passed via `.env` (dev) or environment variables (prod).
 | `GUNICORN_WORKERS`           | no       | `3`                               | Number of gunicorn worker processes                                                           |
 | `REDIS_URL`                  | no       | `redis://localhost:6379/0`        | Valkey/Redis broker URL; use `redis://valkey:6379/0` in Docker Compose                       |
 | `CELERY_WORKER_CONCURRENCY`  | no       | `2`                               | Parallel ImageMagick pipelines per worker container                                           |
+| `API_UPSTREAM`               | no       | `http://api:8000`                 | SPA nginx's backend proxy target. Override when `spa` is the only publicly reachable container (e.g. Kubernetes) and `api` lives at a different address — see "Deploying with a separate public/private split" below. Read only by the `spa` container's nginx entrypoint — **not** part of the `.env`-driven config above; the `spa` service in `deploy/docker-compose.yml` has no `env_file`/`environment` block, so this must be set directly as a container env var on `spa` (e.g. via a docker-compose override's `environment:`) or as a pod env var in Kubernetes |
+| `RESOLVER_ADDRESS`           | no       | `127.0.0.11`                      | DNS resolver nginx uses to re-resolve `API_UPSTREAM`'s hostname at request time. `127.0.0.11` is Docker Compose's embedded DNS; override to match the target platform's DNS server. Same caveat as `API_UPSTREAM`: set as a container/pod env var on `spa` specifically, not via `.env` |
 
 ---
 
@@ -123,3 +130,49 @@ Migrations run inside the container against the live database. Always back up fi
 docker compose -f deploy/docker-compose.yml exec db pg_dump -U inspectre inspectre > backup.sql
 docker compose -f deploy/docker-compose.yml exec api python manage.py migrate
 ```
+
+### Deploying with a separate public/private split (e.g. Kubernetes)
+
+Some hosting platforms only expose one container/service publicly. If `api`
+is deployed separately (e.g. its own Kubernetes Deployment behind a
+`ClusterIP` Service) and only `spa` has a public Ingress, `spa`'s nginx must
+be told where to find `api` and how to resolve it — Docker Compose's
+embedded DNS (`127.0.0.11`) and service-name resolution (`api`) don't exist
+outside Compose.
+
+Set on the `spa` container/pod:
+
+| Variable           | Example (Kubernetes)                              |
+|--------------------|-----------------------------------------------------|
+| `API_UPSTREAM`     | `http://api.<namespace>.svc.cluster.local:8000`    |
+| `RESOLVER_ADDRESS` | `10.96.0.10` — a common default kube-dns/CoreDNS ClusterIP; use the actual ClusterIP of the cluster's `kube-dns`/`coredns` Service (`kubectl get svc -n kube-system kube-dns`), or the nameserver listed in `/etc/resolv.conf` inside a pod |
+
+nginx's `resolver` directive resolves its argument **at config-parse time**
+(container start / `nginx -s reload`) using the system resolver, and fails
+hard (`[emerg] host not found in resolver`) if that lookup doesn't succeed.
+Using a Service *hostname* like `kube-dns.kube-system.svc.cluster.local` here
+reintroduces the boot-time DNS dependency this feature is meant to avoid — if
+that name isn't resolvable yet when nginx starts, the container won't come
+up. Prefer a bare IP address as shown above; a hostname is a riskier
+secondary option and should only be used if the resolver's own address is
+guaranteed to be resolvable before nginx starts.
+
+docker-compose deployments need no changes: the Dockerfile's defaults
+(`http://api:8000` / `127.0.0.11`) already match Compose's service name and
+embedded DNS.
+
+**Read-only root filesystems:** nginx's envsubst-on-templates entrypoint
+renders `frontend/nginx.spa.conf.template` to
+`/etc/nginx/conf.d/default.conf` at container start. Under
+`readOnlyRootFilesystem: true` (a common Kubernetes Pod/container
+`securityContext` hardening setting), this write fails silently — the
+entrypoint still exits `0`, and nginx falls back to serving the base image's
+stock `default.conf`, giving no SPA and no API proxying with no visible
+error. If you set `readOnlyRootFilesystem: true` for the `spa` container,
+either set it to `false` for this container specifically, or mount a
+writable `emptyDir` volume at `/etc/nginx/conf.d` (and, if also templating
+other paths, consider the base image's other writable directories such as
+`/etc/nginx/templates`, `/var/cache/nginx`, and `/var/run`).
+
+Kubernetes manifests (Deployment/Service/Ingress) themselves are managed
+outside this repo.

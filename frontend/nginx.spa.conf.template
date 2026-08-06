@@ -5,40 +5,42 @@ server {
 
     client_max_body_size 25m;   # screenshots can be large
 
-    # Defer DNS resolution of `api` to request-time. Without this, nginx
-    # resolves the upstream once at boot, fails if the api container isn't up
-    # yet, and crashes the spa container.
-    resolver 127.0.0.11 valid=10s ipv6=off;
+    # Defer DNS resolution of the upstream to request-time. Without this,
+    # nginx resolves the upstream once at boot and crashes if it isn't up yet.
+    # ${RESOLVER_ADDRESS} / ${API_UPSTREAM} are substituted at container
+    # start by the base image's envsubst-on-templates entrypoint — see
+    # frontend/Dockerfile and docs/deployment-and-config.md.
+    resolver ${RESOLVER_ADDRESS} valid=10s ipv6=off;
 
     # ---- Backend routes — proxied to the api container -----------------
     # Order matters: specific patterns before the SPA fallback.
     location /admin/ {
-        set $upstream "http://api:8000";
+        set $upstream "${API_UPSTREAM}";
         proxy_pass $upstream;
         include /etc/nginx/proxy.conf;
     }
     location /api/ {
-        set $upstream "http://api:8000";
+        set $upstream "${API_UPSTREAM}";
         proxy_pass $upstream;
         include /etc/nginx/proxy.conf;
     }
     location = /runs {
-        set $upstream "http://api:8000";
+        set $upstream "${API_UPSTREAM}";
         proxy_pass $upstream;
         include /etc/nginx/proxy.conf;
     }
     location = /tests {
-        set $upstream "http://api:8000";
+        set $upstream "${API_UPSTREAM}";
         proxy_pass $upstream;
         include /etc/nginx/proxy.conf;
     }
     location ~ ^/tests/[0-9]+$ {
-        set $upstream "http://api:8000";
+        set $upstream "${API_UPSTREAM}";
         proxy_pass $upstream;
         include /etc/nginx/proxy.conf;
     }
     location ~ ^/baselines/[a-z0-9-]+\.(png|json)$ {
-        set $upstream "http://api:8000";
+        set $upstream "${API_UPSTREAM}";
         proxy_pass $upstream;
         include /etc/nginx/proxy.conf;
     }
@@ -46,7 +48,7 @@ server {
     # otherwise /static/admin/css/base.css gets served from the local SPA
     # webroot (and 404s) instead of being proxied to Django.
     location ^~ /static/ {
-        set $upstream "http://api:8000";
+        set $upstream "${API_UPSTREAM}";
         proxy_pass $upstream;
         include /etc/nginx/proxy.conf;
     }
