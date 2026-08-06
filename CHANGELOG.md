@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.2](https://github.com/wvankuipers/inspectre/compare/1.0.1...1.0.2) - 2026-08-06
+
+- chore(deps): bump actions/setup-node from 6 to 7 by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/23
+- chore(deps): bump codecov/codecov-action from 5 to 7 by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/24
+- chore(deps): bump tzdata from 2026.2 to 2026.3 in /backend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/26
+- chore(deps-dev): bump ruff from 0.15.20 to 0.15.21 in /backend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/27
+- chore(deps-dev): bump eslint from 10.6.0 to 10.7.0 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/30
+- chore(deps): bump botocore from 1.43.45 to 1.43.48 in /backend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/31
+- chore(deps-dev): bump faker from 40.28.1 to 40.31.0 in /backend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/32
+- chore(deps-dev): bump typescript-eslint from 8.63.0 to 8.64.0 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/33
+- chore(deps): bump actions/setup-python from 6 to 7 by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/35
+- chore(deps): bump fast-uri from 3.1.3 to 3.1.4 in /frontend in the npm_and_yarn group across 1 directory by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/36
+- Frontend dependencies by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/38
+- chore(deps): bump the npm_and_yarn group across 1 directory with 2 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/39
+- chore(deps): bump boto3 from 1.43.45 to 1.43.62 in /backend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/25
+- Worktree nginx configurable upstream by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/40
+- Sign the ElastiCache cache name, not the connection endpoint by @alicanalbayrak in https://github.com/wvankuipers/inspectre/pull/41
+
 ## [1.0.1](https://github.com/wvankuipers/inspectre/compare/1.0.0...1.0.1) - 2026-07-15
 
 - chore(deps): bump peter-evans/dockerhub-description from 4 to 5 by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/12
