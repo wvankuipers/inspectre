@@ -115,7 +115,7 @@ python-dateutil==2.9.0.post0
     #   freezegun
 python-json-logger==4.1.0
     # via inspectre (pyproject.toml)
-redis==6.4.0
+redis==8.1.0
     # via kombu
 ruff==0.16.1
     # via inspectre (pyproject.toml)
