@@ -16,7 +16,10 @@ from redis.credentials import CredentialProvider
 class IAMElastiCacheCredentialProvider(CredentialProvider):
     def __init__(self):
         self._user_id = settings.REDIS_IAM_USERNAME
-        self._replication_group_id = settings.REDIS_HOST
+        # The signed host is the cache name, not the connection endpoint in
+        # REDIS_HOST. AWS lowercases cache names at creation time, so a token
+        # signed with mixed case is rejected.
+        self._cache_name = settings.REDIS_IAM_CACHE_NAME.lower()
         self._region = settings.AWS_REGION
 
     def get_credentials(self) -> tuple[str, str]:
@@ -32,7 +35,7 @@ class IAMElastiCacheCredentialProvider(CredentialProvider):
         token = request_signer.generate_presigned_url(
             {
                 "method": "GET",
-                "url": f"https://{self._replication_group_id}/",
+                "url": f"https://{self._cache_name}/",
                 "body": {"Action": "connect", "User": self._user_id},
                 "headers": {},
                 "context": {},

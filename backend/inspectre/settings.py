@@ -131,6 +131,12 @@ if AWS_IAM_AUTH_ENABLED:
     _redis_host = env("REDIS_HOST")
     _redis_port = env.int("REDIS_PORT", default=6379)
     REDIS_IAM_USERNAME = env("REDIS_IAM_USERNAME")
+    # The IAM auth token signs the cache name, while REDIS_HOST is the endpoint the
+    # client connects to — for a replication group these differ (cache "my-cache" is
+    # reached at "master.my-cache.<hash>.<region>.cache.amazonaws.com"). Required
+    # rather than derived from the endpoint: a wrong guess fails as an opaque
+    # WRONGPASS at connect time, whereas a missing value fails loudly at startup.
+    REDIS_IAM_CACHE_NAME = env("REDIS_IAM_CACHE_NAME")
     REDIS_HOST = _redis_host
     CELERY_BROKER_URL = (
         f"rediss://{_redis_host}:{_redis_port}/0"

@@ -90,6 +90,11 @@ All runtime config is passed via `.env` (dev) or environment variables (prod).
 | `API_UPSTREAM`               | no       | `http://api:8000`                 | SPA nginx's backend proxy target. Override when `spa` is the only publicly reachable container (e.g. Kubernetes) and `api` lives at a different address — see "Deploying with a separate public/private split" below. Read only by the `spa` container's nginx entrypoint — **not** part of the `.env`-driven config above; the `spa` service in `deploy/docker-compose.yml` has no `env_file`/`environment` block, so this must be set directly as a container env var on `spa` (e.g. via a docker-compose override's `environment:`) or as a pod env var in Kubernetes |
 | `RESOLVER_ADDRESS`           | no       | `127.0.0.11`                      | DNS resolver nginx uses to re-resolve `API_UPSTREAM`'s hostname at request time. `127.0.0.11` is Docker Compose's embedded DNS; override to match the target platform's DNS server. Same caveat as `API_UPSTREAM`: set as a container/pod env var on `spa` specifically, not via `.env` |
 
+When `AWS_IAM_AUTH_ENABLED=1`, Postgres, S3 and the broker are reached through IAM
+rather than the credentials above, and a separate set of variables applies
+(`REDIS_HOST`, `REDIS_IAM_USERNAME`, `REDIS_IAM_CACHE_NAME`, `DATABASE_HOST`, …) —
+see [AWS IAM Authentication](aws-iam-auth.md).
+
 ---
 
 ## Production Deployment
