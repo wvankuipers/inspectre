@@ -4,6 +4,13 @@ ElastiCache IAM auth tokens are short-lived presigned request URLs (not real
 HTTP requests) generated via botocore's request signer for the
 "elasticache:connect" action, following the same mechanism AWS documents for
 IAM authentication to ElastiCache for Valkey/Redis.
+
+The presigned URL's host must be the *cache name* (the replication group id),
+not the endpoint the client connects to. The host is part of what SigV4 signs,
+so signing the endpoint produces a signature the server cannot reproduce, and
+it reports that as "invalid username-password pair or user is disabled" — the
+same error as a genuinely wrong password. Note this differs from RDS IAM auth,
+where generate_db_auth_token does take the connection hostname.
 """
 
 import boto3
@@ -16,7 +23,10 @@ from redis.credentials import CredentialProvider
 class IAMElastiCacheCredentialProvider(CredentialProvider):
     def __init__(self):
         self._user_id = settings.REDIS_IAM_USERNAME
-        self._replication_group_id = settings.REDIS_HOST
+        # The signed host is the cache name, not the connection endpoint in
+        # REDIS_HOST. AWS lowercases cache names at creation time, so a token
+        # signed with mixed case is rejected.
+        self._cache_name = settings.REDIS_IAM_CACHE_NAME.lower()
         self._region = settings.AWS_REGION
 
     def get_credentials(self) -> tuple[str, str]:
@@ -32,7 +42,7 @@ class IAMElastiCacheCredentialProvider(CredentialProvider):
         token = request_signer.generate_presigned_url(
             {
                 "method": "GET",
-                "url": f"https://{self._replication_group_id}/",
+                "url": f"https://{self._cache_name}/",
                 "body": {"Action": "connect", "User": self._user_id},
                 "headers": {},
                 "context": {},

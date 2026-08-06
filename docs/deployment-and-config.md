@@ -83,6 +83,11 @@ All runtime config is passed via `.env` (dev) or environment variables (prod).
 | `REDIS_URL`                  | no       | `redis://localhost:6379/0`        | Valkey/Redis broker URL; use `redis://valkey:6379/0` in Docker Compose                       |
 | `CELERY_WORKER_CONCURRENCY`  | no       | `2`                               | Parallel ImageMagick pipelines per worker container                                           |
 
+When `AWS_IAM_AUTH_ENABLED=1`, Postgres, S3 and the broker are reached through IAM
+rather than the credentials above, and a separate set of variables applies
+(`REDIS_HOST`, `REDIS_IAM_USERNAME`, `REDIS_IAM_CACHE_NAME`, `DATABASE_HOST`, …) —
+see [AWS IAM Authentication](aws-iam-auth.md).
+
 ---
 
 ## Production Deployment
