@@ -140,7 +140,7 @@ Response — same JSON shape as `POST /tests`. When `status == "done"` all field
 }
 ```
 
-The bucket is private, so these are presigned URLs with a 24-hour expiry — the query string (and therefore the whole URL) differs between requests for the same object, so clients should treat it as a transient signed link, not a stable identifier to cache or compare.
+The bucket is private, so these are presigned URLs with a 24-hour expiry. Clients should treat each URL as a transient signed link, not a stable identifier to cache or compare — it will stop working once it expires.
 
 `is_new_baseline` — `true` if this submission established a Baseline that did not previously exist for the key (self-baselined for the first time). Surfaced as a chip in the SPA ([ui.md](ui.md)).
 
