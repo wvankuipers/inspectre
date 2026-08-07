@@ -65,13 +65,13 @@ class LegacyTestSerializer(serializers.ModelSerializer):
         return data
 
     def get_screenshot_uid(self, obj):
-        return obj.screenshot.url if obj.screenshot else None
+        return _file_url(obj.screenshot)
 
     def get_screenshot_baseline_uid(self, obj):
-        return obj.screenshot_baseline.url if obj.screenshot_baseline else None
+        return _file_url(obj.screenshot_baseline)
 
     def get_screenshot_diff_uid(self, obj):
-        return obj.screenshot_diff.url if obj.screenshot_diff else None
+        return _file_url(obj.screenshot_diff)
 
     def get_url(self, obj):
         suite = obj.run.suite
@@ -99,7 +99,7 @@ class LegacyBaselineSerializer(serializers.ModelSerializer):
         ]
 
     def get_screenshot_url(self, obj):
-        return obj.screenshot.url if obj.screenshot else None
+        return _file_url(obj.screenshot)
 
 
 # ---- SPA serializers — internal, free to evolve ----------------------------
