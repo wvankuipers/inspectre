@@ -114,9 +114,11 @@ Note: `instance.id` is `None` until the row is saved, so the upload-path callabl
 
 ### URL strategy
 
-**Decided: public bucket** ([decisions.md](decisions.md) #5). URLs are stable, CDN-friendly, and don't need signing logic. Matches today's "no auth, public URLs" model. Configure `AWS_QUERYSTRING_AUTH = False` and `AWS_DEFAULT_ACL = None` (rely on the bucket policy for public read).
+**Superseded: the bucket is now private, and URLs are presigned.** The original "public bucket" decision ([decisions.md](decisions.md) #5) assumed the prod bucket allowed unsigned `GetObject`; in practice the prod bucket is private, so unsigned URLs 403. Every screenshot/baseline/diff/thumbnail URL returned by the API is now produced by `core.services.s3.generate_presigned_url`, which signs a time-limited (24h) `GetObject` URL with SigV4 (`Config(signature_version="s3v4")` — botocore's region-dependent default can otherwise fall back to legacy SigV2, which is rejected by KMS-encrypted buckets and doesn't match this design). Presigning uses a dedicated client (`get_presign_s3_client()`) pointed at a browser-reachable endpoint, distinct from the client used for direct upload/download/delete — see [deployment-and-config.md](deployment-and-config.md) for `S3_PUBLIC_BASE_URL`'s role in this.
 
-The bucket policy must grant `s3:GetObject` to `*` for the `screenshots/*` and `baselines/*` prefixes. Writes (`PutObject`, `DeleteObject`) require the IAM credentials in `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`.
+`AWS_QUERYSTRING_AUTH` and `AWS_S3_CUSTOM_DOMAIN` are still set in `settings.py` but are now vestigial/unused for these URLs — they only affected django-storages' own `.url()` method, which presigned URLs bypass entirely. They're left in place rather than removed since that's out of scope for this change.
+
+The bucket must deny anonymous/public `s3:GetObject`; access is only via presigned URLs or the IAM/static credentials configured in `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (used for `PutObject`/`DeleteObject` and for generating presigned URLs).
 
 ### Thumbnails in the rebuild
 

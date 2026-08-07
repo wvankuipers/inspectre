@@ -128,6 +128,19 @@ def baseline_factory(suite_factory):
 
 
 @pytest.fixture(autouse=True)
+def _clear_presign_client_cache():
+    """get_presign_s3_client is lru_cache'd for perf, but the `settings` fixture
+    mutates settings per-test and reverts after — a cached client from one test
+    could otherwise leak stale endpoint/region config into the next.
+    """
+    from core.services.s3 import get_presign_s3_client
+
+    get_presign_s3_client.cache_clear()
+    yield
+    get_presign_s3_client.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _filesystem_storage(settings, tmp_path):
     """Swap S3 for FileSystemStorage so unit tests stay hermetic. Integration
     tests that need real S3 semantics use moto explicitly.

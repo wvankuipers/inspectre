@@ -105,9 +105,16 @@ if _s3_public_base_url:
     _parsed = urlparse(_s3_public_base_url)
     AWS_S3_URL_PROTOCOL = _parsed.scheme + ":"
     AWS_S3_CUSTOM_DOMAIN = _parsed.netloc + (_parsed.path.rstrip("/") if _parsed.path != "/" else "")
+    # Presigned URLs must be signed against a host the browser can reach.
+    # This is S3_PUBLIC_BASE_URL's origin without the bucket path suffix,
+    # since boto3's endpoint_url must not include the bucket itself.
+    AWS_S3_PRESIGN_ENDPOINT_URL = f"{_parsed.scheme}://{_parsed.netloc}"
 else:
     AWS_S3_URL_PROTOCOL = "https:"
     AWS_S3_CUSTOM_DOMAIN = None
+    # No public base URL override (real S3 in prod): the internal endpoint
+    # is already browser-reachable, so presigning uses the same endpoint.
+    AWS_S3_PRESIGN_ENDPOINT_URL = AWS_S3_ENDPOINT_URL
 
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 
