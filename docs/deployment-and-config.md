@@ -78,7 +78,7 @@ All runtime config is passed via `.env` (dev) or environment variables (prod).
 | `S3_ENDPOINT_URL`            | no       | —                                 | Set to MinIO URL in dev; omit for AWS S3                                                      |
 | `S3_ACCESS_KEY_ID`           | yes      | —                                 | AWS access key or MinIO root user                                                             |
 | `S3_SECRET_ACCESS_KEY`       | yes      | —                                 | AWS secret key or MinIO root password                                                         |
-| `S3_PUBLIC_BASE_URL`         | no       | —                                 | Full URL prefix for browser-reachable file links (e.g. `http://localhost:9000/inspectre-screenshots` in dev, `https://cdn.example.com` in prod) |
+| `S3_PUBLIC_BASE_URL`         | no       | —                                 | Browser-reachable origin used to derive the presigning endpoint (e.g. `http://localhost:9000/inspectre-screenshots` in dev, so presigned URLs are signed against `http://localhost:9000` instead of the container-internal MinIO endpoint; omit in prod where the real S3 endpoint is already browser-reachable). SigV4 signs the request's `Host` header (`X-Amz-SignedHeaders=host`), so setting this to a CDN origin does not by itself make presigned URLs work through that CDN — the CDN must forward requests to S3 preserving the exact viewer host and query string, or you need CloudFront signed URLs/cookies instead of S3 presigning |
 | `ADMIN_USERNAME`             | no       | `admin`                           | Django admin username                                                                         |
 | `ADMIN_PASSWORD`             | no       | —                                 | Django admin password; if unset, `ensure_admin_user` skips bootstrap (no admin account created) |
 | `IMAGE_DIFF_THRESHOLD`       | no       | `0.1`                             | % diff to count as failure                                                                    |
@@ -108,7 +108,7 @@ see [AWS IAM Authentication](aws-iam-auth.md).
 - [ ] `CSRF_TRUSTED_ORIGINS` — optional; leave empty for same-host HTTPS-terminating proxies (the backend already trusts the SPA nginx container's `X-Forwarded-Proto` header via `SECURE_PROXY_SSL_HEADER`). Only set it if the browser's origin differs from what Django sees, e.g. a split-host deployment
 - [ ] Database backed up before `make migrate`
 - [ ] S3 bucket exists and IAM credentials have `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`
-- [ ] `S3_PUBLIC_BASE_URL` set if serving files through a CDN
+- [ ] `S3_PUBLIC_BASE_URL` set only if the real S3 endpoint isn't already browser-reachable (typically unset in prod)
 
 ### First deploy
 

@@ -175,6 +175,37 @@ def test_legacy_test_serializer_uid_fields_are_none_when_no_file(test_factory):
     assert body["screenshot_diff_uid"] is None
 
 
+def test_legacy_test_serializer_uid_fields_are_presigned(test_factory, monkeypatch):
+    """Legacy uid fields delegate to the same presigning helper as the SPA fields."""
+    from django.core.files.base import ContentFile
+
+    monkeypatch.setattr(
+        "core.serializers.generate_presigned_url",
+        lambda key, expires_in=86400: f"https://signed.example/{key}?exp={expires_in}",
+    )
+
+    test = test_factory()
+    test.screenshot.save("original.png", ContentFile(b"fake-image-bytes"))
+
+    body = LegacyTestSerializer(test).data
+    assert body["screenshot_uid"] == f"https://signed.example/{test.screenshot.name}?exp=86400"
+
+
+def test_legacy_baseline_serializer_screenshot_url_is_presigned(baseline_factory, monkeypatch):
+    from django.core.files.base import ContentFile
+
+    monkeypatch.setattr(
+        "core.serializers.generate_presigned_url",
+        lambda key, expires_in=86400: f"https://signed.example/{key}?exp={expires_in}",
+    )
+
+    baseline = baseline_factory()
+    baseline.screenshot.save("screenshot.png", ContentFile(b"fake-image-bytes"))
+
+    body = LegacyBaselineSerializer(baseline).data
+    assert body["screenshot_url"] == f"https://signed.example/{baseline.screenshot.name}?exp=86400"
+
+
 @pytest.mark.parametrize(
     "url_field",
     [
@@ -190,6 +221,22 @@ def test_spa_test_row_url_fields_are_none_when_no_file(test_factory, url_field):
     """Same invariant on the SPA side: missing FileFields render as null, not as a broken URL."""
     body = TestRowSerializer(test_factory()).data
     assert body[url_field] is None
+
+
+def test_spa_test_row_screenshot_url_is_presigned(test_factory, monkeypatch):
+    """_file_url delegates to generate_presigned_url, not the raw storage .url."""
+    from django.core.files.base import ContentFile
+
+    monkeypatch.setattr(
+        "core.serializers.generate_presigned_url",
+        lambda key, expires_in=86400: f"https://signed.example/{key}?exp={expires_in}",
+    )
+
+    test = test_factory()
+    test.screenshot.save("original.png", ContentFile(b"fake-image-bytes"))
+
+    body = TestRowSerializer(test).data
+    assert body["screenshot_url"] == f"https://signed.example/{test.screenshot.name}?exp=86400"
 
 
 # ---- SPA-side latest_runs limit ------------------------------------------
