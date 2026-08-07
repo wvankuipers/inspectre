@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from core.models import Baseline, Project, Run, Suite, Test
+from core.services.s3 import generate_presigned_url
 
 # ---- Legacy serializers — frozen contract for legacy clients -----------
 
@@ -105,7 +106,7 @@ class LegacyBaselineSerializer(serializers.ModelSerializer):
 
 
 def _file_url(field):
-    return field.url if field else None
+    return generate_presigned_url(field.name) if field else None
 
 
 class TestRowSerializer(serializers.ModelSerializer):

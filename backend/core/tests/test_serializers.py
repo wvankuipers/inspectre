@@ -192,6 +192,22 @@ def test_spa_test_row_url_fields_are_none_when_no_file(test_factory, url_field):
     assert body[url_field] is None
 
 
+def test_spa_test_row_screenshot_url_is_presigned(test_factory, monkeypatch):
+    """_file_url delegates to generate_presigned_url, not the raw storage .url."""
+    from django.core.files.base import ContentFile
+
+    monkeypatch.setattr(
+        "core.serializers.generate_presigned_url",
+        lambda key, expires_in=86400: f"https://signed.example/{key}?exp={expires_in}",
+    )
+
+    test = test_factory()
+    test.screenshot.save("original.png", ContentFile(b"fake-image-bytes"))
+
+    body = TestRowSerializer(test).data
+    assert body["screenshot_url"] == f"https://signed.example/{test.screenshot.name}?exp=86400"
+
+
 # ---- SPA-side latest_runs limit ------------------------------------------
 
 
