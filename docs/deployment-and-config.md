@@ -70,6 +70,7 @@ All runtime config is passed via `.env` (dev) or environment variables (prod).
 | `DJANGO_SECRET_KEY`          | yes      | `dev-only-...`                    | Generate with `python -c 'import secrets; print(secrets.token_urlsafe(50))'`                  |
 | `DEBUG`                      | no       | `0`                               | Set `1` in dev only                                                                           |
 | `ALLOWED_HOSTS`              | yes      | `localhost,127.0.0.1`             | Comma-separated list of valid hostnames                                                       |
+| `CSRF_TRUSTED_ORIGINS`       | no       | `` (empty)                        | Comma-separated list of scheme+host origins allowed to submit CSRF-protected POSTs, e.g. `https://inspectre.example.com`. Only needed when the browser's origin differs from the origin Django sees (split-host deployments, or a proxy that rewrites `Host`) — see note below |
 | `CORS_ALLOWED_ORIGINS`       | no       | `` (empty)                        | Set in split-host deployments only                                                            |
 | `DATABASE_URL`               | yes      | postgres://inspectre:inspectre@db | Full postgres DSN                                                                             |
 | `S3_BUCKET_NAME`             | yes      | `inspectre-screenshots`           | Bucket must exist before first run                                                            |
@@ -104,6 +105,7 @@ see [AWS IAM Authentication](aws-iam-auth.md).
 - [ ] `DEBUG=0`
 - [ ] `DJANGO_SECRET_KEY` set to a unique random value
 - [ ] `ALLOWED_HOSTS` includes the production hostname
+- [ ] `CSRF_TRUSTED_ORIGINS` — optional; leave empty for same-host HTTPS-terminating proxies (the backend already trusts the SPA nginx container's `X-Forwarded-Proto` header via `SECURE_PROXY_SSL_HEADER`). Only set it if the browser's origin differs from what Django sees, e.g. a split-host deployment
 - [ ] Database backed up before `make migrate`
 - [ ] S3 bucket exists and IAM credentials have `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`
 - [ ] `S3_PUBLIC_BASE_URL` set if serving files through a CDN

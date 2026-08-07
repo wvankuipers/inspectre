@@ -17,7 +17,8 @@ PYTEST_FAST_PACKS := \
     core/tests/test_serializers.py \
     core/tests/test_spa_api.py \
     core/tests/test_admin.py \
-    core/tests/test_models.py
+    core/tests/test_models.py \
+    core/tests/test_settings.py
 # Slow tests: real `convert`/`compare` shell-outs.
 PYTEST_SLOW_PACKS := \
     core/tests/test_legacy_api.py \
