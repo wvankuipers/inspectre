@@ -116,7 +116,7 @@ Note: `instance.id` is `None` until the row is saved, so the upload-path callabl
 
 S3 bucket is private, and URLs are presigned. Every screenshot/baseline/diff/thumbnail URL returned by the API is produced by `core.services.s3.generate_presigned_url`, which signs a time-limited (24h) `GetObject` URL with SigV4 (`Config(signature_version="s3v4")` — botocore's region-dependent default can otherwise fall back to legacy SigV2, which is rejected by KMS-encrypted buckets and doesn't match this design). Presigning uses a dedicated client (`get_presign_s3_client()`) pointed at a browser-reachable endpoint, distinct from the client used for direct upload/download/delete — see [deployment-and-config.md](deployment-and-config.md) for `S3_PUBLIC_BASE_URL`'s role in this.
 
-`AWS_QUERYSTRING_AUTH` and `AWS_S3_CUSTOM_DOMAIN` are still set in `settings.py` but are now vestigial/unused for these URLs — they only affected django-storages' own `.url()` method, which presigned URLs bypass entirely. They're left in place rather than removed since that's out of scope for this change.
+`AWS_QUERYSTRING_AUTH` and `AWS_S3_CUSTOM_DOMAIN` have been removed from `settings.py` — they only affected django-storages' own `.url()` method, which presigned URLs bypass entirely, so nothing in the codebase read them anymore.
 
 The bucket must deny anonymous/public `s3:GetObject`; access is only via presigned URLs or the IAM/static credentials configured in `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (used for `PutObject`/`DeleteObject` and for generating presigned URLs).
 

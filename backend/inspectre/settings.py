@@ -94,24 +94,20 @@ if not AWS_IAM_AUTH_ENABLED:
     AWS_ACCESS_KEY_ID = env("S3_ACCESS_KEY_ID", default="")
     AWS_SECRET_ACCESS_KEY = env("S3_SECRET_ACCESS_KEY", default="")
 AWS_DEFAULT_ACL = None
-AWS_QUERYSTRING_AUTH = False
-# Browser-reachable URL prefix. Set S3_PUBLIC_BASE_URL to the full URL prefix in dev
-# (e.g. http://localhost:9000/inspectre-screenshots) or to a CDN URL in prod
-# (e.g. https://cdn.example.com). Omit entirely to fall back to the default S3 URL.
+# Browser-reachable origin for presigned URLs. Set S3_PUBLIC_BASE_URL in dev
+# (e.g. http://localhost:9000/inspectre-screenshots) so presigning targets a
+# host the browser can reach instead of the container-internal S3 endpoint.
+# Omit in prod, where the real S3 endpoint is already browser-reachable.
 _s3_public_base_url = env("S3_PUBLIC_BASE_URL", default=None)
 if _s3_public_base_url:
     from urllib.parse import urlparse
 
     _parsed = urlparse(_s3_public_base_url)
-    AWS_S3_URL_PROTOCOL = _parsed.scheme + ":"
-    AWS_S3_CUSTOM_DOMAIN = _parsed.netloc + (_parsed.path.rstrip("/") if _parsed.path != "/" else "")
     # Presigned URLs must be signed against a host the browser can reach.
     # This is S3_PUBLIC_BASE_URL's origin without the bucket path suffix,
     # since boto3's endpoint_url must not include the bucket itself.
     AWS_S3_PRESIGN_ENDPOINT_URL = f"{_parsed.scheme}://{_parsed.netloc}"
 else:
-    AWS_S3_URL_PROTOCOL = "https:"
-    AWS_S3_CUSTOM_DOMAIN = None
     # No public base URL override (real S3 in prod): the internal endpoint
     # is already browser-reachable, so presigning uses the same endpoint.
     AWS_S3_PRESIGN_ENDPOINT_URL = AWS_S3_ENDPOINT_URL
