@@ -10,6 +10,18 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-only-not-for-production")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
+# Trust the SPA nginx container's X-Forwarded-Proto header (frontend/proxy.conf
+# sets it on every proxied request) so Django knows the original request was
+# HTTPS even though it reaches gunicorn over plain HTTP inside the container
+# network. Without this, request.is_secure() is always False behind the
+# proxy, causing CSRF origin checks to fail for HTTPS deployments.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Comma-separated list of scheme+host origins allowed to submit CSRF-protected
+# POSTs (e.g. https://inspectre.internal.dev.aws.zorgdomein.nl). Empty by
+# default — same-origin local/docker-compose dev needs no entry.
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+
 AWS_IAM_AUTH_ENABLED = env.bool("AWS_IAM_AUTH_ENABLED", default=False)
 AWS_REGION = env("AWS_REGION", default="us-east-1")
 
