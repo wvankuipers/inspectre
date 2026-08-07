@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.4](https://github.com/wvankuipers/inspectre/compare/1.0.3...1.0.4) - 2026-08-07
+
+- Worktree presigned screenshot urls by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/50
+
 ## [1.0.3](https://github.com/wvankuipers/inspectre/compare/1.0.2...1.0.3) - 2026-08-07
 
 - Improve dependabot by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/43
