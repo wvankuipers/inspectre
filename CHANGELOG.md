@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.3](https://github.com/wvankuipers/inspectre/compare/1.0.2...1.0.3) - 2026-08-07
+
+- Improve dependabot by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/43
+- chore(deps): bump nginxinc/nginx-unprivileged from 1.28-alpine to 1.31-alpine in /frontend in the frontend-docker group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/45
+- chore(deps): bump dependabot/fetch-metadata from 2 to 3 by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/46
+- Add auto-approval step for patch/minor updates in dependabot workflow by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/48
+- Feat/django http proxy config by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/49
+
 ## [1.0.2](https://github.com/wvankuipers/inspectre/compare/1.0.1...1.0.2) - 2026-08-06
 
 - chore(deps): bump actions/setup-node from 6 to 7 by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/23
