@@ -22,7 +22,12 @@ def test_seed_demo_creates_four_projects():
 
 @pytest.mark.slow
 @pytest.mark.django_db(transaction=True)
-def test_seed_demo_is_idempotent():
+def test_seed_demo_is_idempotent(settings):
+    """Re-running seed_demo wipes existing Test rows, which now fires the
+    pre_delete signal's async S3 cleanup enqueue for real. Force Celery
+    eager mode so the task runs inline instead of requiring a live broker.
+    """
+    settings.CELERY_TASK_ALWAYS_EAGER = True
     call_command("seed_demo", yes=True)
     first = (
         Project.objects.count(),
