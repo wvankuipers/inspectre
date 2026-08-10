@@ -1,10 +1,12 @@
 import logging
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 
 from .models import Run, Test
+from .tasks import delete_test_file_keys
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +49,16 @@ _TEST_FILE_FIELDS = [
 
 @receiver(pre_delete, sender=Test)
 def delete_test_files(sender, instance, **kwargs):
-    """Remove S3/storage files when a Test row is deleted (including cascade deletes)."""
-    for field_name in _TEST_FILE_FIELDS:
-        field = getattr(instance, field_name)
-        if field:
-            field.delete(save=False)
+    """Enqueue async deletion of a Test's S3/storage files.
+
+    Runs on pre_delete (including cascade deletes, e.g. deleting a Project
+    from admin) so file names are still available before the row is gone.
+    Deletion itself is deferred to a Celery task, and the enqueue is
+    deferred to transaction.on_commit, so a large cascade delete never
+    blocks the request on synchronous S3 calls, and a rolled-back
+    transaction never triggers deletion of files that still exist.
+    """
+    keys = [name for field_name in _TEST_FILE_FIELDS if (name := getattr(instance, field_name).name)]
+    if not keys:
+        return
+    transaction.on_commit(lambda: delete_test_file_keys.delay(keys))

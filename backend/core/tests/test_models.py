@@ -3,8 +3,11 @@ upstream of any view, serializer, or service test (which would all fail too,
 but with more confusing diagnostics).
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
 from django.db import IntegrityError, connection, transaction
 
 from core.models import Baseline, Run, Suite, Test
@@ -316,10 +319,21 @@ class TestPurgeOldRuns:
         run_factory,
         test_factory,
         settings,
+        django_capture_on_commit_callbacks,
     ):
-        """S3 files on purged Tests must be removed, not just the DB rows."""
-        from django.core.files.base import ContentFile
+        """S3 keys on purged Tests must be sent to the delete task, not just the DB rows.
 
+        File deletion is now enqueued as an async Celery task from the
+        pre_delete signal, deferred to transaction.on_commit, and that task
+        deletes via a raw boto3 S3 client rather than Django's storage API —
+        so it never touches the FileSystemStorage the test suite swaps in for
+        hermetic tests. Asserting `storage.exists()` is no longer meaningful;
+        instead assert the S3 client was actually called with the file's key.
+        Wrapping the purge in django_capture_on_commit_callbacks(execute=True)
+        runs the on_commit callback inline (CELERY_TASK_ALWAYS_EAGER makes the
+        task itself synchronous) so this test can assert on the call.
+        """
+        settings.CELERY_TASK_ALWAYS_EAGER = True
         settings.RUN_RETENTION_PER_SUITE = 1
         suite = suite_factory()
         run_a = run_factory(suite=suite)
@@ -327,9 +341,15 @@ class TestPurgeOldRuns:
         test.screenshot.save("original.png", ContentFile(b"fake-png"), save=True)
         storage_name = test.screenshot.name
 
-        run_factory(suite=suite)  # triggers the purge
+        with patch("core.tasks.get_s3_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+            with django_capture_on_commit_callbacks(execute=True):
+                run_factory(suite=suite)  # triggers the purge
 
-        assert not test.screenshot.storage.exists(storage_name)
+        mock_client.delete_objects.assert_called_once()
+        _, kwargs = mock_client.delete_objects.call_args
+        assert kwargs["Delete"]["Objects"] == [{"Key": storage_name}]
 
     def test_signal_only_fires_on_create(
         self,
@@ -346,6 +366,61 @@ class TestPurgeOldRuns:
         runs[-1].save()
 
         assert Run.objects.filter(suite=suite).count() == 5
+
+
+# =============================================================================
+# delete_test_files signal — pre_delete on Test enqueues async S3 cleanup
+# instead of deleting synchronously in the request.
+# =============================================================================
+
+
+class TestDeleteTestFilesSignal:
+    def test_enqueues_delete_task_with_non_empty_field_keys_only(
+        self, test_factory, settings, django_capture_on_commit_callbacks
+    ):
+        from core.models import Test
+
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+        test.screenshot.save("original.png", ContentFile(b"fake"), save=False)
+        test.screenshot_diff.save("diff.png", ContentFile(b"fake"), save=False)
+        test.save()
+        screenshot_name = test.screenshot.name
+        diff_name = test.screenshot_diff.name
+
+        with patch("core.signals.delete_test_file_keys") as mock_task:
+            with django_capture_on_commit_callbacks(execute=True):
+                test.delete()
+
+        assert not Test.objects.filter(pk=test.pk).exists()
+        mock_task.delay.assert_called_once()
+        (called_keys,), _ = mock_task.delay.call_args
+        assert sorted(called_keys) == sorted([screenshot_name, diff_name])
+
+    def test_does_not_enqueue_when_no_files_attached(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+
+        with patch("core.signals.delete_test_file_keys") as mock_task:
+            test.delete()
+
+        mock_task.delay.assert_not_called()
+
+    def test_enqueue_waits_for_transaction_commit(self, test_factory, settings, transactional_db):
+        """The task must not fire while the delete is still inside an open
+        transaction that could roll back."""
+        from django.db import transaction
+
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+        test.screenshot.save("original.png", ContentFile(b"fake"), save=False)
+        test.save()
+
+        with patch("core.signals.delete_test_file_keys") as mock_task:
+            with transaction.atomic():
+                test.delete()
+                mock_task.delay.assert_not_called()
+            mock_task.delay.assert_called_once()
 
 
 # =============================================================================
