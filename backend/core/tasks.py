@@ -2,7 +2,7 @@ import logging
 import tempfile
 from pathlib import Path
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from django.conf import settings as django_settings
 from django.core.files import File
 
@@ -58,7 +58,7 @@ def delete_test_file_keys(self, keys: list[str]) -> None:
             Bucket=django_settings.AWS_STORAGE_BUCKET_NAME,
             Delete={"Objects": [{"Key": key} for key in keys], "Quiet": True},
         )
-    except ClientError:
+    except (ClientError, BotoCoreError):
         logger.warning("Failed to delete test files", extra={"keys": keys})
         return
 

@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 from django.conf import settings as django_settings
 
 from core.models import Test
@@ -136,7 +136,8 @@ class TestDeleteTestFileKeysTask:
 
             delete_test_file_keys.delay(keys)  # must not raise
 
-        assert "screenshots/1/baseline.png" in caplog.text
+        record = next(r for r in caplog.records if r.message == "Failed to delete some test files")
+        assert record.errors == [{"Key": "screenshots/1/baseline.png", "Code": "AccessDenied", "Message": "nope"}]
 
     def test_logs_but_does_not_raise_on_client_error(self, settings, caplog):
         settings.CELERY_TASK_ALWAYS_EAGER = True
@@ -147,6 +148,17 @@ class TestDeleteTestFileKeysTask:
             mock_client.delete_objects.side_effect = ClientError(
                 {"Error": {"Code": "500", "Message": "boom"}}, "DeleteObjects"
             )
+            mock_get_client.return_value = mock_client
+
+            delete_test_file_keys.delay(keys)  # must not raise
+
+    def test_logs_but_does_not_raise_on_connection_error(self, settings, caplog):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        keys = ["screenshots/1/original.png"]
+
+        with patch("core.tasks.get_s3_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.delete_objects.side_effect = EndpointConnectionError(endpoint_url="https://s3.example.com")
             mock_get_client.return_value = mock_client
 
             delete_test_file_keys.delay(keys)  # must not raise

@@ -422,6 +422,18 @@ class TestDeleteTestFilesSignal:
                 mock_task.delay.assert_not_called()
             mock_task.delay.assert_called_once()
 
+        # A rolled-back transaction never commits, so the on_commit callback
+        # must never fire either.
+        test = test_factory()
+        test.screenshot.save("original.png", ContentFile(b"fake"), save=False)
+        test.save()
+
+        with patch("core.signals.delete_test_file_keys") as mock_task:
+            with transaction.atomic():
+                test.delete()
+                transaction.set_rollback(True)
+            mock_task.delay.assert_not_called()
+
 
 # =============================================================================
 # Cascade behaviour — on_delete declarations
