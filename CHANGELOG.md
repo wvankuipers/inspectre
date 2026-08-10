@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.5](https://github.com/wvankuipers/inspectre/compare/1.0.4...1.0.5) - 2026-08-10
+
+- chore(deps): bump hono from 4.12.29 to 4.13.1 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/52
+- Fix/async file cleanup by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/53
+
 ## [1.0.4](https://github.com/wvankuipers/inspectre/compare/1.0.3...1.0.4) - 2026-08-07
 
 - Worktree presigned screenshot urls by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/50
