@@ -44,6 +44,29 @@ def process_test(self, test_id: int, staging_key: str) -> None:
         _delete_staged_file(staging_key)
 
 
+@app.task(bind=True, max_retries=0)
+def delete_test_file_keys(self, keys: list[str]) -> None:
+    """Delete a Test's S3 storage keys in one batched call. Fired from the
+    Test pre_delete signal so bulk cascade deletes (e.g. deleting a Project
+    from admin) never block the request on per-row S3 I/O.
+    """
+    if not keys:
+        return
+
+    try:
+        response = get_s3_client().delete_objects(
+            Bucket=django_settings.AWS_STORAGE_BUCKET_NAME,
+            Delete={"Objects": [{"Key": key} for key in keys], "Quiet": True},
+        )
+    except ClientError:
+        logger.warning("Failed to delete test files", extra={"keys": keys})
+        return
+
+    errors = response.get("Errors")
+    if errors:
+        logger.warning("Failed to delete some test files", extra={"errors": errors})
+
+
 def _download_staged_file(staging_key: str, destination: Path) -> None:
     get_s3_client().download_file(django_settings.AWS_STORAGE_BUCKET_NAME, staging_key, str(destination))
 
