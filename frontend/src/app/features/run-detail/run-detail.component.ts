@@ -79,7 +79,12 @@ export class RunDetailComponent implements AfterViewInit {
         this.loadError.set(false);
         return this.api
           .run(params.get('projectSlug')!, params.get('suiteSlug')!, Number(params.get('seqId')))
-          .pipe(catchError(() => { this.loadError.set(true); return of<RunDetail | null>(null); }));
+          .pipe(
+            catchError(() => {
+              this.loadError.set(true);
+              return of<RunDetail | null>(null);
+            }),
+          );
       }),
       takeUntilDestroyed(),
     ),
@@ -91,7 +96,7 @@ export class RunDetailComponent implements AfterViewInit {
   readonly thumbLoaded = signal<Set<string>>(new Set<string>());
 
   onImgLoad(src: string): void {
-    this.thumbLoaded.update(previouslyLoaded => new Set(previouslyLoaded).add(src));
+    this.thumbLoaded.update((previouslyLoaded) => new Set(previouslyLoaded).add(src));
   }
 
   readonly run = computed(() => {
@@ -114,16 +119,15 @@ export class RunDetailComponent implements AfterViewInit {
   });
 
   constructor() {
-    effect(() => {
+    effect((onCleanup) => {
+      this.runData();
       if (!this.hasPendingTests()) return;
-      const timer = setInterval(() => {
-        if (!this.hasPendingTests()) {
-          clearInterval(timer);
-          return;
+      const timer = setTimeout(() => {
+        if (this.hasPendingTests()) {
+          this.reloadTrigger$.next();
         }
-        this.reloadTrigger$.next();
-      }, 3000);
-      return () => clearInterval(timer);
+      }, 10000);
+      onCleanup(() => clearTimeout(timer));
     });
   }
 
