@@ -12,11 +12,11 @@ asgiref==3.12.1
     #   django-cors-headers
 billiard==4.2.4
     # via celery
-boto3==1.43.65
+boto3==1.43.66
     # via
     #   django-storages
     #   inspectre (pyproject.toml)
-botocore==1.43.65
+botocore==1.43.66
     # via
     #   boto3
     #   s3transfer
@@ -37,9 +37,9 @@ click-plugins==1.1.1.2
     # via celery
 click-repl==0.3.0
     # via celery
-coverage==7.15.3
+coverage==7.15.4
     # via pytest-cov
-django==6.0.8
+django==6.1
     # via
     #   django-cors-headers
     #   django-storages
@@ -51,7 +51,7 @@ django-environ==0.14.0
     # via inspectre (pyproject.toml)
 django-storages==1.14.6
     # via inspectre (pyproject.toml)
-djangorestframework==3.17.2
+djangorestframework==3.18.0
     # via inspectre (pyproject.toml)
 execnet==2.1.2
     # via pytest-xdist
@@ -117,7 +117,7 @@ python-json-logger==4.1.0
     # via inspectre (pyproject.toml)
 redis==6.4.0
     # via kombu
-ruff==0.16.1
+ruff==0.16.2
     # via inspectre (pyproject.toml)
 s3transfer==0.19.2
     # via boto3
