@@ -119,7 +119,7 @@ export class RunDetailComponent implements AfterViewInit {
   });
 
   constructor() {
-    effect(() => {
+    effect((onCleanup) => {
       this.runData();
       if (!this.hasPendingTests()) return;
       const timer = setTimeout(() => {
@@ -127,7 +127,7 @@ export class RunDetailComponent implements AfterViewInit {
           this.reloadTrigger$.next();
         }
       }, 10000);
-      return () => clearTimeout(timer);
+      onCleanup(() => clearTimeout(timer));
     });
   }
 

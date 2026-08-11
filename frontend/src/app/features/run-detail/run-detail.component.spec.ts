@@ -742,4 +742,39 @@ describe('RunDetailComponent pending-test polling', () => {
     await vi.advanceTimersByTimeAsync(20000);
     expect(apiSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps polling for a third request when the second response is still pending (sustained loop)', async () => {
+    vi.useFakeTimers();
+    const apiSpy = vi.fn().mockImplementation(() => of({ ...PENDING_RUN }));
+    const fixturePromise = setup({ apiSpy });
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+
+    expect(apiSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(apiSpy).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(apiSpy).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(apiSpy).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(apiSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('clears the pending timer on destroy so no further request fires', async () => {
+    vi.useFakeTimers();
+    const apiSpy = vi.fn().mockReturnValue(of(PENDING_RUN));
+    const fixturePromise = setup({ apiSpy });
+    await vi.advanceTimersByTimeAsync(0);
+    const fixture = await fixturePromise;
+
+    expect(apiSpy).toHaveBeenCalledTimes(1);
+
+    fixture.destroy();
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(apiSpy).toHaveBeenCalledTimes(1);
+  });
 });
