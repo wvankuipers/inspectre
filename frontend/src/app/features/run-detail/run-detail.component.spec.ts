@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { RunDetail } from '../../core/models/api';
@@ -540,7 +540,10 @@ describe('RunDetailComponent API failure', () => {
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => throwError(() => new Error('network')), setBaseline: () => of({}) },
+          useValue: {
+            run: () => throwError(() => new Error('network')),
+            setBaseline: () => of({}),
+          },
         },
         {
           provide: SortStateService,
@@ -683,5 +686,60 @@ describe('RunDetailComponent thumbnail skeleton', () => {
     comp.onImgLoad(url);
     fixture.detectChanges();
     expect(comp.thumbLoaded().has(url)).toBe(true);
+  });
+});
+
+describe('RunDetailComponent pending-test polling', () => {
+  afterEach(() => {
+    localStorage.clear();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
+
+  it('does not fire a second request while the first is still in-flight, even past 10s', async () => {
+    vi.useFakeTimers();
+    const pending$ = new Subject<typeof PENDING_RUN>();
+    const apiSpy = vi.fn().mockReturnValue(pending$);
+    const fixturePromise = setup({ apiSpy });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+
+    expect(apiSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(apiSpy).toHaveBeenCalledTimes(1);
+
+    pending$.next(PENDING_RUN);
+    pending$.complete();
+  });
+
+  it('schedules exactly one more request 10000ms after a response resolves with pending tests', async () => {
+    vi.useFakeTimers();
+    const apiSpy = vi.fn().mockReturnValue(of(PENDING_RUN));
+    const fixturePromise = setup({ apiSpy });
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+
+    expect(apiSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(apiSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(apiSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops polling once a response comes back with no pending tests', async () => {
+    vi.useFakeTimers();
+    const apiSpy = vi.fn().mockReturnValue(of(RUN));
+    const fixturePromise = setup({ apiSpy });
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+
+    expect(apiSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(apiSpy).toHaveBeenCalledTimes(1);
   });
 });
