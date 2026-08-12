@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.0](https://github.com/wvankuipers/inspectre/compare/1.0.5...1.1.0) - 2026-08-12
+
+- Fix/run detail retry poll by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/57
+- chore(deps): bump python from 3.13-slim to 3.14-slim in /backend in the backend-docker group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/55
+- chore(deps): bump the backend-pip group in /backend with 6 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/56
+- chore(deps): bump the frontend-npm group in /frontend with 9 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/59
+- chore(deps): bump the backend-pip group in /backend with 2 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/60
+- Feat/targeted test polling by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/61
+- fix: remove stale VERSION_SHA from the set-up and footer by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/62
+
 ## [1.0.5](https://github.com/wvankuipers/inspectre/compare/1.0.4...1.0.5) - 2026-08-10
 
 - chore(deps): bump hono from 4.12.29 to 4.13.1 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/52
