@@ -100,6 +100,14 @@ export class RunDetailComponent implements AfterViewInit {
 
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // Consecutive polls where testsBulk returned none of the requested ids, or
+  // errored outright. Caps runaway polling if the pending tests are never
+  // going to resolve (e.g. their run was deleted by retention cleanup while
+  // this page was open) — otherwise hasPendingTests() stays true forever and
+  // the component polls every 10s indefinitely.
+  private unproductivePollCount = 0;
+  private static readonly MAX_UNPRODUCTIVE_POLLS = 3;
+
   constructor() {
     this.route.paramMap
       .pipe(
@@ -118,6 +126,7 @@ export class RunDetailComponent implements AfterViewInit {
       )
       .subscribe((runData) => {
         this.runData.set(runData ?? undefined);
+        this.unproductivePollCount = 0;
         this.schedulePollIfNeeded();
       });
 
@@ -140,11 +149,22 @@ export class RunDetailComponent implements AfterViewInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (updated) => {
+          if (updated.length === 0) {
+            this.registerUnproductivePoll();
+            return;
+          }
+          this.unproductivePollCount = 0;
           this.mergeTests(updated);
           this.schedulePollIfNeeded();
         },
-        error: () => this.schedulePollIfNeeded(),
+        error: () => this.registerUnproductivePoll(),
       });
+  }
+
+  private registerUnproductivePoll(): void {
+    this.unproductivePollCount++;
+    if (this.unproductivePollCount >= RunDetailComponent.MAX_UNPRODUCTIVE_POLLS) return;
+    this.schedulePollIfNeeded();
   }
 
   readonly pendingId = signal<Set<number>>(new Set());

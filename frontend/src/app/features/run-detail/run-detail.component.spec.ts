@@ -812,6 +812,68 @@ describe('RunDetailComponent pending-test polling', () => {
     expect(testsBulkSpy).toHaveBeenNthCalledWith(2, [PENDING_RUN.tests[0].id]);
   });
 
+  it('stops polling after 3 consecutive empty testsBulk responses', async () => {
+    vi.useFakeTimers();
+    const testsBulkSpy = vi.fn().mockReturnValue(of([]));
+    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3); // capped — no further polls
+  });
+
+  it('stops polling after 3 consecutive testsBulk errors', async () => {
+    vi.useFakeTimers();
+    const testsBulkSpy = vi.fn().mockReturnValue(throwError(() => new Error('network')));
+    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+
+    await vi.advanceTimersByTimeAsync(10000);
+    await vi.advanceTimersByTimeAsync(10000);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3); // capped — no further polls
+  });
+
+  it('resets the unproductive-poll counter once a requested test is returned', async () => {
+    vi.useFakeTimers();
+    const resolved = { ...PENDING_RUN.tests[0], status: 'done', passed: true };
+    const testsBulkSpy = vi
+      .fn()
+      .mockReturnValueOnce(of([])) // unproductive: 1
+      .mockReturnValueOnce(of([])) // unproductive: 2
+      .mockReturnValueOnce(of([resolved])) // productive: resets counter, and resolves the only pending test
+      .mockReturnValue(of([]));
+    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+
+    await vi.advanceTimersByTimeAsync(10000);
+    await vi.advanceTimersByTimeAsync(10000);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3);
+
+    // The 3rd response resolved the only pending test, so hasPendingTests()
+    // is now false and no further polls should be scheduled — this also
+    // proves the counter reset didn't itself force an extra poll.
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3);
+  });
+
   it('clears the pending timer on destroy so no further request fires', async () => {
     vi.useFakeTimers();
     const testsBulkSpy = vi.fn().mockReturnValue(of([]));
