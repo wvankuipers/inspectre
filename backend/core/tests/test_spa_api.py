@@ -389,6 +389,41 @@ class TestTestsBulk:
         assert response.status_code == 200
         assert response.json() == []
 
+    def test_duplicate_ids_are_deduplicated(self, api, test_factory):
+        t1 = test_factory(name="Homepage")
+
+        response = api.post(
+            "/api/tests/bulk/",
+            {"ids": [t1.id, t1.id, t1.id]},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == 1
+        assert body[0]["id"] == t1.id
+
+    def test_id_count_is_capped(self, api, test_factory):
+        from core.views import api as api_module
+
+        monkeypatch_cap = 2
+        original_cap = api_module.MAX_BULK_TEST_IDS
+        api_module.MAX_BULK_TEST_IDS = monkeypatch_cap
+        try:
+            tests = [test_factory(name=f"Test {i}") for i in range(3)]
+            response = api.post(
+                "/api/tests/bulk/",
+                {"ids": [t.id for t in tests]},
+                format="json",
+            )
+
+            assert response.status_code == 200
+            body = response.json()
+            assert len(body) == monkeypatch_cap
+            assert {t["id"] for t in body} == {tests[0].id, tests[1].id}
+        finally:
+            api_module.MAX_BULK_TEST_IDS = original_cap
+
 
 # =============================================================================
 # GET /api/baselines/<key>/  — JSON metadata
