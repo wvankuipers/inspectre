@@ -83,7 +83,9 @@ def tests_bulk(request):
     serialization work for a single request.
     """
     raw = request.data.get("ids") if isinstance(request.data, dict) else None
-    ids = list(dict.fromkeys(i for i in (raw or []) if isinstance(i, int) and not isinstance(i, bool)))
+    if not isinstance(raw, (list, tuple)):
+        raw = []
+    ids = list(dict.fromkeys(i for i in raw if isinstance(i, int) and not isinstance(i, bool)))
     ids = ids[:MAX_BULK_TEST_IDS]
     tests = Test.objects.select_related("run__suite__project").filter(id__in=ids)
     return Response(serialize_tests_bulk(tests))

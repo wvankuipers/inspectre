@@ -389,6 +389,12 @@ class TestTestsBulk:
         assert response.status_code == 200
         assert response.json() == []
 
+    def test_non_list_ids_returns_empty_array(self, api):
+        response = api.post("/api/tests/bulk/", {"ids": 5}, format="json")
+
+        assert response.status_code == 200
+        assert response.json() == []
+
     def test_duplicate_ids_are_deduplicated(self, api, test_factory):
         t1 = test_factory(name="Homepage")
 
