@@ -72,10 +72,10 @@ def tests_bulk(request):
 
     IDs travel in the body, not the URL: a run's pending set can be large
     (hundreds of tests), which doesn't fit a query string or path segment.
-    Unknown ids are silently omitted rather than causing a 404, since the
-    caller already knows which ids it's polling for.
+    Unknown ids (including non-integers) are silently omitted rather than causing
+    an error, since the caller already knows which ids it's polling for.
     """
-    ids = request.data.get("ids") or []
+    ids = [i for i in (request.data.get("ids") or []) if isinstance(i, int)]
     tests = Test.objects.select_related("run__suite__project").filter(id__in=ids)
     return Response(serialize_tests_bulk(tests))
 

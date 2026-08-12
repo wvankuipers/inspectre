@@ -344,6 +344,30 @@ class TestTestsBulk:
         by_id = {t["id"]: t for t in body}
         assert by_id[t1.id]["is_baseline_source"] is True
         assert by_id[t2.id]["is_baseline_source"] is False
+    def test_non_integer_ids_are_silently_filtered(self, api, test_factory):
+        t1 = test_factory(name="Homepage")
+
+        response = api.post(
+            "/api/tests/bulk/",
+            {"ids": [t1.id, "abc", None, 999999]},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == 1
+        assert body[0]["id"] == t1.id
+
+    def test_all_invalid_ids_returns_empty_array(self, api):
+        response = api.post(
+            "/api/tests/bulk/",
+            {"ids": ["abc", None, "test"]},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
+
 
 
 # =============================================================================
