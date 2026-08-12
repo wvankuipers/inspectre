@@ -5,7 +5,6 @@ import {
   DestroyRef,
   ViewChild,
   computed,
-  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -15,7 +14,7 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { ActivatedRoute } from '@angular/router';
-import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
+import { catchError, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -69,29 +68,21 @@ export class RunDetailComponent implements AfterViewInit {
   readonly suiteSlug = computed(() => this.params().get('suiteSlug') ?? '');
   readonly seqId = computed(() => Number(this.params().get('seqId') ?? 0));
 
-  private reloadTrigger$ = new BehaviorSubject<void>(undefined);
-
   readonly loadError = signal<boolean>(false);
 
-  private runData = toSignal(
-    combineLatest([this.route.paramMap, this.reloadTrigger$]).pipe(
-      switchMap(([params]) => {
-        this.loadError.set(false);
-        return this.api
-          .run(params.get('projectSlug')!, params.get('suiteSlug')!, Number(params.get('seqId')))
-          .pipe(
-            catchError(() => {
-              this.loadError.set(true);
-              return of<RunDetail | null>(null);
-            }),
-          );
-      }),
-      takeUntilDestroyed(),
-    ),
-    { initialValue: undefined },
-  );
+  private runData = signal<RunDetail | undefined>(undefined);
 
-  private promotedIds = signal<Set<number>>(new Set());
+  private mergeTests(updated: TestRow[]): void {
+    if (updated.length === 0) return;
+    const byId = new Map(updated.map((t) => [t.id, t]));
+    this.runData.update((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        tests: current.tests.map((t) => byId.get(t.id) ?? t),
+      };
+    });
+  }
 
   readonly thumbLoaded = signal<Set<string>>(new Set<string>());
 
@@ -99,18 +90,7 @@ export class RunDetailComponent implements AfterViewInit {
     this.thumbLoaded.update((previouslyLoaded) => new Set(previouslyLoaded).add(src));
   }
 
-  readonly run = computed(() => {
-    const runData = this.runData() ?? null;
-    if (!runData) return null;
-    const promoted = this.promotedIds();
-    if (promoted.size === 0) return runData;
-    return {
-      ...runData,
-      tests: runData.tests.map((test) =>
-        promoted.has(test.id) ? { ...test, passed: true } : test,
-      ),
-    };
-  });
+  readonly run = computed(() => this.runData() ?? null);
 
   readonly hasPendingTests = computed(() => {
     const runData = this.run();
@@ -118,17 +98,73 @@ export class RunDetailComponent implements AfterViewInit {
     return runData.tests.some((t) => t.status !== 'done' && t.status !== 'failed');
   });
 
+  private pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Consecutive polls where testsBulk returned none of the requested ids, or
+  // errored outright. Caps runaway polling if the pending tests are never
+  // going to resolve (e.g. their run was deleted by retention cleanup while
+  // this page was open) — otherwise hasPendingTests() stays true forever and
+  // the component polls every 10s indefinitely.
+  private unproductivePollCount = 0;
+  private static readonly MAX_UNPRODUCTIVE_POLLS = 3;
+
   constructor() {
-    effect((onCleanup) => {
-      this.runData();
-      if (!this.hasPendingTests()) return;
-      const timer = setTimeout(() => {
-        if (this.hasPendingTests()) {
-          this.reloadTrigger$.next();
-        }
-      }, 10000);
-      onCleanup(() => clearTimeout(timer));
-    });
+    this.route.paramMap
+      .pipe(
+        switchMap((params) => {
+          this.loadError.set(false);
+          return this.api
+            .run(params.get('projectSlug')!, params.get('suiteSlug')!, Number(params.get('seqId')))
+            .pipe(
+              catchError(() => {
+                this.loadError.set(true);
+                return of<RunDetail | null>(null);
+              }),
+            );
+        }),
+        takeUntilDestroyed(),
+      )
+      .subscribe((runData) => {
+        this.runData.set(runData ?? undefined);
+        this.unproductivePollCount = 0;
+        this.schedulePollIfNeeded();
+      });
+
+    this.destroyRef.onDestroy(() => clearTimeout(this.pollTimer));
+  }
+
+  private schedulePollIfNeeded(): void {
+    clearTimeout(this.pollTimer);
+    if (!this.hasPendingTests()) return;
+    this.pollTimer = setTimeout(() => this.pollPendingTests(), 10000);
+  }
+
+  private pollPendingTests(): void {
+    const pendingIds = (this.run()?.tests ?? [])
+      .filter((t) => t.status !== 'done' && t.status !== 'failed')
+      .map((t) => t.id);
+    if (pendingIds.length === 0) return;
+    this.api
+      .testsBulk(pendingIds)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updated) => {
+          if (updated.length === 0) {
+            this.registerUnproductivePoll();
+            return;
+          }
+          this.unproductivePollCount = 0;
+          this.mergeTests(updated);
+          this.schedulePollIfNeeded();
+        },
+        error: () => this.registerUnproductivePoll(),
+      });
+  }
+
+  private registerUnproductivePoll(): void {
+    this.unproductivePollCount++;
+    if (this.unproductivePollCount >= RunDetailComponent.MAX_UNPRODUCTIVE_POLLS) return;
+    this.schedulePollIfNeeded();
   }
 
   readonly pendingId = signal<Set<number>>(new Set());
@@ -221,13 +257,21 @@ export class RunDetailComponent implements AfterViewInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          this.promotedIds.update((currentStatuses) => new Set([...currentStatuses, test.id]));
           this.pendingId.update((currentStatuses) => {
             const next = new Set(currentStatuses);
             next.delete(test.id);
             return next;
           });
-          this.reloadTrigger$.next();
+          this.api
+            .testsBulk([test.id])
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe({
+              next: (updated) => {
+                this.mergeTests(updated);
+                this.schedulePollIfNeeded();
+              },
+              error: () => this.schedulePollIfNeeded(),
+            });
         },
         error: () => {
           this.pendingId.update((currentStatuses) => {

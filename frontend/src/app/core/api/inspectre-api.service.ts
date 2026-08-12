@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import { Baseline, Project, RunDetail, SuiteDetail } from '../models/api';
+import { Baseline, Project, RunDetail, SuiteDetail, TestRow } from '../models/api';
 
 @Injectable({ providedIn: 'root' })
 export class InspectreApiService {
@@ -29,6 +29,10 @@ export class InspectreApiService {
     return this.http.get<RunDetail>(
       `${this.apiBase}/projects/${encodeURIComponent(projectSlug)}/suites/${encodeURIComponent(suiteSlug)}/runs/${seqId}/`,
     );
+  }
+
+  testsBulk(ids: number[]): Observable<TestRow[]> {
+    return this.http.post<TestRow[]>(`${this.apiBase}/tests/bulk/`, { ids });
   }
 
   baseline(key: string): Observable<Baseline> {

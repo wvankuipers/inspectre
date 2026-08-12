@@ -17,8 +17,14 @@ from core.serializers import (
     ProjectSerializer,
     RunDetailSerializer,
     SuiteDetailSerializer,
+    serialize_tests_bulk,
 )
 from core.views.legacy import _set_as_baseline
+
+# Caps the ids a single POST /api/tests/bulk/ request can request, since a
+# run's pending set is client-controlled: an unbounded id list means an
+# unbounded IN() query and serializer pass.
+MAX_BULK_TEST_IDS = 1000
 
 
 @api_view(["GET"])
@@ -62,6 +68,27 @@ def set_baseline(request, pk):
     test = get_object_or_404(Test, pk=pk)
     _set_as_baseline(test)
     return Response(status=204)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def tests_bulk(request):
+    """POST /api/tests/bulk/ — fetch fresh TestRow data for a set of ids.
+
+    IDs travel in the body, not the URL: a run's pending set can be large
+    (hundreds of tests), which doesn't fit a query string or path segment.
+    Unknown ids (including non-integers) are silently omitted rather than causing
+    an error, since the caller already knows which ids it's polling for. The
+    unique id count is capped at MAX_BULK_TEST_IDS to bound the query and
+    serialization work for a single request.
+    """
+    raw = request.data.get("ids") if isinstance(request.data, dict) else None
+    if not isinstance(raw, (list, tuple)):
+        raw = []
+    ids = list(dict.fromkeys(i for i in raw if isinstance(i, int) and not isinstance(i, bool)))
+    ids = ids[:MAX_BULK_TEST_IDS]
+    tests = Test.objects.select_related("run__suite__project").filter(id__in=ids)
+    return Response(serialize_tests_bulk(tests))
 
 
 @api_view(["GET"])

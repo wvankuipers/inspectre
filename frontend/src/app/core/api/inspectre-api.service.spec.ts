@@ -64,4 +64,23 @@ describe('InspectreApiService', () => {
       req.flush({});
     });
   });
+
+  describe('testsBulk()', () => {
+    it('posts the given ids and returns the response body', () => {
+      let result: unknown;
+      service.testsBulk([1, 2, 3]).subscribe((r) => (result = r));
+      const req = httpController.expectOne('/api/tests/bulk/');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ ids: [1, 2, 3] });
+      req.flush([{ id: 1 }, { id: 2 }, { id: 3 }]);
+      expect(result).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    });
+
+    it('posts an empty array when given no ids', () => {
+      service.testsBulk([]).subscribe();
+      const req = httpController.expectOne('/api/tests/bulk/');
+      expect(req.request.body).toEqual({ ids: [] });
+      req.flush([]);
+    });
+  });
 });

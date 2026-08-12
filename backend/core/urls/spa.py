@@ -11,6 +11,7 @@ urlpatterns = [
         "projects/<slug:project>/suites/<slug:suite>/runs/<int:seq>/",
         v.run_detail,
     ),
+    path("tests/bulk/", v.tests_bulk),
     path("tests/<int:pk>/set-baseline/", v.set_baseline),
     path("baselines/<str:key>/", v.baseline_detail),
 ]
