@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { Subject, of, throwError } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { RunDetail } from '../../core/models/api';
@@ -146,7 +146,7 @@ describe('RunDetailComponent sorting', () => {
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN), setBaseline: () => of({}) },
+          useValue: { run: () => of(RUN), setBaseline: () => of({}), testsBulk: () => of([]) },
         },
         { provide: SortStateService, useValue: { get: sortServiceGet, save: sortServiceSave } },
       ],
@@ -225,7 +225,7 @@ describe('RunDetailComponent filtering', () => {
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN), setBaseline: () => of({}) },
+          useValue: { run: () => of(RUN), setBaseline: () => of({}), testsBulk: () => of([]) },
         },
         {
           provide: SortStateService,
@@ -309,7 +309,7 @@ describe('RunDetailComponent empty run', () => {
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN_EMPTY), setBaseline: () => of({}) },
+          useValue: { run: () => of(RUN_EMPTY), setBaseline: () => of({}), testsBulk: () => of([]) },
         },
         {
           provide: SortStateService,
@@ -353,7 +353,7 @@ describe('RunDetailComponent onImgError guard', () => {
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN), setBaseline: () => of({}) },
+          useValue: { run: () => of(RUN), setBaseline: () => of({}), testsBulk: () => of([]) },
         },
         {
           provide: SortStateService,
@@ -395,12 +395,14 @@ describe('RunDetailComponent onImgError guard', () => {
   });
 });
 
-describe('RunDetailComponent rebaseline immutable update', () => {
+describe('RunDetailComponent rebaseline refresh', () => {
   let fixture: ComponentFixture<RunDetailComponent>;
   let component: RunDetailComponent;
+  let testsBulkSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     localStorage.clear();
+    testsBulkSpy = vi.fn().mockReturnValue(of([]));
 
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
@@ -416,7 +418,7 @@ describe('RunDetailComponent rebaseline immutable update', () => {
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN), setBaseline: () => of({}) },
+          useValue: { run: () => of(RUN), setBaseline: () => of({}), testsBulk: testsBulkSpy },
         },
         {
           provide: SortStateService,
@@ -433,26 +435,27 @@ describe('RunDetailComponent rebaseline immutable update', () => {
 
   afterEach(() => localStorage.clear());
 
-  it('run() reflects passed: true after rebaseline without mutating original test objects', () => {
-    // The failing test has id=1, passed=false
+  it('calls testsBulk with only the rebaselined test id after setBaseline succeeds', () => {
+    const test = RUN.tests.find((t) => t.id === 1)!;
+    component.rebaseline(test);
+    expect(testsBulkSpy).toHaveBeenCalledWith([1]);
+  });
+
+  it('merges the fresh row from testsBulk into run() without mutating the original test object', () => {
     const originalTest = RUN.tests.find((t) => t.id === 1)!;
     expect(originalTest.passed).toBe(false);
+    testsBulkSpy.mockReturnValue(of([{ ...originalTest, passed: true }]));
 
-    // Trigger rebaseline
     component.rebaseline(originalTest);
 
-    // run() computed should now return the test as passed
     const updatedTest = component.run()?.tests.find((t) => t.id === 1);
     expect(updatedTest?.passed).toBe(true);
-
-    // Original RUN fixture object must NOT be mutated
     expect(originalTest.passed).toBe(false);
   });
 
   it('pendingId is cleared after rebaseline completes', () => {
     const test = RUN.tests.find((t) => t.id === 1)!;
     component.rebaseline(test);
-    // Since setBaseline returns of({}) synchronously, pending should be cleared
     expect(component.pendingId().has(1)).toBe(false);
   });
 });
@@ -479,7 +482,7 @@ describe('RunDetailComponent image viewer', () => {
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN_WITH_THUMBS), setBaseline: () => of({}) },
+          useValue: { run: () => of(RUN_WITH_THUMBS), setBaseline: () => of({}), testsBulk: () => of([]) },
         },
         {
           provide: SortStateService,
@@ -543,6 +546,7 @@ describe('RunDetailComponent API failure', () => {
           useValue: {
             run: () => throwError(() => new Error('network')),
             setBaseline: () => of({}),
+            testsBulk: () => of([]),
           },
         },
         {
@@ -569,7 +573,10 @@ describe('RunDetailComponent API failure', () => {
   });
 });
 
-async function setup({ apiSpy = vi.fn().mockReturnValue(of(RUN)) } = {}) {
+async function setup({
+  apiSpy = vi.fn().mockReturnValue(of(RUN)),
+  testsBulkSpy = vi.fn().mockReturnValue(of([])),
+} = {}) {
   localStorage.clear();
 
   await TestBed.configureTestingModule({
@@ -586,7 +593,7 @@ async function setup({ apiSpy = vi.fn().mockReturnValue(of(RUN)) } = {}) {
       },
       {
         provide: InspectreApiService,
-        useValue: { run: apiSpy, setBaseline: () => of({}) },
+        useValue: { run: apiSpy, setBaseline: () => of({}), testsBulk: testsBulkSpy },
       },
       {
         provide: SortStateService,
@@ -655,7 +662,7 @@ describe('RunDetailComponent thumbnail skeleton', () => {
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN), setBaseline: () => of({}) },
+          useValue: { run: () => of(RUN), setBaseline: () => of({}), testsBulk: () => of([]) },
         },
         {
           provide: SortStateService,
@@ -696,85 +703,107 @@ describe('RunDetailComponent pending-test polling', () => {
     vi.useRealTimers();
   });
 
-  it('does not fire a second request while the first is still in-flight, even past 10s', async () => {
+  it('does not call testsBulk before 10s have passed', async () => {
     vi.useFakeTimers();
-    const pending$ = new Subject<typeof PENDING_RUN>();
-    const apiSpy = vi.fn().mockReturnValue(pending$);
-    const fixturePromise = setup({ apiSpy });
+    const testsBulkSpy = vi.fn().mockReturnValue(of([]));
+    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
 
     await vi.advanceTimersByTimeAsync(0);
     await fixturePromise;
 
-    expect(apiSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(15000);
-    expect(apiSpy).toHaveBeenCalledTimes(1);
-
-    pending$.next(PENDING_RUN);
-    pending$.complete();
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(testsBulkSpy).not.toHaveBeenCalled();
   });
 
-  it('schedules exactly one more request 10000ms after a response resolves with pending tests', async () => {
+  it('calls testsBulk with only the pending ids after 10s', async () => {
+    vi.useFakeTimers();
+    const testsBulkSpy = vi.fn().mockReturnValue(of([]));
+    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+    await vi.advanceTimersByTimeAsync(10000);
+
+    expect(testsBulkSpy).toHaveBeenCalledWith([PENDING_RUN.tests[0].id]);
+  });
+
+  it('merges a resolved test from testsBulk into run() without refetching the whole run', async () => {
     vi.useFakeTimers();
     const apiSpy = vi.fn().mockReturnValue(of(PENDING_RUN));
-    const fixturePromise = setup({ apiSpy });
+    const resolved = { ...PENDING_RUN.tests[0], status: 'done', passed: true };
+    const testsBulkSpy = vi.fn().mockReturnValue(of([resolved]));
+    const fixturePromise = setup({ apiSpy, testsBulkSpy });
+
     await vi.advanceTimersByTimeAsync(0);
-    await fixturePromise;
+    const fixture = await fixturePromise;
+    await vi.advanceTimersByTimeAsync(10000);
 
-    expect(apiSpy).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(9999);
-    expect(apiSpy).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(1);
-    expect(apiSpy).toHaveBeenCalledTimes(2);
+    const component = fixture.componentInstance;
+    expect(component.run()?.tests[0].status).toBe('done');
+    expect(component.run()?.tests[0].passed).toBe(true);
+    expect(apiSpy).toHaveBeenCalledTimes(1); // never refetched the whole run
   });
 
-  it('stops polling once a response comes back with no pending tests', async () => {
+  it('keeps polling with the still-pending ids when some tests resolve and others do not', async () => {
     vi.useFakeTimers();
-    const apiSpy = vi.fn().mockReturnValue(of(RUN));
-    const fixturePromise = setup({ apiSpy });
+    const stillPending = { ...PENDING_RUN.tests[0], id: 99, status: 'pending' };
+    const twoPendingRun = { ...PENDING_RUN, tests: [PENDING_RUN.tests[0], stillPending] };
+    const apiSpy = vi.fn().mockReturnValue(of(twoPendingRun));
+    const resolvedFirst = { ...PENDING_RUN.tests[0], status: 'done', passed: true };
+    const testsBulkSpy = vi.fn().mockReturnValue(of([resolvedFirst]));
+    const fixturePromise = setup({ apiSpy, testsBulkSpy });
+
     await vi.advanceTimersByTimeAsync(0);
     await fixturePromise;
+    await vi.advanceTimersByTimeAsync(10000);
 
-    expect(apiSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).toHaveBeenNthCalledWith(1, [PENDING_RUN.tests[0].id, 99]);
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenNthCalledWith(2, [99]);
+  });
+
+  it('stops polling once the merged state has no pending tests left', async () => {
+    vi.useFakeTimers();
+    const apiSpy = vi.fn().mockReturnValue(of(PENDING_RUN));
+    const resolved = { ...PENDING_RUN.tests[0], status: 'done', passed: true };
+    const testsBulkSpy = vi.fn().mockReturnValue(of([resolved]));
+    const fixturePromise = setup({ apiSpy, testsBulkSpy });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1);
 
     await vi.advanceTimersByTimeAsync(20000);
-    expect(apiSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1); // no further calls
   });
 
-  it('keeps polling for a third request when the second response is still pending (sustained loop)', async () => {
+  it('does not poll at all when the initial run has no pending tests', async () => {
     vi.useFakeTimers();
-    const apiSpy = vi.fn().mockImplementation(() => of({ ...PENDING_RUN }));
-    const fixturePromise = setup({ apiSpy });
+    const testsBulkSpy = vi.fn().mockReturnValue(of([]));
+    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(RUN)), testsBulkSpy });
+
     await vi.advanceTimersByTimeAsync(0);
     await fixturePromise;
+    await vi.advanceTimersByTimeAsync(20000);
 
-    expect(apiSpy).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(9999);
-    expect(apiSpy).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(apiSpy).toHaveBeenCalledTimes(2);
-
-    await vi.advanceTimersByTimeAsync(9999);
-    expect(apiSpy).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(2);
-    expect(apiSpy).toHaveBeenCalledTimes(3);
+    expect(testsBulkSpy).not.toHaveBeenCalled();
   });
 
   it('clears the pending timer on destroy so no further request fires', async () => {
     vi.useFakeTimers();
-    const apiSpy = vi.fn().mockReturnValue(of(PENDING_RUN));
-    const fixturePromise = setup({ apiSpy });
+    const testsBulkSpy = vi.fn().mockReturnValue(of([]));
+    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+
     await vi.advanceTimersByTimeAsync(0);
     const fixture = await fixturePromise;
-
-    expect(apiSpy).toHaveBeenCalledTimes(1);
 
     fixture.destroy();
 
     await vi.advanceTimersByTimeAsync(20000);
-    expect(apiSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).not.toHaveBeenCalled();
   });
 });
