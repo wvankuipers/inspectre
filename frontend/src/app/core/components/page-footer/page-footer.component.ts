@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { BUILD_SHA, BUILD_VERSION } from '../../../build-info';
+import { BUILD_VERSION } from '../../../build-info';
 
 @Component({
   selector: 'app-page-footer',
@@ -9,7 +9,6 @@ import { BUILD_SHA, BUILD_VERSION } from '../../../build-info';
 })
 export class PageFooterComponent {
   readonly version = BUILD_VERSION;
-  readonly sha = BUILD_SHA;
   readonly renderedAt = new Date().toLocaleString('en-GB', {
     day: 'numeric',
     month: 'short',
