@@ -117,7 +117,6 @@ export class RunDetailComponent implements AfterViewInit {
         takeUntilDestroyed(),
       )
       .subscribe((runData) => {
-        clearTimeout(this.pollTimer);
         this.runData.set(runData ?? undefined);
         this.schedulePollIfNeeded();
       });
@@ -126,6 +125,7 @@ export class RunDetailComponent implements AfterViewInit {
   }
 
   private schedulePollIfNeeded(): void {
+    clearTimeout(this.pollTimer);
     if (!this.hasPendingTests()) return;
     this.pollTimer = setTimeout(() => this.pollPendingTests(), 10000);
   }
@@ -242,7 +242,10 @@ export class RunDetailComponent implements AfterViewInit {
           this.api
             .testsBulk([test.id])
             .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe((updated) => this.mergeTests(updated));
+            .subscribe((updated) => {
+              this.mergeTests(updated);
+              this.schedulePollIfNeeded();
+            });
         },
         error: () => {
           this.pendingId.update((currentStatuses) => {
