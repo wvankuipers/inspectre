@@ -175,6 +175,26 @@ class TestRowSerializer(serializers.ModelSerializer):
         return _file_url(obj.screenshot_diff_thumb)
 
 
+def serialize_tests_bulk(tests):
+    """Serialize an arbitrary set of Test rows (may span multiple suites/runs).
+
+    Mirrors RunDetailSerializer.get_tests's baseline-source resolution, but
+    grouped per suite since the input isn't guaranteed to be one suite.
+    """
+    tests = list(tests)
+    suite_ids = {t.run.suite_id for t in tests}
+    baseline_source_ids = set(
+        Baseline.objects.filter(suite_id__in=suite_ids, test_id__isnull=False).values_list(
+            "test_id", flat=True
+        )
+    )
+    return TestRowSerializer(
+        tests,
+        many=True,
+        context={"baseline_source_ids": baseline_source_ids},
+    ).data
+
+
 class RunSummarySerializer(serializers.ModelSerializer):
     """One row in the suite page's `Latest runs` table — counts only, no test list."""
 

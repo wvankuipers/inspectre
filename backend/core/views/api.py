@@ -17,6 +17,7 @@ from core.serializers import (
     ProjectSerializer,
     RunDetailSerializer,
     SuiteDetailSerializer,
+    serialize_tests_bulk,
 )
 from core.views.legacy import _set_as_baseline
 
@@ -62,6 +63,21 @@ def set_baseline(request, pk):
     test = get_object_or_404(Test, pk=pk)
     _set_as_baseline(test)
     return Response(status=204)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def tests_bulk(request):
+    """POST /api/tests/bulk/ — fetch fresh TestRow data for a set of ids.
+
+    IDs travel in the body, not the URL: a run's pending set can be large
+    (hundreds of tests), which doesn't fit a query string or path segment.
+    Unknown ids are silently omitted rather than causing a 404, since the
+    caller already knows which ids it's polling for.
+    """
+    ids = request.data.get("ids") or []
+    tests = Test.objects.select_related("run__suite__project").filter(id__in=ids)
+    return Response(serialize_tests_bulk(tests))
 
 
 @api_view(["GET"])

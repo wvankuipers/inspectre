@@ -274,6 +274,79 @@ class TestSetBaselineSpa:
 
 
 # =============================================================================
+# POST /api/tests/bulk/  — fetch a specific set of tests by id
+# =============================================================================
+
+
+class TestTestsBulk:
+    def test_returns_matching_tests(self, api, test_factory):
+        t1 = test_factory(name="Homepage")
+        t2 = test_factory(name="About")
+        test_factory(name="Contact")  # not requested, must be excluded
+
+        response = api.post(
+            "/api/tests/bulk/",
+            {"ids": [t1.id, t2.id]},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert {t["name"] for t in body} == {"Homepage", "About"}
+        assert {t["id"] for t in body} == {t1.id, t2.id}
+
+    def test_test_row_uses_passed_not_pass(self, api, test_factory):
+        t1 = test_factory(name="Homepage")
+
+        body = api.post("/api/tests/bulk/", {"ids": [t1.id]}, format="json").json()
+
+        assert "passed" in body[0]
+        assert isinstance(body[0]["passed"], bool)
+        assert "pass" not in body[0]
+
+    def test_unknown_ids_are_silently_omitted(self, api, test_factory):
+        t1 = test_factory(name="Homepage")
+
+        response = api.post(
+            "/api/tests/bulk/",
+            {"ids": [t1.id, 999999]},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert {t["id"] for t in body} == {t1.id}
+
+    def test_empty_ids_returns_empty_array(self, api):
+        response = api.post("/api/tests/bulk/", {"ids": []}, format="json")
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_ids_spanning_two_suites_resolve_baseline_source_independently(
+        self,
+        api,
+        test_factory,
+        baseline_factory,
+    ):
+        t1 = test_factory(name="Homepage")
+        t2 = test_factory(name="Homepage")  # different run/suite (default factory)
+
+        baseline_factory(suite=t1.run.suite, key=t1.key, test=t1)
+        # t2's suite has no baseline pointing at t2.
+
+        body = api.post(
+            "/api/tests/bulk/",
+            {"ids": [t1.id, t2.id]},
+            format="json",
+        ).json()
+
+        by_id = {t["id"]: t for t in body}
+        assert by_id[t1.id]["is_baseline_source"] is True
+        assert by_id[t2.id]["is_baseline_source"] is False
+
+
+# =============================================================================
 # GET /api/baselines/<key>/  — JSON metadata
 # =============================================================================
 
