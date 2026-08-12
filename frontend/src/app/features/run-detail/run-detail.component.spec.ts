@@ -793,6 +793,25 @@ describe('RunDetailComponent pending-test polling', () => {
     expect(testsBulkSpy).not.toHaveBeenCalled();
   });
 
+  it('reschedules polling and retries after a testsBulk request errors', async () => {
+    vi.useFakeTimers();
+    const testsBulkSpy = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new Error('network')))
+      .mockReturnValueOnce(of([]));
+    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await fixturePromise;
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(2);
+    expect(testsBulkSpy).toHaveBeenNthCalledWith(2, [PENDING_RUN.tests[0].id]);
+  });
+
   it('clears the pending timer on destroy so no further request fires', async () => {
     vi.useFakeTimers();
     const testsBulkSpy = vi.fn().mockReturnValue(of([]));

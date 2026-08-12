@@ -75,7 +75,8 @@ def tests_bulk(request):
     Unknown ids (including non-integers) are silently omitted rather than causing
     an error, since the caller already knows which ids it's polling for.
     """
-    ids = [i for i in (request.data.get("ids") or []) if isinstance(i, int)]
+    raw = request.data.get("ids") if isinstance(request.data, dict) else None
+    ids = [i for i in (raw or []) if isinstance(i, int) and not isinstance(i, bool)]
     tests = Test.objects.select_related("run__suite__project").filter(id__in=ids)
     return Response(serialize_tests_bulk(tests))
 

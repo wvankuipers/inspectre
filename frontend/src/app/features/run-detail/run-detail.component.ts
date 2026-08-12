@@ -138,9 +138,12 @@ export class RunDetailComponent implements AfterViewInit {
     this.api
       .testsBulk(pendingIds)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((updated) => {
-        this.mergeTests(updated);
-        this.schedulePollIfNeeded();
+      .subscribe({
+        next: (updated) => {
+          this.mergeTests(updated);
+          this.schedulePollIfNeeded();
+        },
+        error: () => this.schedulePollIfNeeded(),
       });
   }
 
@@ -242,9 +245,12 @@ export class RunDetailComponent implements AfterViewInit {
           this.api
             .testsBulk([test.id])
             .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe((updated) => {
-              this.mergeTests(updated);
-              this.schedulePollIfNeeded();
+            .subscribe({
+              next: (updated) => {
+                this.mergeTests(updated);
+                this.schedulePollIfNeeded();
+              },
+              error: () => this.schedulePollIfNeeded(),
             });
         },
         error: () => {

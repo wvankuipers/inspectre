@@ -184,9 +184,7 @@ def serialize_tests_bulk(tests):
     tests = list(tests)
     suite_ids = {t.run.suite_id for t in tests}
     baseline_source_ids = set(
-        Baseline.objects.filter(suite_id__in=suite_ids, test_id__isnull=False).values_list(
-            "test_id", flat=True
-        )
+        Baseline.objects.filter(suite_id__in=suite_ids, test_id__isnull=False).values_list("test_id", flat=True)
     )
     return TestRowSerializer(
         tests,
