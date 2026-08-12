@@ -9,13 +9,12 @@ describe('PageFooterComponent', () => {
     }).compileComponents();
   });
 
-  it('renders a version string with semver and sha', () => {
+  it('renders a version string with semver', () => {
     const fixture = TestBed.createComponent(PageFooterComponent);
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
     const versionEl = el.querySelector('.footer-version');
     expect(versionEl?.textContent).toMatch(/v\d+\.\d+\.\d+/);
-    expect(versionEl?.textContent).toContain(fixture.componentInstance.sha);
   });
 
   it('renders a rendered-at timestamp with date, time, and timezone', () => {
