@@ -14,7 +14,9 @@ pytestmark = [pytest.mark.django_db, pytest.mark.slow]
 
 
 def test_self_baseline_first_run(test_factory, upload, testcard):
-    """First-ever submission for a key has no baseline → self-baseline → pass.
+    """First-ever submission for a key has no baseline to compare against →
+    passes with diff=0 and no comparison images, and immediately becomes the
+    new Baseline for future submissions.
 
     decisions.md #3: returns is_new_baseline=True so the SPA can show the badge.
     """
@@ -25,6 +27,8 @@ def test_self_baseline_first_run(test_factory, upload, testcard):
     assert test.passed is True
     assert test.diff == 0
     assert is_new is True
+    assert not test.screenshot_baseline
+    assert not test.screenshot_diff
     assert Baseline.objects.filter(key=test.key).exists()
 
 
@@ -185,14 +189,35 @@ def test_orphan_baseline_falls_back_to_self_baseline(
 
 
 def test_passing_run_populates_all_test_thumbnails(test_factory, upload, testcard):
-    """Three test-row thumbnails (screenshot, baseline, diff) attach on a pass."""
+    """Three test-row thumbnails (screenshot, baseline, diff) attach when a real
+    comparison happens and passes — i.e. a baseline already existed."""
+    first = test_factory()
+    ScreenshotComparison(first, upload(testcard)).run()
+
+    second = test_factory(
+        run=first.run,
+        name=first.name,
+        browser=first.browser,
+        size=first.size,
+    )
+    ScreenshotComparison(second, upload(testcard)).run()
+
+    second.refresh_from_db()
+    assert second.screenshot_thumb
+    assert second.screenshot_baseline_thumb
+    assert second.screenshot_diff_thumb
+
+
+def test_first_upload_only_populates_screenshot_thumbnail(test_factory, upload, testcard):
+    """First-ever submission has nothing to compare against: only the received
+    screenshot gets a thumbnail. There's no baseline/diff thumbnail yet."""
     test = test_factory()
     ScreenshotComparison(test, upload(testcard)).run()
 
     test.refresh_from_db()
     assert test.screenshot_thumb
-    assert test.screenshot_baseline_thumb
-    assert test.screenshot_diff_thumb
+    assert not test.screenshot_baseline_thumb
+    assert not test.screenshot_diff_thumb
 
 
 def test_failing_run_still_populates_test_thumbnails(
