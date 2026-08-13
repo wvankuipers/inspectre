@@ -75,7 +75,7 @@ def test_seed_demo_attaches_real_screenshots():
     assert no_baseline is not None, "expected a test named 'new_unbaselined_page'"
     assert no_baseline.screenshot, "no-baseline test should still have a screenshot"
     assert not no_baseline.screenshot_baseline, "no-baseline test must not have a baseline screenshot attached"
-    assert no_baseline.passed is True
+    assert no_baseline.passed is False, "an unapproved first upload must not be marked passed"
 
 
 @pytest.mark.slow
