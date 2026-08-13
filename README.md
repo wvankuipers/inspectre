@@ -64,7 +64,7 @@ Project ──▶ Suite ──▶ Run ──▶ Test
 - **Suite** — category of tests inside a project, e.g. "Desktop" or "Mobile"
 - **Run** — one CI execution of a suite; the last 5 runs are kept per suite
 - **Test** — one screenshot submission; carries diff %, pass/fail, and S3 image URLs
-- **Baseline** — the accepted-good screenshot for a key; updated automatically on first pass or manually via the UI
+- **Baseline** — the accepted-good screenshot for a key; updated automatically when a test passes against an existing baseline, or manually via a human's "Set as baseline" click in the UI (required for the very first submission of a key, since there's nothing to compare it against and it never passes automatically)
 
 ### Image pipeline
 
@@ -75,7 +75,7 @@ Project ──▶ Suite ──▶ Run ──▶ Test
 3. Pad both images to the same canvas
 4. `imagemagick compare -metric AE` → diff pixel count → diff percentage
 5. Upload original, baseline snapshot, diff overlay, and 300 px JPEG thumbnails
-6. Upsert Baseline if passing; set `status = "done"`
+6. Upsert Baseline if passing against an existing baseline; set `status = "done"`
 
 ### API surfaces
 

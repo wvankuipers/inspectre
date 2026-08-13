@@ -368,7 +368,7 @@ class ScreenshotComparison:
         storage. Stored with no comparison images and NOT marked passed: a
         human must explicitly approve it (via the existing "Set as baseline"
         action) before it counts as passing or becomes the Baseline for this
-        key.
+        key. See docs/superpowers/specs/2026-08-13-manual-baseline-approval-design.md.
 
         Renders the thumbnail (the only step that can fail) before writing
         anything to storage, so a render failure never leaves an orphaned
