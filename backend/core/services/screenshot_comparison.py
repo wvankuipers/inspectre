@@ -153,12 +153,22 @@ class ScreenshotComparison:
 
         self.test.diff = 0
         self.test.passed = False
-        with screenshot_in.open("rb") as fh:
-            self.test.screenshot.save("original.png", File(fh), save=False)
-        with thumb_path.open("rb") as fh:
-            self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
-
-        self.test.save()
+        uploaded_fields = []
+        try:
+            with screenshot_in.open("rb") as fh:
+                self.test.screenshot.save("original.png", File(fh), save=False)
+            uploaded_fields.append(self.test.screenshot)
+            with thumb_path.open("rb") as fh:
+                self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
+            uploaded_fields.append(self.test.screenshot_thumb)
+            self.test.save()
+        except Exception:
+            for field in uploaded_fields:
+                try:
+                    field.delete(save=False)
+                except Exception:
+                    logger.warning("failed to clean up orphaned first-upload file: %s", field.name)
+            raise
 
     def _compare(
         self,

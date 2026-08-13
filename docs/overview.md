@@ -54,8 +54,8 @@ The (project, suite, name, browser, size) tuple is parameterized into a **key** 
         i.  If crop_area given → crop the uploaded screenshot first.
         ii. Compute the test "key" from project+suite+name+browser+size.
         iii.Look up the existing baseline for that key.
-              - If one exists (and its file is still present in storage), use it as the comparison baseline.
-              - If none (or its file is missing), there's nothing to compare against: store the test with no comparison images, mark it `is_new_baseline = true`, and mark it **not passed** — a human must approve it via "Set as baseline" before it counts as passing.
+              - If one exists (and its file is still present in storage), use it as the comparison baseline and continue to step iv.
+              - If none (or its file is missing), there's nothing to compare against: store the test with no comparison images, mark it `is_new_baseline = true`, and mark it **not passed** — a human must approve it via "Set as baseline" before it counts as passing. Steps iv-viii below are skipped entirely for this case; upload only the received screenshot and its thumbnail, then continue to step ix.
         iv. Pad both images to the same canvas (max width × max height, white background).
         v.  Run ImageMagick compare with -fuzz <fuzz_level> -metric AE
             -highlight-color #<highlight_colour> → diff image + count of differing pixels.

@@ -2,6 +2,7 @@ import subprocess
 from unittest.mock import patch
 
 import pytest
+from django.db.models.fields.files import FieldFile
 
 from core.models import Baseline
 from core.services.baseline_upsert import upsert_baseline_from_test
@@ -185,6 +186,42 @@ def test_first_upload_thumbnail_failure_leaves_no_orphaned_screenshot(
     with patch("core.services.screenshot_comparison.render_thumbnail", side_effect=ImageDiffError("boom")):
         with pytest.raises(ImageDiffError, match="boom"):
             ScreenshotComparison(test, upload(testcard)).run()
+
+    test.refresh_from_db()
+    assert not test.screenshot
+    assert not test.screenshot_thumb
+    assert not Baseline.objects.filter(key=test.key).exists()
+
+
+def test_first_upload_second_save_failure_cleans_up_first_stored_file(
+    test_factory,
+    upload,
+    testcard,
+):
+    """On a first upload, if the screenshot save succeeds but the thumbnail
+    save fails, the already-stored screenshot is deleted rather than left
+    as an orphan the DB row never references.
+    """
+    test = test_factory()
+
+    real_save = FieldFile.save
+    call_count = {"n": 0}
+    stored_names = []
+
+    def fail_on_second_save(self, *args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise OSError("simulated S3 failure on second save")
+        result = real_save(self, *args, **kwargs)
+        stored_names.append(self.name)
+        return result
+
+    with patch.object(FieldFile, "save", fail_on_second_save):
+        with pytest.raises(OSError, match="simulated S3 failure"):
+            ScreenshotComparison(test, upload(testcard)).run()
+
+    assert len(stored_names) == 1, "expected exactly one field to have been stored before the failure"
+    assert not test.screenshot.storage.exists(stored_names[0]), "first stored file was not cleaned up"
 
     test.refresh_from_db()
     assert not test.screenshot
