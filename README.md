@@ -37,7 +37,7 @@ Human
   └─ Reviews diff images, clicks "Set as baseline" to accept regressions
 ```
 
-The first submission for any (project, suite, name, browser, size) combination has no baseline — Inspectre self-baselines and marks it `is_new_baseline: true`. Subsequent submissions compare against that baseline.
+The first submission for any (project, suite, name, browser, size) combination has nothing to compare against, so it's stored with no comparison images, marked `is_new_baseline: true`, and marked **not passed**. A human must review it and click "Set as baseline" before it becomes the reference image subsequent submissions compare against. Later submissions that match an established baseline pass automatically, with no human involved.
 
 ---
 
@@ -64,7 +64,7 @@ Project ──▶ Suite ──▶ Run ──▶ Test
 - **Suite** — category of tests inside a project, e.g. "Desktop" or "Mobile"
 - **Run** — one CI execution of a suite; the last 5 runs are kept per suite
 - **Test** — one screenshot submission; carries diff %, pass/fail, and S3 image URLs
-- **Baseline** — the accepted-good screenshot for a key; updated automatically on first pass or manually via the UI
+- **Baseline** — the accepted-good screenshot for a key; updated automatically when a test passes against an existing baseline, or manually via a human's "Set as baseline" click in the UI (required for the very first submission of a key, since there's nothing to compare it against and it never passes automatically)
 
 ### Image pipeline
 
@@ -75,7 +75,7 @@ Project ──▶ Suite ──▶ Run ──▶ Test
 3. Pad both images to the same canvas
 4. `imagemagick compare -metric AE` → diff pixel count → diff percentage
 5. Upload original, baseline snapshot, diff overlay, and 300 px JPEG thumbnails
-6. Upsert Baseline if passing; set `status = "done"`
+6. Upsert Baseline if passing against an existing baseline; set `status = "done"`
 
 ### API surfaces
 

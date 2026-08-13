@@ -26,7 +26,7 @@ Project ──▶ Suite ──▶ Run ──▶ Test
 - **Suite** — a category of tests inside a project (e.g. "Desktop", "Mobile"). Identified by a slug, scoped to its project.
 - **Run** — one execution of a suite. Identified by a per-suite **sequential id** (1, 2, 3…). A suite keeps **only the 5 most recent runs**; older runs and their tests are auto-deleted by a post-save signal.
 - **Test** — a single screenshot submission within a run. Has a name, browser, size, optional source URL, fuzz level, highlight colour, and optional crop area.
-- **Baseline** — the "accepted good" screenshot for a given (project, suite, name, browser, size) tuple. Lives on the Suite. Updated automatically when a test passes for the first time, or manually when a human clicks "Set as baseline".
+- **Baseline** — the "accepted good" screenshot for a given (project, suite, name, browser, size) tuple. Lives on the Suite. Updated automatically when a test passes against an existing baseline, or when a human clicks "Set as baseline" (which is required for the very first submission of a key, since there's nothing to compare it against and it does not pass automatically).
 
 The (project, suite, name, browser, size) tuple is parameterized into a **key** that ties Tests and Baselines together. See [data-model.md](data-model.md) for the exact key formula.
 
@@ -54,8 +54,8 @@ The (project, suite, name, browser, size) tuple is parameterized into a **key** 
         i.  If crop_area given → crop the uploaded screenshot first.
         ii. Compute the test "key" from project+suite+name+browser+size.
         iii.Look up the existing baseline for that key.
-              - If one exists, use it as the comparison baseline.
-              - If none, the test is its own baseline (always passes first time).
+              - If one exists (and its file is still present in storage), use it as the comparison baseline and continue to step iv.
+              - If none (or its file is missing), there's nothing to compare against: store the test with no comparison images, mark it `is_new_baseline = true`, and mark it **not passed** — a human must approve it via "Set as baseline" before it counts as passing. Steps iv-viii below are skipped entirely for this case; upload only the received screenshot and its thumbnail, then continue to step ix.
         iv. Pad both images to the same canvas (max width × max height, white background).
         v.  Run ImageMagick compare with -fuzz <fuzz_level> -metric AE
             -highlight-color #<highlight_colour> → diff image + count of differing pixels.
@@ -63,8 +63,12 @@ The (project, suite, name, browser, size) tuple is parameterized into a **key** 
         vii.pass = diff_percentage < 0.1.
         viii.Upload screenshot, baseline-snapshot, and diff image to S3.
             Also generate 300px-wide JPEG thumbnails and upload them.
-        ix. If passing, upsert a Baseline row for this key.
-        x.  Mark is_new_baseline = true if this was the first submission for this key.
+        ix. If passing (i.e. an existing baseline was compared against and the diff
+            was below threshold), upsert a Baseline row for this key. A first
+            submission with nothing to compare against does NOT upsert a Baseline
+            here — it stays unbaselined until a human approves it.
+        x.  Mark is_new_baseline = true if this was a first submission for this key
+            (no comparison images, not passed).
         xi. Set status="done" (or "failed" if the pipeline raised).
 
 4. The CI client polls `GET /tests/:id/status` every second until
@@ -86,5 +90,5 @@ The (project, suite, name, browser, size) tuple is parameterized into a **key** 
 - **Sequential ids per suite**: Runs get a per-suite sequential id assigned atomically via `select_for_update()` on the Suite row during `Run.save()`.
 - **Slug routing**: Projects and Suites use slugs for URLs, auto-updated when the name changes. Renaming breaks existing deep-links and severs all baselines for that project/suite (see [decisions.md](decisions.md) #4).
 - **Find-or-create on ingest**: `POST /runs` does `Project.objects.get_or_create(name=…)` then `Suite.objects.get_or_create(project=project, name=…)`. Submitting a screenshot with a new project/suite name silently creates those records.
-- **Self-baselining**: The first submission for a (project, suite, name, browser, size) has no baseline; Inspectre compares it to itself, so it always passes, and marks `is_new_baseline = true`. The SPA shows a "New baseline" chip so humans can spot auto-baselined keys.
+- **Unbaselined tests require approval**: The first submission for a (project, suite, name, browser, size) has no baseline (or its baseline's file is missing from storage); there's nothing to compare it against, so it's stored with no comparison images, marked **not passed**, and marked `is_new_baseline = true`. The SPA shows a "New baseline" chip so humans can spot these — a human must click "Set as baseline" before the test counts as passing or the screenshot becomes the Baseline for that key.
 - **Async image processing**: `POST /tests` returns in ~50 ms. The ImageMagick pipeline runs in a Celery worker backed by Valkey. CI clients poll `GET /tests/:id/status` until `status == "done"`. The SPA shows a "Processing…" chip for any test that has not yet completed and auto-refreshes the run page every 3 s until all tests are terminal.

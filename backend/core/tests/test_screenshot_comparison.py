@@ -2,36 +2,80 @@ import subprocess
 from unittest.mock import patch
 
 import pytest
+from django.db.models.fields.files import FieldFile
 
 from core.models import Baseline
+from core.services.baseline_upsert import upsert_baseline_from_test
 from core.services.image_geometry import ImageDiffError, ImageGeometry
 from core.services.screenshot_comparison import ScreenshotComparison
+from core.views.legacy import _set_as_baseline
 
 pytestmark = [pytest.mark.django_db, pytest.mark.slow]
+
+
+def _approve(test) -> None:
+    """Simulate a human clicking "Set as baseline" on a test that just went
+    through the no-comparison path, so a subsequent submission for the same
+    key has something real to compare against.
+    """
+    test.refresh_from_db()
+    test.passed = True
+    test.save(update_fields=["passed"])
+    upsert_baseline_from_test(test)
 
 
 # ---- Happy paths -----------------------------------------------------------
 
 
-def test_self_baseline_first_run(test_factory, upload, testcard):
-    """First-ever submission for a key has no baseline → self-baseline → pass.
+def test_first_upload_requires_manual_approval(test_factory, upload, testcard):
+    """First-ever submission for a key has nothing to compare against → stored
+    with no comparison images, marked NOT passed, and no Baseline is created.
+    A human must explicitly approve it before it counts as passing.
 
-    decisions.md #3: returns is_new_baseline=True so the SPA can show the badge.
+    decisions.md #3 (superseded): auto-self-baseline is replaced by manual
+    approval — nothing passes without a human having looked at it.
     """
     test = test_factory()
     is_new = ScreenshotComparison(test, upload(testcard)).run()
 
     test.refresh_from_db()
-    assert test.passed is True
+    assert test.passed is False
     assert test.diff == 0
     assert is_new is True
-    assert Baseline.objects.filter(key=test.key).exists()
+    assert not test.screenshot_baseline
+    assert not test.screenshot_diff
+    assert test.screenshot
+    assert test.screenshot_thumb
+    assert not Baseline.objects.filter(key=test.key).exists()
+
+
+def test_approving_a_first_upload_establishes_the_baseline(test_factory, upload, testcard):
+    """The existing 'Set as baseline' mechanism promotes an unapproved first
+    upload exactly like any other test: flips passed=True and creates the
+    Baseline row. No special-casing needed for tests that came from the
+    no-comparison path.
+    """
+    test = test_factory()
+    ScreenshotComparison(test, upload(testcard)).run()
+
+    test.refresh_from_db()
+    assert test.passed is False
+    assert not Baseline.objects.filter(key=test.key).exists()
+
+    _set_as_baseline(test)
+
+    test.refresh_from_db()
+    assert test.passed is True
+    baseline = Baseline.objects.get(key=test.key)
+    assert baseline.screenshot
+    assert baseline.test_id == test.id
 
 
 def test_identical_to_baseline_passes(test_factory, upload, testcard):
     """Re-submitting the same image after a baseline exists → pass, is_new_baseline=False."""
     first = test_factory()
     ScreenshotComparison(first, upload(testcard)).run()
+    _approve(first)
 
     second = test_factory(
         run=first.run,
@@ -50,6 +94,7 @@ def test_different_image_fails(test_factory, upload, run1, run2):
     """Pair with intentional differences → diff% > threshold → fail."""
     first = test_factory()
     ScreenshotComparison(first, upload(run1)).run()
+    _approve(first)
 
     second = test_factory(
         run=first.run,
@@ -77,6 +122,7 @@ def test_different_dimensions_pads_to_larger_canvas(
     """400x300 vs 500x375 → canvas is 500x375; the diff fills the padded region."""
     first = test_factory()
     ScreenshotComparison(first, upload(testcard)).run()
+    _approve(first)
 
     second = test_factory(
         run=first.run,
@@ -122,6 +168,67 @@ def test_corrupt_input_raises_imagediff_error(test_factory, upload, tmp_path):
         ScreenshotComparison(test, upload(not_an_image)).run()
 
 
+def test_first_upload_thumbnail_failure_leaves_no_orphaned_screenshot(
+    test_factory,
+    upload,
+    testcard,
+):
+    """On a first upload, render_thumbnail runs before any storage write. If it
+    raises, nothing has been saved to storage or the DB yet — no orphaned file.
+
+    Regression test for the ordering fix in _record_first_upload: previously
+    the screenshot was saved to storage before the thumbnail was rendered, so
+    a thumbnail failure left an unreachable file in storage (never saved to
+    the DB row, so nothing would ever clean it up).
+    """
+    test = test_factory()
+
+    with patch("core.services.screenshot_comparison.render_thumbnail", side_effect=ImageDiffError("boom")):
+        with pytest.raises(ImageDiffError, match="boom"):
+            ScreenshotComparison(test, upload(testcard)).run()
+
+    test.refresh_from_db()
+    assert not test.screenshot
+    assert not test.screenshot_thumb
+    assert not Baseline.objects.filter(key=test.key).exists()
+
+
+def test_first_upload_second_save_failure_cleans_up_first_stored_file(
+    test_factory,
+    upload,
+    testcard,
+):
+    """On a first upload, if the screenshot save succeeds but the thumbnail
+    save fails, the already-stored screenshot is deleted rather than left
+    as an orphan the DB row never references.
+    """
+    test = test_factory()
+
+    real_save = FieldFile.save
+    call_count = {"n": 0}
+    stored_names = []
+
+    def fail_on_second_save(self, *args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise OSError("simulated S3 failure on second save")
+        result = real_save(self, *args, **kwargs)
+        stored_names.append(self.name)
+        return result
+
+    with patch.object(FieldFile, "save", fail_on_second_save):
+        with pytest.raises(OSError, match="simulated S3 failure"):
+            ScreenshotComparison(test, upload(testcard)).run()
+
+    assert len(stored_names) == 1, "expected exactly one field to have been stored before the failure"
+    assert not test.screenshot.storage.exists(stored_names[0]), "first stored file was not cleaned up"
+
+    test.refresh_from_db()
+    assert not test.screenshot
+    assert not test.screenshot_thumb
+    assert not Baseline.objects.filter(key=test.key).exists()
+
+
 def test_imagemagick_timeout_raises_imagediff_error(test_factory, upload, testcard):
     """If ImageMagick hangs past the timeout, ImageDiffError is raised immediately.
 
@@ -146,15 +253,16 @@ def test_imagemagick_timeout_raises_imagediff_error(test_factory, upload, testca
             ScreenshotComparison(test, upload(testcard)).run()
 
 
-def test_orphan_baseline_falls_back_to_self_baseline(
+def test_orphan_baseline_requires_manual_reapproval(
     test_factory,
     upload,
     testcard,
     caplog,
 ):
-    """Baseline row exists but its screenshot file is gone from storage → log
-    warning, self-baseline, mark is_new_baseline=True. Legacy parity with the
-    orphan-UID rescue.
+    """Baseline row exists but its screenshot file is gone from storage →
+    treated exactly like a first upload: log warning, no comparison, NOT
+    passed. The stale Baseline row is left as-is (still orphaned) — approving
+    the new test is what fixes it via upsert_baseline_from_test.
     """
     import logging
 
@@ -163,9 +271,11 @@ def test_orphan_baseline_falls_back_to_self_baseline(
     first = test_factory()
     ScreenshotComparison(first, upload(testcard)).run()
 
-    # Delete the file from disk but keep the row's reference intact so the
-    # next call hits the FileNotFoundError branch (mirroring an S3 object
-    # being removed out from under the database).
+    # Since Task 1's change, `first` never created a Baseline row in the
+    # first place (it required approval too) — so establish one directly to
+    # exercise the orphan path in isolation from the approval flow.
+    _approve(first)
+
     baseline = Baseline.objects.get(key=first.key)
     baseline.screenshot.storage.delete(baseline.screenshot.name)
 
@@ -177,7 +287,9 @@ def test_orphan_baseline_falls_back_to_self_baseline(
     )
     is_new = ScreenshotComparison(second, upload(testcard)).run()
 
+    second.refresh_from_db()
     assert is_new is True
+    assert second.passed is False
     assert any("baseline file missing" in r.message for r in caplog.records)
 
 
@@ -185,14 +297,36 @@ def test_orphan_baseline_falls_back_to_self_baseline(
 
 
 def test_passing_run_populates_all_test_thumbnails(test_factory, upload, testcard):
-    """Three test-row thumbnails (screenshot, baseline, diff) attach on a pass."""
+    """Three test-row thumbnails (screenshot, baseline, diff) attach when a real
+    comparison happens and passes — i.e. a baseline already existed."""
+    first = test_factory()
+    ScreenshotComparison(first, upload(testcard)).run()
+    _approve(first)
+
+    second = test_factory(
+        run=first.run,
+        name=first.name,
+        browser=first.browser,
+        size=first.size,
+    )
+    ScreenshotComparison(second, upload(testcard)).run()
+
+    second.refresh_from_db()
+    assert second.screenshot_thumb
+    assert second.screenshot_baseline_thumb
+    assert second.screenshot_diff_thumb
+
+
+def test_first_upload_only_populates_screenshot_thumbnail(test_factory, upload, testcard):
+    """First-ever submission has nothing to compare against: only the received
+    screenshot gets a thumbnail. There's no baseline/diff thumbnail yet."""
     test = test_factory()
     ScreenshotComparison(test, upload(testcard)).run()
 
     test.refresh_from_db()
     assert test.screenshot_thumb
-    assert test.screenshot_baseline_thumb
-    assert test.screenshot_diff_thumb
+    assert not test.screenshot_baseline_thumb
+    assert not test.screenshot_diff_thumb
 
 
 def test_failing_run_still_populates_test_thumbnails(
@@ -204,6 +338,7 @@ def test_failing_run_still_populates_test_thumbnails(
     """Diff thumbnails are useful for debugging the fail; render even on failure."""
     first = test_factory()
     ScreenshotComparison(first, upload(run1)).run()
+    _approve(first)
 
     second = test_factory(
         run=first.run,
@@ -224,6 +359,7 @@ def test_baseline_thumbnail_attached_on_pass(test_factory, upload, testcard):
     """The Baseline row gets its own thumbnail (used on the suite page)."""
     test = test_factory()
     ScreenshotComparison(test, upload(testcard)).run()
+    _approve(test)
 
     baseline = Baseline.objects.get(key=test.key)
     assert baseline.thumbnail
@@ -261,6 +397,7 @@ def test_pass_threshold_is_configurable(
 
     first = test_factory()
     ScreenshotComparison(first, upload(run1)).run()
+    _approve(first)
 
     second = test_factory(
         run=first.run,

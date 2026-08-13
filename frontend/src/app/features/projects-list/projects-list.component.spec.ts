@@ -24,7 +24,7 @@ const PROJECTS: Project[] = [
           sequential_id: 1,
           created_at: '2026-01-01T00:00:00Z',
           passing: 0,
-          failing: 0,
+          failing: 3,
           unbaselined: 3,
         },
       },
@@ -256,15 +256,19 @@ describe('ProjectsListComponent status filter', () => {
     expect(rows[0].project.name).toBe('Alpha');
   });
 
-  it('shows only failing rows when fail filter is active', async () => {
+  it('shows failing rows (including unbaselined ones) when fail filter is active', async () => {
     const fixture = TestBed.createComponent(ProjectsListComponent);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance.toggleStatus('fail');
     fixture.detectChanges();
     const rows = fixture.componentInstance.visibleRows();
-    expect(rows.length).toBe(1);
-    expect(rows[0].project.name).toBe('Gamma');
+    const names = rows.map((r) => r.project.name);
+    // Beta is unbaselined (which also counts as failing on the backend), so it
+    // should show up under "Fail" too, matching run-detail's behavior.
+    expect(names).toContain('Gamma');
+    expect(names).toContain('Beta');
+    expect(rows.length).toBe(2);
   });
 
   it('shows only new rows when new filter is active', async () => {

@@ -55,8 +55,15 @@ def test_seed_demo_attaches_real_screenshots():
     """
     call_command("seed_demo", yes=True)
 
-    passing = Test.objects.filter(passed=True).exclude(screenshot="").first()
-    assert passing is not None, "no passing test with a screenshot found"
+    # A passing test from run 2+ (not the first upload for a key) will have
+    # performed a real comparison and thus have a baseline screenshot.
+    passing = (
+        Test.objects.filter(passed=True, run__suite__project__name="Acme Marketing Site")
+        .exclude(screenshot="")
+        .exclude(run__sequential_id=1)
+        .first()
+    )
+    assert passing is not None, "no passing test with a screenshot found in run 2+"
     assert passing.screenshot_baseline, "passing test should have a baseline screenshot"
     assert passing.screenshot_thumb, "passing test should have a thumbnail"
 
@@ -68,7 +75,7 @@ def test_seed_demo_attaches_real_screenshots():
     assert no_baseline is not None, "expected a test named 'new_unbaselined_page'"
     assert no_baseline.screenshot, "no-baseline test should still have a screenshot"
     assert not no_baseline.screenshot_baseline, "no-baseline test must not have a baseline screenshot attached"
-    assert no_baseline.passed is False
+    assert no_baseline.passed is False, "an unapproved first upload must not be marked passed"
 
 
 @pytest.mark.slow

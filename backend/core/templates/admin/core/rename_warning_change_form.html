@@ -10,9 +10,10 @@
         Changing <code>name</code> auto-updates the slug. Every <em>future</em> Test
         ingested into this {{ opts.verbose_name }} will compute a new
         <code>key</code>, leaving any existing Baseline orphaned. Consider deleting
-        stale Baselines before renaming, or accept that the next run will
-        self-baseline against the new key (you'll see the "new baseline" badge on
-        the run page).
+        stale Baselines before renaming, or accept that the next run for that
+        key will have nothing to compare against and will need manual
+        approval before it becomes the new baseline (you'll see the "New
+        baseline" badge on the run page, marked as failing until approved).
       </p>
     </div>
   {% endif %}
