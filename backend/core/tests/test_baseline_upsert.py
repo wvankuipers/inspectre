@@ -21,13 +21,15 @@ def test_storage_write_error_propagates_and_logs(
     propagates to the caller and logger.exception is called with the right
     message — giving operators visibility without swallowing the error.
     """
-    # Establish a passing test with a screenshot attached so the upsert path
-    # is reached (the test must be marked passed with a screenshot already saved).
+    # Establish a test with a screenshot attached and passed=True so the
+    # upsert path is reached. A first upload no longer auto-passes (manual
+    # approval is required), so drive it through .run() for the screenshot,
+    # then simulate the human approval step directly.
     test = test_factory()
     ScreenshotComparison(test, upload(testcard)).run()
-    # Fetch the test that now has a screenshot attached and passed=True.
     test.refresh_from_db()
-    assert test.passed is True
+    test.passed = True
+    test.save(update_fields=["passed"])
 
     storage_error = OSError("S3 write failure")
 
