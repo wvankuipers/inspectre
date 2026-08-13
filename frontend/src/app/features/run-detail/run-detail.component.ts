@@ -11,6 +11,8 @@ import {
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatSelectChange, MatSelectModule } from '@angular/material/select';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { ActivatedRoute } from '@angular/router';
@@ -34,6 +36,8 @@ import { SortStateService } from '../../core/services/sort-state.service';
     NgTemplateOutlet,
     MatButtonModule,
     MatDialogModule,
+    MatFormFieldModule,
+    MatSelectModule,
     MatSortModule,
     MatTableModule,
     SearchFieldComponent,
@@ -170,6 +174,20 @@ export class RunDetailComponent implements AfterViewInit {
   readonly pendingId = signal<Set<number>>(new Set());
   readonly searchTerm = signal<string>('');
   readonly activeStatuses = signal<Set<'pass' | 'fail' | 'new'>>(new Set());
+  readonly activeBrowsers = signal<Set<string>>(new Set());
+  readonly activeSizes = signal<Set<string>>(new Set());
+
+  readonly availableBrowsers = computed<string[]>(() =>
+    Array.from(new Set((this.run()?.tests ?? []).map((t) => t.browser))).sort(),
+  );
+
+  readonly availableSizes = computed<string[]>(() =>
+    Array.from(new Set((this.run()?.tests ?? []).map((t) => t.size))).sort(),
+  );
+
+  readonly activeStatusesList = computed<string[]>(() => Array.from(this.activeStatuses()));
+  readonly activeBrowsersList = computed<string[]>(() => Array.from(this.activeBrowsers()));
+  readonly activeSizesList = computed<string[]>(() => Array.from(this.activeSizes()));
 
   private classifyTest(testRow: TestRow): 'pass' | 'fail' | 'new' {
     if (testRow.baseline_url === null) return 'new';
@@ -196,13 +214,17 @@ export class RunDetailComponent implements AfterViewInit {
   readonly visibleTests = computed<TestRow[]>(() => {
     const lowerSearchTerm = this.searchTerm().toLowerCase();
     const statuses = this.activeStatuses();
+    const browsers = this.activeBrowsers();
+    const sizes = this.activeSizes();
     return this.sortedTests()
       .filter((testRow) => testRow.name.toLowerCase().includes(lowerSearchTerm))
       .filter((testRow) => {
         if (statuses.size === 0) return true;
         const cls = this.classifyTest(testRow);
         return statuses.has(cls) || (cls === 'new' && statuses.has('fail'));
-      });
+      })
+      .filter((testRow) => browsers.size === 0 || browsers.has(testRow.browser))
+      .filter((testRow) => sizes.size === 0 || sizes.has(testRow.size));
   });
 
   ngAfterViewInit(): void {
@@ -225,16 +247,16 @@ export class RunDetailComponent implements AfterViewInit {
     this.searchTerm.set(value);
   }
 
-  toggleStatus(status: 'pass' | 'fail' | 'new'): void {
-    this.activeStatuses.update((currentStatuses) => {
-      const next = new Set(currentStatuses);
-      if (next.has(status)) {
-        next.delete(status);
-      } else {
-        next.add(status);
-      }
-      return next;
-    });
+  onStatusSelectionChange(event: MatSelectChange): void {
+    this.activeStatuses.set(new Set(event.value as ('pass' | 'fail' | 'new')[]));
+  }
+
+  onBrowserSelectionChange(event: MatSelectChange): void {
+    this.activeBrowsers.set(new Set(event.value as string[]));
+  }
+
+  onSizeSelectionChange(event: MatSelectChange): void {
+    this.activeSizes.set(new Set(event.value as string[]));
   }
 
   openViewer(test: TestRow, slot: ImageSlot): void {
