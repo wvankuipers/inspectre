@@ -130,8 +130,8 @@ Response — same JSON shape as `POST /tests`. When `status == "done"` all field
 {
   "id": 1234,
   "status": "done",
-  "pass": true,
-  "diff": 0.04,
+  "pass": false,
+  "diff": 0,
   "screenshot_uid": "http://localhost:9000/inspectre-screenshots/screenshots/1234/original.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=...&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=...",
   "screenshot_baseline_uid": null,
   "screenshot_diff_uid": null,
@@ -140,9 +140,11 @@ Response — same JSON shape as `POST /tests`. When `status == "done"` all field
 }
 ```
 
+This example shows a first-ever submission for its key: `pass` is `false` and there's nothing to compare against, so `screenshot_baseline_uid`/`screenshot_diff_uid` stay `null` until a human approves it (see below). A normal comparison against an existing baseline would instead populate those URLs and set `pass` based on the diff percentage.
+
 The bucket is private, so these are presigned URLs with a 24-hour expiry. Clients should treat each URL as a transient signed link, not a stable identifier to cache or compare — it will stop working once it expires.
 
-`is_new_baseline` — `true` if this submission established a Baseline that did not previously exist for the key. This is the first upload for the key: there is nothing to compare it against, so `screenshot_baseline_uid` and `screenshot_diff_uid` are `null`. A second submission for the same key will have `is_new_baseline: false` and populated `screenshot_baseline_uid` / `screenshot_diff_uid` URLs. Surfaced as a chip in the SPA ([ui.md](ui.md)).
+`is_new_baseline: true` means this submission had nothing to compare against — either no Baseline row exists yet for the key, or its file is missing from storage. There is no Baseline to diff against, so `screenshot_baseline_uid` and `screenshot_diff_uid` are `null`, and `pass` will be `false` until a human approves it via `PATCH /tests/:id` with `test[baseline]=true` (see "Set as baseline" below) — it does not pass or become the Baseline automatically. A subsequent submission for the same key, made after approval, will have `is_new_baseline: false` and populated `screenshot_baseline_uid` / `screenshot_diff_uid` URLs. Surfaced as a chip in the SPA ([ui.md](ui.md)).
 
 ### `PATCH /tests/:id` ("Set as baseline")
 

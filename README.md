@@ -37,7 +37,7 @@ Human
   └─ Reviews diff images, clicks "Set as baseline" to accept regressions
 ```
 
-The first submission for any (project, suite, name, browser, size) combination has nothing to compare against — Inspectre stores it with no comparison images and marks it `is_new_baseline: true`. It becomes the baseline that subsequent submissions compare against.
+The first submission for any (project, suite, name, browser, size) combination has nothing to compare against, so it's stored with no comparison images, marked `is_new_baseline: true`, and marked **not passed**. A human must review it and click "Set as baseline" before it becomes the reference image subsequent submissions compare against — nothing passes without a human having looked at it first.
 
 ---
 

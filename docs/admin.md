@@ -34,7 +34,7 @@ So an admin can:
 
 Inferred from gaps in the public UI:
 
-- **Delete a stale baseline** — there's no UI to drop a baseline. Admins delete the row, which forces the next test to self-baseline.
+- **Delete a stale baseline** — there's no UI to drop a baseline. Admins delete the row, which forces the next test for that key to be treated as a first upload — no comparison images, not passed, awaiting manual approval.
 - **Rename a project or suite** — ditto, no UI. Note: editing `name` does **not** update `slug`, and changing the slug breaks all existing links.
 - **Wipe a noisy run** — delete the Run row; cascade removes its tests.
 - **Cleanup** — purge old projects/suites entirely.
@@ -198,8 +198,9 @@ The mixin above points at `admin/core/rename_warning_change_form.html`. Place it
         <code>key</code>, leaving any existing Baseline orphaned.
         Consider deleting stale Baselines before renaming, or accept that the
         next run for that key will have nothing to compare against and will
-        auto-establish as the new baseline (you'll see the "new baseline"
-        badge on the run page).
+        need manual approval before it becomes the new baseline (you'll see
+        the "New baseline" badge on the run page, marked as failing until
+        approved).
       </p>
     </div>
   {% endif %}
