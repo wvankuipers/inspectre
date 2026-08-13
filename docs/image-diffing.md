@@ -239,20 +239,22 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.files import File
-from django.db import transaction
 
 from core.models import Baseline
+from .baseline_upsert import upsert_baseline_from_test
 from .canvas import Canvas
 from .image_geometry import ImageDiffError, ImageGeometry
+from .thumbnails import attach_test_thumbnails, render_thumbnail
 
 logger = logging.getLogger(__name__)
 
 
 class ScreenshotComparison:
-    """Synchronously runs the diff pipeline and persists everything for one Test.
+    """Run the diff pipeline and persist everything for one Test.
 
-    Returns `is_new_baseline=True` from `run()` if this submission was the first
-    Baseline for the Test's key — surfaced in the SPA's "new baseline" badge
+    Returns is_new_baseline=True from run() when there is no existing Baseline
+    for the Test's key yet: the submission is stored with no comparison images
+    (nothing to diff against) and immediately becomes the new Baseline
     (decisions.md #3).
     """
 
@@ -261,30 +263,41 @@ class ScreenshotComparison:
         self.uploaded_file = uploaded_file
 
     def run(self) -> bool:
-        with tempfile.TemporaryDirectory(prefix='spectre-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='inspectre-') as tmp:
             tmp = Path(tmp)
             screenshot_in = self._stage_upload(tmp)
             if self.test.crop_area:
                 self._crop_in_place(screenshot_in)
 
-            baseline_in, is_new_baseline = self._stage_baseline(tmp, screenshot_in)
+            baseline_in = self._stage_baseline(tmp)
+            if baseline_in is None:
+                self._record_first_upload(screenshot_in, tmp)
+                upsert_baseline_from_test(self.test)
+                return True
+
             paths = {
                 'screenshot': tmp / 'screenshot.png',
                 'baseline':   tmp / 'baseline.png',
                 'diff':       tmp / 'diff.png',
             }
             canvas = Canvas.from_geometries(
-                ImageGeometry.from_file(str(baseline_in)),
-                ImageGeometry.from_file(str(screenshot_in)),
+                ImageGeometry.from_file(baseline_in),
+                ImageGeometry.from_file(screenshot_in),
             )
             diff_pixels = self._compare(canvas, screenshot_in, baseline_in, paths)
-            self._record_result(canvas, paths['diff'], diff_pixels)
+            self._record_result(canvas, diff_pixels)
             self._persist_files(paths)
+            attach_test_thumbnails(
+                self.test,
+                screenshot_path=paths['screenshot'],
+                baseline_path=paths['baseline'],
+                diff_path=paths['diff'],
+                tmp=tmp,
+            )
 
             if self.test.passed:
-                self._upsert_baseline(paths['screenshot'])
-
-            return is_new_baseline and self.test.passed
+                upsert_baseline_from_test(self.test)
+            return False
 
     # ---- pipeline steps ----------------------------------------------------
 
@@ -318,27 +331,50 @@ class ScreenshotComparison:
             })
             raise ImageDiffError(f"crop failed: {result.stderr.strip()}")
 
-    def _stage_baseline(self, tmp: Path, screenshot_in: Path) -> tuple[Path, bool]:
-        """Download the previous baseline if one exists; otherwise self-baseline.
+    def _stage_baseline(self, tmp: Path) -> Path | None:
+        """Download the current Baseline for this test's key, if one exists in storage.
 
-        Returns (path-to-baseline, is_new_baseline).
+        Returns None when there's no Baseline row yet for this key, or its file
+        is missing from storage (orphan) — both cases mean this submission has
+        nothing to compare against and is treated as a first-time upload.
         """
         baseline = Baseline.objects.filter(key=self.test.key).first()
+        if not baseline or not baseline.screenshot:
+            return None
+
         baseline_in = tmp / 'baseline-in.png'
-        if baseline and baseline.screenshot:
-            try:
-                with baseline.screenshot.open('rb') as src, baseline_in.open('wb') as dst:
-                    shutil.copyfileobj(src, dst)
-                return baseline_in, False
-            except FileNotFoundError:
-                # Orphan UID — log it and fall through to self-baseline.
-                logger.warning(
-                    "baseline file missing in storage; self-baselining",
-                    extra={'test_id': self.test.id, 'key': self.test.key},
-                )
-        # No baseline (or orphan) → compare against itself; this run becomes the baseline.
-        shutil.copy(screenshot_in, baseline_in)
-        return baseline_in, True
+        try:
+            with baseline.screenshot.open('rb') as src, baseline_in.open('wb') as dst:
+                shutil.copyfileobj(src, dst)
+            return baseline_in
+        except FileNotFoundError:
+            logger.warning(
+                "baseline file missing in storage; treating as first upload",
+                extra={'test_id': self.test.id, 'key': self.test.key},
+            )
+            return None
+        except Exception as exc:
+            raise ImageDiffError(f"failed to read baseline from storage: {exc}") from exc
+
+    def _record_first_upload(self, screenshot_in: Path, tmp: Path) -> None:
+        """No Baseline exists yet for this key: pass with zero diff and no
+        comparison images — there's nothing to diff against. The received
+        screenshot becomes the new Baseline via upsert_baseline_from_test in run().
+
+        Renders the thumbnail (the only step that can fail) before writing
+        anything to storage, so a render failure never leaves an orphaned file.
+        """
+        thumb_path = tmp / 'thumb-screenshot.jpg'
+        render_thumbnail(screenshot_in, thumb_path)
+
+        self.test.diff = 0
+        self.test.passed = True
+        with screenshot_in.open('rb') as fh:
+            self.test.screenshot.save('original.png', File(fh), save=False)
+        with thumb_path.open('rb') as fh:
+            self.test.screenshot_thumb.save('thumb-300.jpg', File(fh), save=False)
+
+        self.test.save()
 
     def _compare(self, canvas, screenshot_in, baseline_in, paths) -> int:
         """Pad both inputs to canvas size, run `compare`, return differing-pixel count."""
@@ -443,5 +479,5 @@ This module is the highest-leverage place to test in the rebuild ([tests-and-fix
 - Different dimensions → padded canvas works, `passed=False`.
 - `crop_area` valid → cropped image is what gets compared (assert by re-running `identify` on the staged file).
 - Shell-injection probe in `fuzz_level` (e.g. `"30%; touch /tmp/pwn"`) → 400 from the view, file does not exist after the call.
-- Orphan baseline UID → logs a warning, falls back to self-baseline, `is_new_baseline=True`.
+- Orphan baseline UID → logs a warning, falls back to treating it as a first upload (no comparison images), `is_new_baseline=True`.
 - Concurrent `run()` calls for the same key → both succeed, exactly one Baseline row exists with `test_id` of one of the two (last-writer-wins under `select_for_update`).

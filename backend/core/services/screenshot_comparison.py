@@ -139,14 +139,18 @@ class ScreenshotComparison:
         """No Baseline exists yet for this key: pass with zero diff and no
         comparison images — there's nothing to diff against. The received
         screenshot becomes the new Baseline via upsert_baseline_from_test in run().
+
+        Renders the thumbnail (the only step that can fail) before writing
+        anything to storage, so a render failure never leaves an orphaned
+        storage object behind.
         """
+        thumb_path = tmp / "thumb-screenshot.jpg"
+        render_thumbnail(screenshot_in, thumb_path)
+
         self.test.diff = 0
         self.test.passed = True
         with screenshot_in.open("rb") as fh:
             self.test.screenshot.save("original.png", File(fh), save=False)
-
-        thumb_path = tmp / "thumb-screenshot.jpg"
-        render_thumbnail(screenshot_in, thumb_path)
         with thumb_path.open("rb") as fh:
             self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
 

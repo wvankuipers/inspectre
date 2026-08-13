@@ -197,8 +197,9 @@ The mixin above points at `admin/core/rename_warning_change_form.html`. Place it
         ingested into this {{ opts.verbose_name }} will compute a new
         <code>key</code>, leaving any existing Baseline orphaned.
         Consider deleting stale Baselines before renaming, or accept that the
-        next run will self-baseline against the new key (you'll see the
-        "new baseline" badge on the run page).
+        next run for that key will have nothing to compare against and will
+        auto-establish as the new baseline (you'll see the "new baseline"
+        badge on the run page).
       </p>
     </div>
   {% endif %}

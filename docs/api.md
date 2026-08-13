@@ -133,8 +133,8 @@ Response — same JSON shape as `POST /tests`. When `status == "done"` all field
   "pass": true,
   "diff": 0.04,
   "screenshot_uid": "http://localhost:9000/inspectre-screenshots/screenshots/1234/original.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=...&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=...",
-  "screenshot_baseline_uid": "http://localhost:9000/inspectre-screenshots/screenshots/1234/baseline.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=...&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=...",
-  "screenshot_diff_uid": "http://localhost:9000/inspectre-screenshots/screenshots/1234/diff.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=...&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=...",
+  "screenshot_baseline_uid": null,
+  "screenshot_diff_uid": null,
   "is_new_baseline": true,
   ...
 }
@@ -142,7 +142,7 @@ Response — same JSON shape as `POST /tests`. When `status == "done"` all field
 
 The bucket is private, so these are presigned URLs with a 24-hour expiry. Clients should treat each URL as a transient signed link, not a stable identifier to cache or compare — it will stop working once it expires.
 
-`is_new_baseline` — `true` if this submission established a Baseline that did not previously exist for the key (self-baselined for the first time). Surfaced as a chip in the SPA ([ui.md](ui.md)).
+`is_new_baseline` — `true` if this submission established a Baseline that did not previously exist for the key. This is the first upload for the key: there is nothing to compare it against, so `screenshot_baseline_uid` and `screenshot_diff_uid` are `null`. A second submission for the same key will have `is_new_baseline: false` and populated `screenshot_baseline_uid` / `screenshot_diff_uid` URLs. Surfaced as a chip in the SPA ([ui.md](ui.md)).
 
 ### `PATCH /tests/:id` ("Set as baseline")
 

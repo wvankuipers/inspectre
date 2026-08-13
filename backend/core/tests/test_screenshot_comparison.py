@@ -126,6 +126,31 @@ def test_corrupt_input_raises_imagediff_error(test_factory, upload, tmp_path):
         ScreenshotComparison(test, upload(not_an_image)).run()
 
 
+def test_first_upload_thumbnail_failure_leaves_no_orphaned_screenshot(
+    test_factory,
+    upload,
+    testcard,
+):
+    """On a first upload, render_thumbnail runs before any storage write. If it
+    raises, nothing has been saved to storage or the DB yet — no orphaned file.
+
+    Regression test for the ordering fix in _record_first_upload: previously
+    the screenshot was saved to storage before the thumbnail was rendered, so
+    a thumbnail failure left an unreachable file in storage (never saved to
+    the DB row, so nothing would ever clean it up).
+    """
+    test = test_factory()
+
+    with patch("core.services.screenshot_comparison.render_thumbnail", side_effect=ImageDiffError("boom")):
+        with pytest.raises(ImageDiffError, match="boom"):
+            ScreenshotComparison(test, upload(testcard)).run()
+
+    test.refresh_from_db()
+    assert not test.screenshot
+    assert not test.screenshot_thumb
+    assert not Baseline.objects.filter(key=test.key).exists()
+
+
 def test_imagemagick_timeout_raises_imagediff_error(test_factory, upload, testcard):
     """If ImageMagick hangs past the timeout, ImageDiffError is raised immediately.
 

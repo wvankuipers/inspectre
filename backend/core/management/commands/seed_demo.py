@@ -8,13 +8,10 @@ unbaselined edge cases.
 
 import logging
 import random
-import shutil
-import tempfile
 from datetime import timedelta
 from pathlib import Path
 
 from django.conf import settings
-from django.core.files import File
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management.base import BaseCommand, CommandError
@@ -23,7 +20,6 @@ from django.utils import timezone
 
 from core.models import Baseline, Project, Run, Suite, Test
 from core.services.screenshot_comparison import ScreenshotComparison
-from core.services.thumbnails import render_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -139,11 +135,12 @@ class Command(BaseCommand):
         Project.objects.create(name="Empty Project")
 
     def _seed_unbaselined(self) -> None:
-        """Edge case: all tests in the run have screenshots but no baselines.
+        """Edge case: all tests in the run are first uploads with no baseline yet.
 
-        Every test uses _attach_no_baseline so none have been through
-        ScreenshotComparison. This exercises the "New baseline" UI state
-        across an entire run.
+        Every test uses _attach_no_baseline, which drives ScreenshotComparison
+        against a never-before-seen key so it takes the first-upload path
+        (no comparison images, passed=True). This exercises the
+        "New baseline" UI state across an entire run.
         """
         project = Project.objects.create(name="New Feature Branch")
         suite = Suite.objects.create(project=project, name="Staging")
@@ -201,8 +198,8 @@ class Command(BaseCommand):
         """Drive the real diff pipeline with PASS_IMAGE.
 
         If a baseline already exists for this test's key, the comparison is
-        identical → diff 0 → passed True. If not, ScreenshotComparison
-        self-baselines and the result is the same.
+        identical → diff 0 → passed True. If not, this is a first upload:
+        there's nothing to compare against, so it passes automatically.
         """
         upload = SimpleUploadedFile(
             "screenshot.png",
@@ -219,8 +216,8 @@ class Command(BaseCommand):
         Caller must have established a baseline for this test's key first
         (typically by calling `_attach_passing` on an earlier-run test that
         shares the same key, or on this test before this call). Otherwise
-        ScreenshotComparison self-baselines against FAIL_IMAGE and the test
-        ends up green, which is the opposite of what we want.
+        this is a first upload with nothing to compare against, so the test
+        ends up green regardless of image content — the opposite of what we want.
         """
         upload = SimpleUploadedFile(
             "screenshot.png",
@@ -232,26 +229,17 @@ class Command(BaseCommand):
         test.save(update_fields=["status"])
 
     def _attach_no_baseline(self, test: Test) -> None:
-        """Attach FAIL_IMAGE as the screenshot, render its thumbnail,
-        leave the baseline FileField empty, mark the test as not passed.
-
-        Bypasses ScreenshotComparison on purpose — that pipeline would
-        self-baseline and flip `passed` to True, which would mask the
-        "this test has no baseline yet" UI state we are trying to seed.
+        """Drive the real diff pipeline with FAIL_IMAGE for a key that has
+        never been seeded before, so ScreenshotComparison takes its
+        first-upload path: screenshot + thumbnail only, no baseline/diff
+        images, `passed=True`. The image content doesn't matter — there's
+        nothing to compare against regardless of which image is used.
         """
-        with FAIL_IMAGE.open("rb") as fh:
-            test.screenshot.save("original.png", File(fh), save=False)
-
-        with tempfile.TemporaryDirectory(prefix="inspectre-seed-") as tmp_str:
-            tmp = Path(tmp_str)
-            local_src = tmp / "src.png"
-            shutil.copy(FAIL_IMAGE, local_src)
-            local_thumb = tmp / "thumb.jpg"
-            render_thumbnail(local_src, local_thumb)
-            with local_thumb.open("rb") as fh:
-                test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
-
-        test.passed = False
-        test.diff = 0
+        upload = SimpleUploadedFile(
+            "screenshot.png",
+            FAIL_IMAGE.read_bytes(),
+            content_type="image/png",
+        )
+        ScreenshotComparison(test, upload).run()
         test.status = Test.STATUS_DONE
-        test.save()
+        test.save(update_fields=["status"])
