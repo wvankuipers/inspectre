@@ -608,3 +608,4 @@ class TestAsyncTestProcessingIntegration:
         poll_body = api.get(f"/tests/{post_body['id']}/status").json()
         assert poll_body["status"] == "done"
         assert poll_body["is_new_baseline"] is True
+        assert poll_body["pass"] is False

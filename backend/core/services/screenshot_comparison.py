@@ -27,10 +27,12 @@ logger = logging.getLogger(__name__)
 class ScreenshotComparison:
     """Run the diff pipeline and persist everything for one Test.
 
-    Returns is_new_baseline=True from run() when there is no existing Baseline
-    for the Test's key yet: the submission is stored with no comparison images
-    (nothing to diff against) and immediately becomes the new Baseline
-    (decisions.md #3).
+    Returns is_new_baseline=True from run() when there is nothing to compare
+    this submission against (no Baseline row for the key, or its file is
+    missing from storage). In that case the test is stored with no comparison
+    images and is NOT marked passed — a human must explicitly approve it via
+    the existing "Set as baseline" action before it counts as passing or
+    becomes the Baseline for future submissions.
     """
 
     def __init__(self, test, uploaded_file):
@@ -47,7 +49,6 @@ class ScreenshotComparison:
             baseline_in = self._stage_baseline(tmp)
             if baseline_in is None:
                 self._record_first_upload(screenshot_in, tmp)
-                upsert_baseline_from_test(self.test)
                 return True
 
             paths = {
@@ -136,9 +137,12 @@ class ScreenshotComparison:
             raise ImageDiffError(f"failed to read baseline from storage: {exc}") from exc
 
     def _record_first_upload(self, screenshot_in: Path, tmp: Path) -> None:
-        """No Baseline exists yet for this key: pass with zero diff and no
-        comparison images — there's nothing to diff against. The received
-        screenshot becomes the new Baseline via upsert_baseline_from_test in run().
+        """No valid comparison target exists for this key — either a true
+        first-ever upload, or an orphaned Baseline whose file is missing from
+        storage. Stored with no comparison images and NOT marked passed: a
+        human must explicitly approve it (via the existing "Set as baseline"
+        action) before it counts as passing or becomes the Baseline for this
+        key. See docs/superpowers/specs/2026-08-13-manual-baseline-approval-design.md.
 
         Renders the thumbnail (the only step that can fail) before writing
         anything to storage, so a render failure never leaves an orphaned
@@ -148,7 +152,7 @@ class ScreenshotComparison:
         render_thumbnail(screenshot_in, thumb_path)
 
         self.test.diff = 0
-        self.test.passed = True
+        self.test.passed = False
         with screenshot_in.open("rb") as fh:
             self.test.screenshot.save("original.png", File(fh), save=False)
         with thumb_path.open("rb") as fh:
