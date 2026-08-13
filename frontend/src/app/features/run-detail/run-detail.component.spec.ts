@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
+import { MatSelectChange } from '@angular/material/select';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
@@ -371,6 +372,23 @@ describe('RunDetailComponent browser/size filtering', () => {
   it('multi-select browser filter shows tests matching any selected browser', () => {
     component.activeBrowsers.set(new Set(['chrome', 'firefox']));
     expect(component.visibleTests().length).toBe(3);
+  });
+
+  it('onStatusSelectionChange updates activeStatuses from the mat-select event', () => {
+    component.onStatusSelectionChange({ value: ['pass', 'fail'] } as MatSelectChange);
+    expect(component.activeStatuses()).toEqual(new Set(['pass', 'fail']));
+  });
+
+  it('onBrowserSelectionChange updates activeBrowsers from the mat-select event', () => {
+    component.onBrowserSelectionChange({ value: ['firefox'] } as MatSelectChange);
+    expect(component.activeBrowsers()).toEqual(new Set(['firefox']));
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Beta new']);
+  });
+
+  it('onSizeSelectionChange updates activeSizes from the mat-select event', () => {
+    component.onSizeSelectionChange({ value: ['1440'] } as MatSelectChange);
+    expect(component.activeSizes()).toEqual(new Set(['1440']));
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Alpha page']);
   });
 });
 
