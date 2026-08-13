@@ -104,7 +104,7 @@ pytest==9.1.1
     #   pytest-xdist
 pytest-cov==7.1.0
     # via inspectre (pyproject.toml)
-pytest-django==4.13.0
+pytest-django==4.14.0
     # via inspectre (pyproject.toml)
 pytest-xdist==3.8.0
     # via inspectre (pyproject.toml)
