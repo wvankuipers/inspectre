@@ -14,19 +14,31 @@
       </div>
       @if (r.tests.length > 0) {
         <div class="header-controls">
-          <div class="status-chips">
-            <button mat-stroked-button
-                    [attr.aria-pressed]="activeStatuses().has('pass')"
-                    [class.active-chip-pass]="activeStatuses().has('pass')"
-                    (click)="toggleStatus('pass')">Pass</button>
-            <button mat-stroked-button
-                    [attr.aria-pressed]="activeStatuses().has('fail')"
-                    [class.active-chip-fail]="activeStatuses().has('fail')"
-                    (click)="toggleStatus('fail')">Fail</button>
-            <button mat-stroked-button
-                    [attr.aria-pressed]="activeStatuses().has('new')"
-                    [class.active-chip-new]="activeStatuses().has('new')"
-                    (click)="toggleStatus('new')">New</button>
+          <div class="filter-selects">
+            <mat-form-field appearance="outline" subscriptSizing="dynamic">
+              <mat-label>Status</mat-label>
+              <mat-select multiple [value]="activeStatusesList()" (selectionChange)="onStatusSelectionChange($event)">
+                <mat-option value="pass">Pass</mat-option>
+                <mat-option value="fail">Fail</mat-option>
+                <mat-option value="new">New</mat-option>
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic">
+              <mat-label>Browser</mat-label>
+              <mat-select multiple [value]="activeBrowsersList()" (selectionChange)="onBrowserSelectionChange($event)">
+                @for (browser of availableBrowsers(); track browser) {
+                  <mat-option [value]="browser">{{ browser }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic">
+              <mat-label>Size</mat-label>
+              <mat-select multiple [value]="activeSizesList()" (selectionChange)="onSizeSelectionChange($event)">
+                @for (size of availableSizes(); track size) {
+                  <mat-option [value]="size">{{ size }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
           </div>
           <app-search-field [value]="searchTerm()" label="Search by test name" (valueChange)="onSearch($event)" />
         </div>

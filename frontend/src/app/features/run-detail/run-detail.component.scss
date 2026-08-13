@@ -21,11 +21,13 @@ td { vertical-align: top; padding: 12px 8px; }
 
   .header-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-  .status-chips { display: flex; gap: 6px; }
+  .filter-selects {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
 
-  .active-chip-pass { background: #dcfce7 !important; color: #166534 !important; border-color: #166534 !important; }
-  .active-chip-fail { background: #fee2e2 !important; color: #991b1b !important; border-color: #991b1b !important; }
-  .active-chip-new  { background: #e0f2fe !important; color: #0369a1 !important; border-color: #0369a1 !important; }
+    mat-form-field { width: 140px; }
+  }
 }
 
 .load-error { color: #991b1b; margin: 24px 0; }

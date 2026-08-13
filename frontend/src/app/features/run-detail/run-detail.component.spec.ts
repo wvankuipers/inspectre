@@ -291,6 +291,89 @@ describe('RunDetailComponent filtering', () => {
   });
 });
 
+const RUN_MIXED_BROWSER_SIZE: RunDetail = {
+  id: 4,
+  sequential_id: 4,
+  created_at: '2026-01-01T00:00:00Z',
+  project_name: 'Acme Corp',
+  tests: [
+    { ...RUN.tests[0], id: 101, name: 'Zeta page', browser: 'chrome', size: '1024', passed: false },
+    { ...RUN.tests[1], id: 102, name: 'Alpha page', browser: 'chrome', size: '1440', passed: true },
+    { ...RUN.tests[2], id: 103, name: 'Beta new', browser: 'firefox', size: '1024', passed: false },
+  ],
+};
+
+describe('RunDetailComponent browser/size filtering', () => {
+  let component: RunDetailComponent;
+
+  beforeEach(async () => {
+    localStorage.clear();
+
+    await TestBed.configureTestingModule({
+      imports: [RunDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { paramMap: { get: () => '4' } },
+            paramMap: of({ get: (k: string) => (k === 'seqId' ? '4' : 'test') }),
+          },
+        },
+        {
+          provide: InspectreApiService,
+          useValue: { run: () => of(RUN_MIXED_BROWSER_SIZE), setBaseline: () => of({}), testsBulk: () => of([]) },
+        },
+        {
+          provide: SortStateService,
+          useValue: { get: vi.fn().mockReturnValue({ active: '', direction: '' }), save: vi.fn() },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(RunDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    component = fixture.componentInstance;
+  });
+
+  afterEach(() => localStorage.clear());
+
+  it('availableBrowsers() returns the distinct sorted browsers present in the run', () => {
+    expect(component.availableBrowsers()).toEqual(['chrome', 'firefox']);
+  });
+
+  it('availableSizes() returns the distinct sorted sizes present in the run', () => {
+    expect(component.availableSizes()).toEqual(['1024', '1440']);
+  });
+
+  it('visibleTests() returns all tests when no browser/size filters active', () => {
+    expect(component.visibleTests().length).toBe(3);
+  });
+
+  it('browser filter shows only tests matching the selected browser', () => {
+    component.activeBrowsers.set(new Set(['firefox']));
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Beta new']);
+  });
+
+  it('size filter shows only tests matching the selected size', () => {
+    component.activeSizes.set(new Set(['1440']));
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Alpha page']);
+  });
+
+  it('browser and size filters compose (AND)', () => {
+    component.activeBrowsers.set(new Set(['chrome']));
+    component.activeSizes.set(new Set(['1024']));
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Zeta page']);
+  });
+
+  it('multi-select browser filter shows tests matching any selected browser', () => {
+    component.activeBrowsers.set(new Set(['chrome', 'firefox']));
+    expect(component.visibleTests().length).toBe(3);
+  });
+});
+
 describe('RunDetailComponent empty run', () => {
   beforeEach(async () => {
     localStorage.clear();
