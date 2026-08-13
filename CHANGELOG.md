@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.0](https://github.com/wvankuipers/inspectre/compare/1.1.0...1.2.0) - 2026-08-13
+
+- Fix/first upload no self baseline by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/63
+- Feat/run detail status browser size filters by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/65
+
 ## [1.1.0](https://github.com/wvankuipers/inspectre/compare/1.0.5...1.1.0) - 2026-08-12
 
 - Fix/run detail retry poll by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/57
