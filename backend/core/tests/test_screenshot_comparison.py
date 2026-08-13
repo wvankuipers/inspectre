@@ -7,6 +7,7 @@ from core.models import Baseline
 from core.services.baseline_upsert import upsert_baseline_from_test
 from core.services.image_geometry import ImageDiffError, ImageGeometry
 from core.services.screenshot_comparison import ScreenshotComparison
+from core.views.legacy import _set_as_baseline
 
 pytestmark = [pytest.mark.django_db, pytest.mark.slow]
 
@@ -60,9 +61,7 @@ def test_approving_a_first_upload_establishes_the_baseline(test_factory, upload,
     assert test.passed is False
     assert not Baseline.objects.filter(key=test.key).exists()
 
-    test.passed = True
-    test.save(update_fields=["passed"])
-    upsert_baseline_from_test(test)
+    _set_as_baseline(test)
 
     test.refresh_from_db()
     assert test.passed is True

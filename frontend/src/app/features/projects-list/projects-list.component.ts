@@ -70,15 +70,21 @@ export class ProjectsListComponent implements AfterViewInit {
     return projects.flatMap((project) => project.suites.map((suite) => ({ project, suite })));
   });
 
+  private classifyRun(run: SuiteSummary['latest_run']): 'pass' | 'fail' | 'new' {
+    if (!run) return 'pass';
+    if (run.unbaselined > 0) return 'new';
+    if (run.failing > 0) return 'fail';
+    return 'pass';
+  }
+
   readonly visibleRows = computed<Row[]>(() => {
     const statuses = this.activeStatuses();
     if (statuses.size === 0) return this.rows();
     return this.rows().filter((row) => {
       const run = row.suite.latest_run;
       if (!run) return false;
-      if (run.failing > 0) return statuses.has('fail');
-      if (run.unbaselined > 0) return statuses.has('new');
-      return statuses.has('pass');
+      const cls = this.classifyRun(run);
+      return statuses.has(cls) || (cls === 'new' && statuses.has('fail'));
     });
   });
 
