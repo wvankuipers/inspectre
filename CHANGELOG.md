@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/wvankuipers/inspectre/compare/1.2.0...1.2.1) - 2026-08-26
+
+- chore(deps-dev): bump pytest-django from 4.13.0 to 4.14.0 in /backend in the backend-pip group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/66
+- chore(deps): bump sqlparse from 0.5.5 to 0.6.0 in /backend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/71
+- chore(deps): bump the backend-pip group across 1 directory with 9 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/77
+- chore(deps): bump @hono/node-server and @angular/cli in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/72
+- chore(deps): bump the frontend-npm group across 1 directory with 16 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/78
+- chore(deps): bump the backend-pip group in /backend with 4 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/80
+- fix: show full run-detail thumbnails instead of cropping via object-fit by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/81
+- Fix/new baseline chip signal by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/82
+- Feat/test detail history by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/83
+- Feat/improve UI by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/84
+
 ## [1.2.0](https://github.com/wvankuipers/inspectre/compare/1.1.0...1.2.0) - 2026-08-13
 
 - Fix/first upload no self baseline by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/63
