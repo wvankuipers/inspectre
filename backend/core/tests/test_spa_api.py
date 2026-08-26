@@ -213,7 +213,7 @@ class TestRunDetail:
 
         baselined = test_factory(run=run, name="Homepage")
         baseline_factory(suite=suite, key=baselined.key, test=baselined)
-        unbaselined = test_factory(run=run, name="About")
+        test_factory(run=run, name="About")
 
         response = api.get(f"/api/projects/acme/suites/desktop/runs/{run.sequential_id}/")
 
