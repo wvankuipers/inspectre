@@ -57,7 +57,7 @@
             <th mat-header-cell mat-sort-header *matHeaderCellDef>Test</th>
             <td mat-cell *matCellDef="let t">
               <div class="test-name">
-                {{ t.name }}
+                <a [routerLink]="['/projects', projectSlug(), 'suites', suiteSlug(), 'tests', t.key]">{{ t.name }}</a>
                 @if (!t.has_baseline) {
                   <span class="chip chip-new-baseline">New baseline</span>
                 }
