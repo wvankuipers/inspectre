@@ -31,6 +31,14 @@ export const routes: Routes = [
           ),
         data: { backLink: '/projects' },
       },
+      {
+        path: 'projects/:projectSlug/suites/:suiteSlug/tests/:key',
+        loadComponent: () =>
+          import('./features/test-detail/test-detail.component').then(
+            (m) => m.TestDetailComponent,
+          ),
+        data: { backLink: '/projects' },
+      },
       { path: '**', redirectTo: 'projects' },
     ],
   },
