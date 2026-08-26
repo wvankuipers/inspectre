@@ -16,51 +16,55 @@
 
     @if (h.runs.length > 0) {
       <div class="inspectre-card">
-        <table>
-          <thead>
-            <tr>
-              <th>Run #</th>
-              <th>Date</th>
-              <th>Thumbnail</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (entry of h.runs; track entry.id) {
-              <tr>
-                <td>
-                  <a [routerLink]="['/projects', projectSlug(), 'suites', suiteSlug(), 'runs', entry.run_sequential_id]">
-                    #{{ entry.run_sequential_id }}
-                  </a>
-                </td>
-                <td>{{ entry.run_created_at | date:'medium' }}</td>
-                <td>
-                  @if (entry.screenshot_thumb_url; as thumb) {
-                    <div [class]="thumbLoaded().has(thumb) ? 'img-loaded' : 'img-skeleton'">
-                      <img [src]="thumb"
-                           loading="lazy"
-                           (load)="onImgLoad(thumb)"
-                           (error)="onImgError($event); onImgLoad(thumb)"
-                           alt="" />
-                    </div>
-                  } @else {
-                    <span class="muted">—</span>
-                  }
-                </td>
-                <td>
-                  @if (entry.status === 'pending' || entry.status === 'processing') {
-                    <span class="chip chip-none">Processing…</span>
-                  } @else if (entry.is_new_baseline) {
-                    <span class="chip chip-new">New</span>
-                  } @else {
-                    <span [class]="entry.original_passed ? 'chip chip-pass' : 'chip chip-fail'">
-                      {{ entry.original_passed ? 'Pass' : 'Fail' }}
-                    </span>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
+        <table mat-table [dataSource]="h.runs" [trackBy]="trackByEntryId">
+          <ng-container matColumnDef="run">
+            <th mat-header-cell *matHeaderCellDef>Run #</th>
+            <td mat-cell *matCellDef="let entry">
+              <a [routerLink]="['/projects', projectSlug(), 'suites', suiteSlug(), 'runs', entry.run_sequential_id]">
+                #{{ entry.run_sequential_id }}
+              </a>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="date">
+            <th mat-header-cell *matHeaderCellDef>Date</th>
+            <td mat-cell *matCellDef="let entry">{{ entry.run_created_at | date:'medium' }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="thumbnail">
+            <th mat-header-cell *matHeaderCellDef>Thumbnail</th>
+            <td mat-cell *matCellDef="let entry">
+              @if (entry.screenshot_thumb_url; as thumb) {
+                <div [class]="thumbLoaded().has(thumb) ? 'img-loaded' : 'img-skeleton'">
+                  <img [src]="thumb"
+                       loading="lazy"
+                       (load)="onImgLoad(thumb)"
+                       (error)="onImgError($event); onImgLoad(thumb)"
+                       alt="" />
+                </div>
+              } @else {
+                <span class="muted">—</span>
+              }
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef>Status</th>
+            <td mat-cell *matCellDef="let entry">
+              @if (entry.status === 'pending' || entry.status === 'processing') {
+                <span class="chip chip-none">Processing…</span>
+              } @else if (entry.is_new_baseline) {
+                <span class="chip chip-new">New</span>
+              } @else {
+                <span [class]="entry.original_passed ? 'chip chip-pass' : 'chip chip-fail'">
+                  {{ entry.original_passed ? 'Pass' : 'Fail' }}
+                </span>
+              }
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="columns"></tr>
+          <tr mat-row *matRowDef="let entry; columns: columns"></tr>
         </table>
       </div>
     } @else {

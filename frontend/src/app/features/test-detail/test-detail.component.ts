@@ -1,23 +1,26 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
-import { TestHistory } from '../../core/models/api';
+import { TestHistory, TestHistoryEntry } from '../../core/models/api';
 
 @Component({
   selector: 'app-test-detail',
   standalone: true,
-  imports: [DatePipe, RouterLink, BreadcrumbComponent],
+  imports: [DatePipe, MatTableModule, RouterLink, BreadcrumbComponent],
   templateUrl: './test-detail.component.html',
   styleUrl: './test-detail.component.scss',
 })
 export class TestDetailComponent {
   private route = inject(ActivatedRoute);
   private api = inject(InspectreApiService);
+
+  readonly columns = ['run', 'date', 'thumbnail', 'status'];
 
   private params = toSignal(this.route.paramMap, {
     initialValue: this.route.snapshot.paramMap,
@@ -44,6 +47,10 @@ export class TestDetailComponent {
     if (img.dataset['failed']) return;
     img.dataset['failed'] = '1';
     img.src = '/image_not_found.jpg';
+  }
+
+  trackByEntryId(_index: number, entry: TestHistoryEntry): number {
+    return entry.id;
   }
 
   constructor() {
