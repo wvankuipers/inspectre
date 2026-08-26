@@ -67,6 +67,27 @@ export interface TestRow {
   created_at: string;
 }
 
+export interface TestHistoryEntry {
+  id: number;
+  run_id: number;
+  run_sequential_id: number;
+  run_created_at: string;
+  original_passed: boolean | null;
+  is_new_baseline: boolean | null;
+  status: string;
+  screenshot_thumb_url: string | null;
+}
+
+export interface TestHistory {
+  key: string;
+  name: string;
+  browser: string;
+  size: string;
+  project_name: string;
+  suite_slug: string;
+  runs: TestHistoryEntry[];
+}
+
 export interface Baseline {
   id: number;
   name: string;

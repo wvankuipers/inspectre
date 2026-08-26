@@ -65,6 +65,32 @@ describe('InspectreApiService', () => {
     });
   });
 
+  describe('testHistory()', () => {
+    it('encodes projectSlug, suiteSlug, and key with special characters in the URL', () => {
+      service.testHistory('my project', 'my suite', 'my key').subscribe();
+      const req = httpController.expectOne('/api/projects/my%20project/suites/my%20suite/tests/my%20key/');
+      expect(req.request.method).toBe('GET');
+      req.flush({});
+    });
+
+    it('encodes slugs and key with slash characters', () => {
+      service.testHistory('proj/name', 'suite/name', 'key/name').subscribe();
+      const req = httpController.expectOne('/api/projects/proj%2Fname/suites/suite%2Fname/tests/key%2Fname/');
+      expect(req.request.method).toBe('GET');
+      req.flush({});
+    });
+
+    it('leaves plain slugs and key unchanged, and returns the response body', () => {
+      let result: unknown;
+      service.testHistory('my-project', 'my-suite', 'my-key').subscribe((r) => (result = r));
+      const req = httpController.expectOne('/api/projects/my-project/suites/my-suite/tests/my-key/');
+      expect(req.request.method).toBe('GET');
+      const body = { key: 'my-key', name: 'test', browser: 'chrome', size: '1024x768', project_name: 'proj', suite_slug: 'my-suite', runs: [] };
+      req.flush(body);
+      expect(result).toEqual(body);
+    });
+  });
+
   describe('testsBulk()', () => {
     it('posts the given ids and returns the response body', () => {
       let result: unknown;
