@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.2.1](https://github.com/wvankuipers/inspectre/compare/1.2.0...1.2.1) - 2026-08-26
+## [1.3.0](https://github.com/wvankuipers/inspectre/compare/1.2.0...1.2.1) - 2026-08-26
 
 - chore(deps-dev): bump pytest-django from 4.13.0 to 4.14.0 in /backend in the backend-pip group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/66
 - chore(deps): bump sqlparse from 0.5.5 to 0.6.0 in /backend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/71
