@@ -33,7 +33,7 @@ Visual regression testing SaaS. CI pipelines upload screenshots directly via the
 | `Project`  | Top-level container; name auto-slugified                                             |
 | `Suite`    | Groups runs; tracks `next_run_seq` for atomic sequencing                             |
 | `Run`      | One CI test run; `sequential_id` assigned atomically in `save()`                     |
-| `Test`     | Individual screenshot result; key derived from (project, suite, name, browser, size) |
+| `Test`     | Individual screenshot result; key derived from (project, suite, name, browser, size); `original_passed` is a tamper-proof snapshot of the initial pass/fail |
 | `Baseline` | Approved reference screenshot; linked to Test and Suite by key                       |
 
 ### API surfaces
@@ -45,6 +45,8 @@ Two URL surfaces, both unauthenticated (`AllowAny`):
 - `GET /api/projects/`
 - `GET /api/projects/<slug>/suites/<slug>/`
 - `GET /api/projects/<slug>/suites/<slug>/runs/<seq>/`
+- `GET /api/projects/<slug>/suites/<slug>/tests/<key>/` — cross-run pass/fail history for a test
+- `POST /api/tests/bulk/` — fetch fresh test rows for a set of ids (polling)
 - `POST /api/tests/<id>/set-baseline/`
 - `GET /api/baselines/<key>/`
 
@@ -105,6 +107,7 @@ Run tests: `cd frontend && npm test`
 | `/projects`                               | `ProjectsListComponent` — flattened project+suite rows |
 | `/projects/:proj/suites/:suite`           | `SuiteDetailComponent` — latest 5 runs + baselines     |
 | `/projects/:proj/suites/:suite/runs/:seq` | `RunDetailComponent` — test table with thumbnails      |
+| `/projects/:proj/suites/:suite/tests/:key` | `TestDetailComponent` — cross-run pass/fail history for one test |
 
 ### Key files
 
