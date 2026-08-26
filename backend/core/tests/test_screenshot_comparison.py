@@ -40,6 +40,7 @@ def test_first_upload_requires_manual_approval(test_factory, upload, testcard):
 
     test.refresh_from_db()
     assert test.passed is False
+    assert test.original_passed is False
     assert test.diff == 0
     assert is_new is True
     assert not test.screenshot_baseline
@@ -71,6 +72,24 @@ def test_approving_a_first_upload_establishes_the_baseline(test_factory, upload,
     assert baseline.test_id == test.id
 
 
+def test_set_as_baseline_does_not_mutate_original_passed(test_factory, upload, testcard):
+    """`_set_as_baseline` promotes `passed` to True but must never touch
+    `original_passed` — it's the diff pipeline's immutable historical record.
+    """
+    test = test_factory()
+    ScreenshotComparison(test, upload(testcard)).run()
+
+    test.refresh_from_db()
+    assert test.passed is False
+    assert test.original_passed is False
+
+    _set_as_baseline(test)
+
+    test.refresh_from_db()
+    assert test.passed is True
+    assert test.original_passed is False
+
+
 def test_identical_to_baseline_passes(test_factory, upload, testcard):
     """Re-submitting the same image after a baseline exists → pass, is_new_baseline=False."""
     first = test_factory()
@@ -87,6 +106,7 @@ def test_identical_to_baseline_passes(test_factory, upload, testcard):
 
     second.refresh_from_db()
     assert second.passed is True
+    assert second.original_passed is True
     assert is_new is False
 
 
@@ -106,6 +126,7 @@ def test_different_image_fails(test_factory, upload, run1, run2):
 
     second.refresh_from_db()
     assert second.passed is False
+    assert second.original_passed is False
     assert second.diff > 0.1
     assert second.screenshot_diff  # diff image attached
 

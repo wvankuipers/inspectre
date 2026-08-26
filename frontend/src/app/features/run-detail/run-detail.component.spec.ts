@@ -902,6 +902,23 @@ describe('RunDetailComponent "New baseline" chip signal', () => {
   });
 });
 
+describe('RunDetailComponent test-name link', () => {
+  afterEach(() => {
+    localStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('links the test name to the test-detail route for that test key', async () => {
+    const fixture = await setup();
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = Array.from(el.querySelectorAll('tr[mat-row]'));
+    const zetaRow = rows.find((row) => row.textContent?.includes('Zeta page'));
+    const link = zetaRow?.querySelector('.test-name a') as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute('href')).toBe('/projects/test/suites/test/tests/z');
+  });
+});
+
 describe('RunDetailComponent thumbnail skeleton', () => {
   beforeEach(async () => {
     localStorage.clear();

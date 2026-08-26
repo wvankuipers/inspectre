@@ -6,6 +6,7 @@ caught at PR time. The legacy endpoints (POST /runs, POST /tests, PATCH
 frozen for Client API compatibility.
 """
 
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -17,6 +18,7 @@ from core.serializers import (
     ProjectSerializer,
     RunDetailSerializer,
     SuiteDetailSerializer,
+    serialize_test_history,
     serialize_tests_bulk,
 )
 from core.views.legacy import _set_as_baseline
@@ -55,6 +57,19 @@ def run_detail(request, project, suite, seq):
         sequential_id=seq,
     )
     return Response(RunDetailSerializer(obj).data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def test_history(request, project, suite, key):
+    tests = list(
+        Test.objects.select_related("run__suite__project")
+        .filter(run__suite__project__slug=project, run__suite__slug=suite, key=key)
+        .order_by("-run__sequential_id")
+    )
+    if not tests:
+        raise Http404
+    return Response(serialize_test_history(tests, key))
 
 
 @api_view(["POST"])

@@ -15,7 +15,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectChange, MatSelectModule } from '@angular/material/select';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
@@ -40,6 +40,7 @@ import { SortStateService } from '../../core/services/sort-state.service';
     MatSelectModule,
     MatSortModule,
     MatTableModule,
+    RouterLink,
     SearchFieldComponent,
     BreadcrumbComponent,
   ],

@@ -9,7 +9,9 @@ from core.serializers import (
     RunDetailSerializer,
     RunSummarySerializer,
     SuiteDetailSerializer,
+    TestHistoryEntrySerializer,
     TestRowSerializer,
+    serialize_test_history,
 )
 
 pytestmark = pytest.mark.django_db
@@ -391,3 +393,53 @@ def test_run_summary_unbaselined_is_zero_when_run_has_no_tests(run_factory):
     run = run_factory()
     body = RunSummarySerializer(run).data
     assert body["unbaselined"] == 0
+
+
+# ---- TestHistoryEntrySerializer / serialize_test_history ------------------
+
+
+def test_test_history_entry_serializer_uses_original_passed_not_passed(test_factory):
+    """The history endpoint's whole purpose is exposing the immutable result;
+    `passed` (mutable via promotion) must never leak into this serializer.
+    """
+    test = test_factory(passed=True, original_passed=False)
+    body = TestHistoryEntrySerializer(test).data
+
+    assert body["original_passed"] is False
+    assert "passed" not in body
+
+
+def test_test_history_entry_serializer_includes_run_fields(run_factory, test_factory):
+    run = run_factory()
+    test = test_factory(run=run)
+
+    body = TestHistoryEntrySerializer(test).data
+
+    assert body["run_id"] == run.id
+    assert body["run_sequential_id"] == run.sequential_id
+    assert body["run_created_at"] is not None
+
+
+def test_serialize_test_history_returns_key_metadata_and_ordered_runs(
+    suite_factory,
+    run_factory,
+    test_factory,
+):
+    suite = suite_factory(name="Desktop")
+    run1 = run_factory(suite=suite)
+    run2 = run_factory(suite=suite)
+
+    older = test_factory(run=run1, name="Homepage", browser="Chrome", size="1024")
+    newer = test_factory(run=run2, name="Homepage", browser="Chrome", size="1024")
+    assert older.key == newer.key
+
+    # Caller passes the ordered (newest-first) queryset result.
+    body = serialize_test_history([newer, older], older.key)
+
+    assert body["key"] == older.key
+    assert body["name"] == "Homepage"
+    assert body["browser"] == "Chrome"
+    assert body["size"] == "1024"
+    assert body["project_name"] == suite.project.name
+    assert body["suite_slug"] == suite.slug
+    assert [entry["id"] for entry in body["runs"]] == [newer.id, older.id]

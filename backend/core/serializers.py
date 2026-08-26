@@ -187,6 +187,52 @@ class TestRowSerializer(serializers.ModelSerializer):
         return _file_url(obj.screenshot_diff_thumb)
 
 
+class TestHistoryEntrySerializer(serializers.ModelSerializer):
+    """One row in a test's cross-run history: the immutable original_passed result,
+    not the mutable passed field (which baseline promotion can flip).
+    """
+
+    run_sequential_id = serializers.SerializerMethodField()
+    run_created_at = serializers.SerializerMethodField()
+    screenshot_thumb_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Test
+        fields = [
+            "id",
+            "run_id",
+            "run_sequential_id",
+            "run_created_at",
+            "original_passed",
+            "is_new_baseline",
+            "status",
+            "screenshot_thumb_url",
+        ]
+
+    def get_run_sequential_id(self, obj):
+        return obj.run.sequential_id
+
+    def get_run_created_at(self, obj):
+        return obj.run.created_at
+
+    def get_screenshot_thumb_url(self, obj):
+        return _file_url(obj.screenshot_thumb)
+
+
+def serialize_test_history(tests, key):
+    """Serialize one test key's ordered history of Test rows (newest run first)."""
+    first = tests[0]
+    return {
+        "key": key,
+        "name": first.name,
+        "browser": first.browser,
+        "size": first.size,
+        "project_name": first.run.suite.project.name,
+        "suite_slug": first.run.suite.slug,
+        "runs": TestHistoryEntrySerializer(tests, many=True).data,
+    }
+
+
 def serialize_tests_bulk(tests):
     """Serialize an arbitrary set of Test rows (may span multiple suites/runs).
 

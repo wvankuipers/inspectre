@@ -141,6 +141,8 @@ class Test(models.Model):
 
     diff = models.FloatField(default=0)
     passed = models.BooleanField(default=False)
+    # Set once by the diff pipeline; never mutated by baseline promotion (unlike `passed`).
+    original_passed = models.BooleanField(null=True, default=None)
     key = models.CharField(max_length=512, db_index=True, blank=True)
 
     screenshot = models.FileField(
