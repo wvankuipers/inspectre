@@ -1,12 +1,19 @@
 """Shared baseline-upsert seam.
 
-Used by:
-- ScreenshotComparison (the diff path) — promote a freshly-staged screenshot.
-- views/legacy.py PATCH /tests/<id> — promote a previously-failing test's screenshot.
-- views/api.py POST /api/tests/<id>/set-baseline/ — same shape, JSON wire format.
+Three functions, composed differently by their callers:
+- `upsert_baseline_row` + `attach_baseline_thumbnail_for_test` — called
+  directly (outside the row-upsert's own transaction) by
+  `views/legacy._set_as_baseline`, shared by views/legacy.py PATCH
+  /tests/<id> and views/api.py POST /api/tests/<id>/set-baseline/, so the
+  test's own `test.save()` can be wrapped in the same atomic block as the
+  Baseline row write.
+- `upsert_baseline_from_test` — the combined wrapper (row upsert then
+  thumbnail, no surrounding transaction needed) used by ScreenshotComparison
+  (the diff path) and `seed_demo`.
 
-All three paths converge here so the select_for_update + thumbnail render is
-defined exactly once.
+The DB/storage upsert (`upsert_baseline_row`) and the thumbnail render
+(`attach_baseline_thumbnail_for_test`) are each defined exactly once; callers
+choose how to sequence them around their own transaction boundaries.
 """
 
 import logging

@@ -113,9 +113,13 @@ class TestRowSerializer(serializers.ModelSerializer):
     """One row in the run-detail table: status, three thumbnails, three full-size URLs.
 
     `is_baseline_source` is True when this test is the producer of the current
-    Baseline for its key — surfaces decisions.md #3's "new baseline" badge in
-    the SPA. Resolved via context['baseline_source_ids'] populated by
-    RunDetailSerializer to avoid N+1 queries.
+    Baseline for its key. Resolved via context['baseline_source_ids'] populated
+    by RunDetailSerializer to avoid N+1 queries.
+
+    `has_baseline` — not `is_baseline_source` — is what drives the SPA's "New
+    baseline" chip. It means "does any Baseline exist for this key at all,"
+    which stays true even after supersession (mirrors
+    RunSummarySerializer.get_unbaselined's definition).
     """
 
     passed = serializers.BooleanField()

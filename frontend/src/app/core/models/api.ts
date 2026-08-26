@@ -53,8 +53,8 @@ export interface TestRow {
   // SPA wire format uses `passed`. Legacy Client API uses `pass`. Don't conflate.
   passed: boolean;
   key: string;
-  is_baseline_source: boolean; // decisions.md #3 — "new baseline" chip
-  has_baseline: boolean; // supersession-proof: does a Baseline exist for this key at all
+  is_baseline_source: boolean; // this test is the producer of the current Baseline for its key
+  has_baseline: boolean; // drives the "new baseline" chip — supersession-proof: does a Baseline exist for this key at all
   fuzz_level: string;
   highlight_colour: string;
   crop_area: string; // empty string when not set

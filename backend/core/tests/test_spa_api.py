@@ -194,6 +194,35 @@ class TestRunDetail:
 
         assert api.get("/api/projects/acme/suites/desktop/runs/999/").status_code == 404
 
+    def test_has_baseline_resolves_per_test_through_run_detail(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+        baseline_factory,
+    ):
+        """The run-detail endpoint is what the SPA's "new baseline" chip actually
+        reads — has_baseline must resolve correctly here too, not just via the
+        bulk endpoint's tests.
+        """
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run = run_factory(suite=suite)
+
+        baselined = test_factory(run=run, name="Homepage")
+        baseline_factory(suite=suite, key=baselined.key, test=baselined)
+        unbaselined = test_factory(run=run, name="About")
+
+        response = api.get(f"/api/projects/acme/suites/desktop/runs/{run.sequential_id}/")
+
+        assert response.status_code == 200
+        body = response.json()
+        by_name = {t["name"]: t for t in body["tests"]}
+        assert by_name["Homepage"]["has_baseline"] is True
+        assert by_name["About"]["has_baseline"] is False
+
 
 # =============================================================================
 # POST /api/tests/<id>/set-baseline/  — SPA-preferred shape
