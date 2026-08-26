@@ -225,6 +225,134 @@ class TestRunDetail:
 
 
 # =============================================================================
+# GET /api/projects/<slug>/suites/<slug>/tests/<key>/  — test history
+# =============================================================================
+
+
+class TestTestHistory:
+    def test_returns_history_newest_run_first(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run1 = run_factory(suite=suite)
+        run2 = run_factory(suite=suite)
+
+        older = test_factory(
+            run=run1,
+            name="Homepage",
+            browser="Chrome",
+            size="1024",
+            original_passed=True,
+            is_new_baseline=True,
+            status="done",
+        )
+        newer = test_factory(
+            run=run2,
+            name="Homepage",
+            browser="Chrome",
+            size="1024",
+            original_passed=False,
+            is_new_baseline=False,
+            status="done",
+        )
+        assert older.key == newer.key
+
+        response = api.get(f"/api/projects/acme/suites/desktop/tests/{older.key}/")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["key"] == older.key
+        assert body["name"] == "Homepage"
+        assert body["browser"] == "Chrome"
+        assert body["size"] == "1024"
+        assert body["project_name"] == "Acme"
+        assert body["suite_slug"] == "desktop"
+
+        run_ids = [entry["id"] for entry in body["runs"]]
+        assert run_ids == [newer.id, older.id]  # newest run first
+
+        newest_entry, oldest_entry = body["runs"]
+        assert newest_entry["original_passed"] is False
+        assert newest_entry["is_new_baseline"] is False
+        assert newest_entry["status"] == "done"
+        assert newest_entry["run_sequential_id"] == run2.sequential_id
+
+        assert oldest_entry["original_passed"] is True
+        assert oldest_entry["is_new_baseline"] is True
+        assert oldest_entry["run_sequential_id"] == run1.sequential_id
+
+    def test_unknown_key_returns_404(self, api, project_factory, suite_factory):
+        project = project_factory(name="Acme")
+        suite_factory(project=project, name="Desktop")
+
+        assert api.get("/api/projects/acme/suites/desktop/tests/no-such-key/").status_code == 404
+
+    def test_scoped_to_suite_and_project(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        """A test with the same name/browser/size in a different suite must not
+        leak into another suite's history — even though the raw key text would
+        collide if the suites/projects were named identically.
+        """
+        project_a = project_factory(name="Acme")
+        suite_a = suite_factory(project=project_a, name="Desktop")
+        run_a = run_factory(suite=suite_a)
+        test_a = test_factory(run=run_a, name="Homepage", browser="Chrome", size="1024")
+
+        project_b = project_factory(name="Other Co")
+        suite_b = suite_factory(project=project_b, name="Mobile")
+        run_b = run_factory(suite=suite_b)
+        test_factory(run=run_b, name="Homepage", browser="Chrome", size="1024")
+
+        response = api.get(f"/api/projects/acme/suites/desktop/tests/{test_a.key}/")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [entry["id"] for entry in body["runs"]] == [test_a.id]
+
+        # Cross-suite: test_a's key doesn't exist under suite_b.
+        assert api.get(f"/api/projects/other-co/suites/mobile/tests/{test_a.key}/").status_code == 404
+
+    def test_promoted_test_still_reports_original_passed_false(self, api, test_factory):
+        """Regression: promoting a failed test to baseline flips `passed` to True,
+        but original_passed — the immutable diff-pipeline result — must stay False.
+        """
+        test = test_factory(passed=False, original_passed=False)
+        test.screenshot.save(
+            "s.png",
+            SimpleUploadedFile(
+                "s.png",
+                _FIXTURE_IMAGE.read_bytes(),
+                content_type="image/jpeg",
+            ),
+        )
+        test.save()
+
+        response = api.post(f"/api/tests/{test.id}/set-baseline/", {}, format="json")
+        assert response.status_code == 204
+
+        suite = test.run.suite
+        history = api.get(f"/api/projects/{suite.project.slug}/suites/{suite.slug}/tests/{test.key}/").json()
+
+        entry = history["runs"][0]
+        assert entry["original_passed"] is False
+
+        test.refresh_from_db()
+        assert test.passed is True
+
+
+# =============================================================================
 # POST /api/tests/<id>/set-baseline/  — SPA-preferred shape
 # =============================================================================
 
