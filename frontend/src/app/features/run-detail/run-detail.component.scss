@@ -11,22 +11,30 @@ td { vertical-align: top; padding: 12px 8px; }
 
 .page-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 12px;
   margin: 8px 0 24px;
 
-  .page-header-title { display: flex; align-items: baseline; gap: 16px; }
+  .page-header-title { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
 
-  .header-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .header-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
 
   .filter-selects {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
 
-    mat-form-field { width: 140px; }
+    mat-form-field {
+      width: 140px;
+      --mat-form-field-container-height: 40px;
+      --mat-form-field-container-vertical-padding: 8px;
+    }
   }
 }
 
