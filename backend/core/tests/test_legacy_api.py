@@ -312,7 +312,7 @@ class TestTestsPatchSetBaseline:
         assert response.status_code == 404
 
     def test_failed_upsert_rolls_back_passed_flag(self, api, test_factory):
-        """Regression: a failing upsert_baseline_from_test must not leave test.passed=True.
+        """Regression: a failing upsert_baseline_row must not leave test.passed=True.
 
         Prior to wrapping _set_as_baseline in transaction.atomic(), test.save()
         committed passed=True immediately, so a subsequent upsert failure left
@@ -320,7 +320,7 @@ class TestTestsPatchSetBaseline:
         """
         test = test_factory(passed=False)
 
-        with patch("core.services.baseline_upsert.upsert_baseline_from_test", side_effect=Exception("boom")):
+        with patch("core.services.baseline_upsert.upsert_baseline_row", side_effect=Exception("boom")):
             with pytest.raises(Exception, match="boom"):
                 api.patch(
                     f"/tests/{test.id}",
@@ -330,6 +330,31 @@ class TestTestsPatchSetBaseline:
 
         assert Test.objects.get(pk=test.id).passed is False
         assert not Baseline.objects.filter(key=test.key).exists()
+
+    def test_failed_thumbnail_does_not_roll_back_promotion(self, api, test_factory):
+        """A thumbnail-render failure is a side effect failure, not an atomic-invariant
+
+        failure: the row upsert (test.passed + Baseline row) must survive even if
+        attach_baseline_thumbnail_for_test blows up afterward.
+        """
+        from django.core.files.base import ContentFile
+
+        test = test_factory(passed=False)
+        test.screenshot.save("original.png", ContentFile(_FIXTURE_IMAGE.read_bytes()))
+
+        with patch(
+            "core.services.baseline_upsert.attach_baseline_thumbnail_for_test",
+            side_effect=Exception("boom"),
+        ):
+            with pytest.raises(Exception, match="boom"):
+                api.patch(
+                    f"/tests/{test.id}",
+                    {"test[baseline]": "true"},
+                    format="multipart",
+                )
+
+        assert Test.objects.get(pk=test.id).passed is True
+        assert Baseline.objects.filter(key=test.key).exists()
 
 
 # =============================================================================

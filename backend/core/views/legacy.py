@@ -121,12 +121,13 @@ def _set_as_baseline(test):
     Mirrors the legacy Test#after_save :update_baseline path: when passed flips
     to True, the most recent passing screenshot replaces the baseline for this key.
     """
-    from core.services.baseline_upsert import upsert_baseline_from_test
+    from core.services.baseline_upsert import attach_baseline_thumbnail_for_test, upsert_baseline_row
 
     with transaction.atomic():
         test.passed = True
         test.save()
-        upsert_baseline_from_test(test)
+        baseline = upsert_baseline_row(test)
+    attach_baseline_thumbnail_for_test(baseline, test)
 
 
 def _stage_upload_to_s3(test_id: int, uploaded_file) -> str:

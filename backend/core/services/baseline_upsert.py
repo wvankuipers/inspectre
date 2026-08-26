@@ -23,13 +23,10 @@ from .thumbnails import attach_baseline_thumbnail
 logger = logging.getLogger(__name__)
 
 
-def upsert_baseline_from_test(test) -> Baseline:
-    """Race-safe upsert. The Test row must already have its screenshot attached.
-
-    Mirrors the legacy Test#after_save :update_baseline path: most recent
-    passing screenshot wins, baseline.test_id points at the producing Test,
-    and the baseline thumbnail is regenerated.
-    """
+def upsert_baseline_row(test) -> Baseline:
+    """Atomic DB+storage write: get-or-create the Baseline row and attach
+    test's screenshot as its image. Callers that need test.save() to roll
+    back together with this must call it inside their own transaction.atomic()."""
     with transaction.atomic():
         try:
             baseline, _ = Baseline.objects.select_for_update().get_or_create(
@@ -57,9 +54,12 @@ def upsert_baseline_from_test(test) -> Baseline:
                 extra={"test_id": test.id, "key": test.key},
             )
             raise
+    return baseline
 
-    # Thumbnail is rendered outside the transaction — it's a side effect of the
-    # promotion, not part of the atomic invariant.
+
+def attach_baseline_thumbnail_for_test(baseline, test) -> None:
+    """Render/attach the baseline thumbnail. Side effect only — not part of
+    any atomic invariant; failure here does not undo the row upsert above."""
     with tempfile.TemporaryDirectory(prefix="inspectre-rebaseline-") as tmp_str:
         tmp = Path(tmp_str)
         local_screenshot_path = tmp / "src.png"
@@ -68,4 +68,16 @@ def upsert_baseline_from_test(test) -> Baseline:
         baseline.refresh_from_db()
         attach_baseline_thumbnail(baseline, local_screenshot_path, tmp)
 
+
+def upsert_baseline_from_test(test) -> Baseline:
+    """Race-safe upsert. The Test row must already have its screenshot attached.
+
+    Mirrors the legacy Test#after_save :update_baseline path: most recent
+    passing screenshot wins, baseline.test_id points at the producing Test,
+    and the baseline thumbnail is regenerated. Unchanged public entry point —
+    existing callers (ScreenshotComparison, the SPA set-baseline endpoint via
+    _set_as_baseline) keep this exact behavior.
+    """
+    baseline = upsert_baseline_row(test)
+    attach_baseline_thumbnail_for_test(baseline, test)
     return baseline
