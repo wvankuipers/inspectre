@@ -153,6 +153,7 @@ class ScreenshotComparison:
 
         self.test.diff = 0
         self.test.passed = False
+        self.test.original_passed = False
         uploaded_fields = []
         try:
             with screenshot_in.open("rb") as fh:
@@ -244,6 +245,7 @@ class ScreenshotComparison:
         diff_percentage = (diff_pixels / total_pixels) * 100 if total_pixels else 0
         self.test.diff = round(diff_percentage, 2)
         self.test.passed = diff_percentage < settings.IMAGE_DIFF_THRESHOLD
+        self.test.original_passed = self.test.passed
 
     def _persist_files(self, paths: dict[str, Path]) -> None:
         """Attach the three padded result files to the Test's FileFields and save."""
