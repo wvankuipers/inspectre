@@ -2,6 +2,7 @@
 part of the Client API expectations. Do not add or rename fields.
 """
 
+from django.db import transaction
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, parser_classes, permission_classes
@@ -122,9 +123,10 @@ def _set_as_baseline(test):
     """
     from core.services.baseline_upsert import upsert_baseline_from_test
 
-    test.passed = True
-    test.save()
-    upsert_baseline_from_test(test)
+    with transaction.atomic():
+        test.passed = True
+        test.save()
+        upsert_baseline_from_test(test)
 
 
 def _stage_upload_to_s3(test_id: int, uploaded_file) -> str:

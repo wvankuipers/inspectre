@@ -311,6 +311,26 @@ class TestTestsPatchSetBaseline:
         )
         assert response.status_code == 404
 
+    def test_failed_upsert_rolls_back_passed_flag(self, api, test_factory):
+        """Regression: a failing upsert_baseline_from_test must not leave test.passed=True.
+
+        Prior to wrapping _set_as_baseline in transaction.atomic(), test.save()
+        committed passed=True immediately, so a subsequent upsert failure left
+        the test falsely "passed" with no matching Baseline row.
+        """
+        test = test_factory(passed=False)
+
+        with patch("core.services.baseline_upsert.upsert_baseline_from_test", side_effect=Exception("boom")):
+            with pytest.raises(Exception, match="boom"):
+                api.patch(
+                    f"/tests/{test.id}",
+                    {"test[baseline]": "true"},
+                    format="multipart",
+                )
+
+        assert Test.objects.get(pk=test.id).passed is False
+        assert not Baseline.objects.filter(key=test.key).exists()
+
 
 # =============================================================================
 # GET /baselines/<key>.png and .json
