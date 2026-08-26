@@ -7,7 +7,7 @@ import { TestRow } from '../../models/api';
 
 const makeTest = (overrides: Partial<TestRow> = {}): TestRow => ({
   id: 1, name: 'about', browser: 'Chrome', size: '1024', source_url: '', status: 'done', diff: 2.3,
-  passed: false, key: 'a', is_baseline_source: false, fuzz_level: '0',
+  passed: false, key: 'a', is_baseline_source: false, has_baseline: true, fuzz_level: '0',
   highlight_colour: '', crop_area: '',
   screenshot_url: 'http://s3/a.png',
   baseline_url: 'http://s3/a-base.png',
