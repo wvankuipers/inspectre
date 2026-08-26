@@ -58,7 +58,7 @@
             <td mat-cell *matCellDef="let t">
               <div class="test-name">
                 {{ t.name }}
-                @if (t.baseline_url === null) {
+                @if (t.baseline_url === null && !t.is_baseline_source) {
                   <span class="chip chip-new-baseline">New baseline</span>
                 }
               </div>

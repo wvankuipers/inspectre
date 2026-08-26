@@ -190,7 +190,7 @@ export class RunDetailComponent implements AfterViewInit {
   readonly activeSizesList = computed<string[]>(() => Array.from(this.activeSizes()));
 
   private classifyTest(testRow: TestRow): 'pass' | 'fail' | 'new' {
-    if (testRow.baseline_url === null) return 'new';
+    if (testRow.baseline_url === null && !testRow.is_baseline_source) return 'new';
     return testRow.passed ? 'pass' : 'fail';
   }
 

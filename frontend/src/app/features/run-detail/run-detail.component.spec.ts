@@ -85,6 +85,59 @@ const RUN: RunDetail = {
   ],
 };
 
+const RUN_WITH_BASELINE_SOURCE: RunDetail = {
+  id: 5,
+  sequential_id: 5,
+  created_at: '2026-01-01T00:00:00Z',
+  project_name: 'Acme Corp',
+  tests: [
+    {
+      id: 201,
+      name: 'Approved page',
+      browser: 'chrome',
+      size: '1280x800',
+      source_url: '',
+      status: 'done',
+      diff: 0,
+      passed: true,
+      key: 'approved',
+      is_baseline_source: true,
+      fuzz_level: '0',
+      highlight_colour: 'red',
+      crop_area: '',
+      screenshot_url: 'http://s3/approved.png',
+      baseline_url: null,
+      diff_url: null,
+      screenshot_thumb_url: null,
+      baseline_thumb_url: null,
+      diff_thumb_url: null,
+      created_at: '2026-01-01T00:00:00Z',
+    },
+    {
+      id: 202,
+      name: 'Awaiting approval page',
+      browser: 'chrome',
+      size: '1280x800',
+      source_url: '',
+      status: 'done',
+      diff: 0,
+      passed: false,
+      key: 'awaiting',
+      is_baseline_source: false,
+      fuzz_level: '0',
+      highlight_colour: 'red',
+      crop_area: '',
+      screenshot_url: 'http://s3/awaiting.png',
+      baseline_url: null,
+      diff_url: null,
+      screenshot_thumb_url: null,
+      baseline_thumb_url: null,
+      diff_thumb_url: null,
+      created_at: '2026-01-01T00:00:00Z',
+    },
+  ],
+};
+
 const RUN_EMPTY: RunDetail = {
   id: 2,
   sequential_id: 2,
@@ -742,6 +795,59 @@ describe('pending test state', () => {
     const fixture = await setup({ apiSpy });
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('.thumb-btn')).toBeNull();
+  });
+});
+
+describe('RunDetailComponent "New baseline" chip signal', () => {
+  afterEach(() => {
+    localStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('classifies an approved test (is_baseline_source, no baseline_url) as pass, not new', async () => {
+    const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN_WITH_BASELINE_SOURCE)) });
+    const component = fixture.componentInstance;
+    const approved = component.run()?.tests.find((t) => t.id === 201);
+    expect(approved?.is_baseline_source).toBe(true);
+    component.activeStatuses.set(new Set(['new']));
+    expect(component.visibleTests().map((t) => t.name)).not.toContain('Approved page');
+    component.activeStatuses.set(new Set(['pass']));
+    expect(component.visibleTests().map((t) => t.name)).toContain('Approved page');
+  });
+
+  it('does not render the "New baseline" chip for an approved (is_baseline_source) test', async () => {
+    const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN_WITH_BASELINE_SOURCE)) });
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = Array.from(el.querySelectorAll('tr[mat-row]'));
+    const approvedRow = rows.find((row) => row.textContent?.includes('Approved page'));
+    expect(approvedRow?.querySelector('.chip-new-baseline')).toBeNull();
+  });
+
+  it('still classifies an awaiting-approval test (no baseline_url, not is_baseline_source) as new', async () => {
+    const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN_WITH_BASELINE_SOURCE)) });
+    const component = fixture.componentInstance;
+    component.activeStatuses.set(new Set(['new']));
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Awaiting approval page']);
+  });
+
+  it('still renders the "New baseline" chip for an awaiting-approval test', async () => {
+    const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN_WITH_BASELINE_SOURCE)) });
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = Array.from(el.querySelectorAll('tr[mat-row]'));
+    const awaitingRow = rows.find((row) => row.textContent?.includes('Awaiting approval page'));
+    expect(awaitingRow?.querySelector('.chip-new-baseline')).not.toBeNull();
+  });
+
+  it('is unaffected for tests with a baseline_url regardless of is_baseline_source (existing pass/fail behavior)', async () => {
+    const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN)) });
+    const component = fixture.componentInstance;
+    // RUN's baselined tests (non-null baseline_url) all have is_baseline_source: false,
+    // and remain classified purely by `passed`, unaffected by this fix.
+    component.activeStatuses.set(new Set(['pass']));
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Alpha page']);
+    component.activeStatuses.set(new Set(['new']));
+    // 'Beta new' has baseline_url === null and is_baseline_source: false — still 'new'.
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Beta new']);
   });
 });
 
