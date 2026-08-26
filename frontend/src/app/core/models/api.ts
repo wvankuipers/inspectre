@@ -54,6 +54,7 @@ export interface TestRow {
   passed: boolean;
   key: string;
   is_baseline_source: boolean; // decisions.md #3 — "new baseline" chip
+  has_baseline: boolean; // supersession-proof: does a Baseline exist for this key at all
   fuzz_level: string;
   highlight_colour: string;
   crop_area: string; // empty string when not set

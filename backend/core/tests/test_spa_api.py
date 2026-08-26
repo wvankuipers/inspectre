@@ -345,6 +345,46 @@ class TestTestsBulk:
         assert by_id[t1.id]["is_baseline_source"] is True
         assert by_id[t2.id]["is_baseline_source"] is False
 
+    def test_superseded_test_still_reports_has_baseline_true(
+        self,
+        api,
+        test_factory,
+        baseline_factory,
+    ):
+        """A test that was once the baseline source but got superseded by a later
+        test sharing its key must keep has_baseline=True even though
+        is_baseline_source flips to False — this is the supersession bug fixed
+        by the suite-scoped has_baseline signal.
+        """
+        test_a = test_factory(name="Homepage")
+        baseline_factory(suite=test_a.run.suite, key=test_a.key, test=test_a)
+
+        # test_b shares test_a's suite/name/browser/size, so it computes the same key.
+        test_b = test_factory(
+            run=test_a.run,
+            name=test_a.name,
+            browser=test_a.browser,
+            size=test_a.size,
+        )
+        assert test_b.key == test_a.key
+
+        # Simulate a later approval superseding test_a as the baseline source.
+        baseline = test_a.run.suite.baselines.get(key=test_a.key)
+        baseline.test = test_b
+        baseline.save()
+
+        body = api.post("/api/tests/bulk/", {"ids": [test_a.id]}, format="json").json()
+
+        assert body[0]["is_baseline_source"] is False
+        assert body[0]["has_baseline"] is True
+
+    def test_test_with_no_baseline_reports_has_baseline_false(self, api, test_factory):
+        t1 = test_factory(name="Homepage")
+
+        body = api.post("/api/tests/bulk/", {"ids": [t1.id]}, format="json").json()
+
+        assert body[0]["has_baseline"] is False
+
     def test_non_integer_ids_are_silently_filtered(self, api, test_factory):
         t1 = test_factory(name="Homepage")
 

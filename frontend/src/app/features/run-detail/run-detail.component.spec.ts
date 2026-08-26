@@ -27,6 +27,7 @@ const RUN: RunDetail = {
       passed: false,
       key: 'z',
       is_baseline_source: false,
+      has_baseline: true,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -49,6 +50,7 @@ const RUN: RunDetail = {
       passed: true,
       key: 'a',
       is_baseline_source: false,
+      has_baseline: true,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -71,6 +73,7 @@ const RUN: RunDetail = {
       passed: false,
       key: 'b',
       is_baseline_source: false,
+      has_baseline: false,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -102,6 +105,7 @@ const RUN_WITH_BASELINE_SOURCE: RunDetail = {
       passed: true,
       key: 'approved',
       is_baseline_source: true,
+      has_baseline: true,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -124,10 +128,37 @@ const RUN_WITH_BASELINE_SOURCE: RunDetail = {
       passed: false,
       key: 'awaiting',
       is_baseline_source: false,
+      has_baseline: false,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
       screenshot_url: 'http://s3/awaiting.png',
+      baseline_url: null,
+      diff_url: null,
+      screenshot_thumb_url: null,
+      baseline_thumb_url: null,
+      diff_thumb_url: null,
+      created_at: '2026-01-01T00:00:00Z',
+    },
+    {
+      id: 203,
+      // Supersession case: this test was once the baseline source, but a later
+      // test for the same key took over — is_baseline_source flipped to false,
+      // but a baseline still exists for the key, so has_baseline stays true.
+      name: 'Superseded page',
+      browser: 'chrome',
+      size: '1280x800',
+      source_url: '',
+      status: 'done',
+      diff: 0,
+      passed: true,
+      key: 'superseded',
+      is_baseline_source: false,
+      has_baseline: true,
+      fuzz_level: '0',
+      highlight_colour: 'red',
+      crop_area: '',
+      screenshot_url: 'http://s3/superseded.png',
       baseline_url: null,
       diff_url: null,
       screenshot_thumb_url: null,
@@ -163,6 +194,7 @@ const RUN_WITH_THUMBS: RunDetail = {
       passed: false,
       key: 'h',
       is_baseline_source: false,
+      has_baseline: true,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -804,18 +836,18 @@ describe('RunDetailComponent "New baseline" chip signal', () => {
     TestBed.resetTestingModule();
   });
 
-  it('classifies an approved test (is_baseline_source, no baseline_url) as pass, not new', async () => {
+  it('classifies a test with has_baseline: true as pass, not new (regardless of is_baseline_source)', async () => {
     const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN_WITH_BASELINE_SOURCE)) });
     const component = fixture.componentInstance;
     const approved = component.run()?.tests.find((t) => t.id === 201);
-    expect(approved?.is_baseline_source).toBe(true);
+    expect(approved?.has_baseline).toBe(true);
     component.activeStatuses.set(new Set(['new']));
     expect(component.visibleTests().map((t) => t.name)).not.toContain('Approved page');
     component.activeStatuses.set(new Set(['pass']));
     expect(component.visibleTests().map((t) => t.name)).toContain('Approved page');
   });
 
-  it('does not render the "New baseline" chip for an approved (is_baseline_source) test', async () => {
+  it('does not render the "New baseline" chip for a test with has_baseline: true', async () => {
     const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN_WITH_BASELINE_SOURCE)) });
     const el = fixture.nativeElement as HTMLElement;
     const rows = Array.from(el.querySelectorAll('tr[mat-row]'));
@@ -823,14 +855,14 @@ describe('RunDetailComponent "New baseline" chip signal', () => {
     expect(approvedRow?.querySelector('.chip-new-baseline')).toBeNull();
   });
 
-  it('still classifies an awaiting-approval test (no baseline_url, not is_baseline_source) as new', async () => {
+  it('still classifies a test with has_baseline: false as new (awaiting-approval case)', async () => {
     const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN_WITH_BASELINE_SOURCE)) });
     const component = fixture.componentInstance;
     component.activeStatuses.set(new Set(['new']));
     expect(component.visibleTests().map((t) => t.name)).toEqual(['Awaiting approval page']);
   });
 
-  it('still renders the "New baseline" chip for an awaiting-approval test', async () => {
+  it('still renders the "New baseline" chip for a test with has_baseline: false', async () => {
     const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN_WITH_BASELINE_SOURCE)) });
     const el = fixture.nativeElement as HTMLElement;
     const rows = Array.from(el.querySelectorAll('tr[mat-row]'));
@@ -838,15 +870,34 @@ describe('RunDetailComponent "New baseline" chip signal', () => {
     expect(awaitingRow?.querySelector('.chip-new-baseline')).not.toBeNull();
   });
 
-  it('is unaffected for tests with a baseline_url regardless of is_baseline_source (existing pass/fail behavior)', async () => {
+  it('classifies a superseded test (has_baseline: true, is_baseline_source: false) as pass, not new', async () => {
+    // Proves the frontend no longer depends on is_baseline_source for this decision —
+    // a test that lost is_baseline_source to a later supersession must still be
+    // treated as baselined because has_baseline reflects "a Baseline exists for this key".
+    const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN_WITH_BASELINE_SOURCE)) });
+    const component = fixture.componentInstance;
+    const el = fixture.nativeElement as HTMLElement;
+    const superseded = component.run()?.tests.find((t) => t.id === 203);
+    expect(superseded?.is_baseline_source).toBe(false);
+    expect(superseded?.has_baseline).toBe(true);
+
+    component.activeStatuses.set(new Set(['pass']));
+    expect(component.visibleTests().map((t) => t.name)).toContain('Superseded page');
+
+    const rows = Array.from(el.querySelectorAll('tr[mat-row]'));
+    const supersededRow = rows.find((row) => row.textContent?.includes('Superseded page'));
+    expect(supersededRow?.querySelector('.chip-new-baseline')).toBeNull();
+  });
+
+  it('is unaffected for tests with has_baseline: true regardless of is_baseline_source (existing pass/fail behavior)', async () => {
     const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(RUN)) });
     const component = fixture.componentInstance;
-    // RUN's baselined tests (non-null baseline_url) all have is_baseline_source: false,
+    // RUN's baselined tests (has_baseline: true) all have is_baseline_source: false,
     // and remain classified purely by `passed`, unaffected by this fix.
     component.activeStatuses.set(new Set(['pass']));
     expect(component.visibleTests().map((t) => t.name)).toEqual(['Alpha page']);
     component.activeStatuses.set(new Set(['new']));
-    // 'Beta new' has baseline_url === null and is_baseline_source: false — still 'new'.
+    // 'Beta new' has has_baseline: false — still 'new'.
     expect(component.visibleTests().map((t) => t.name)).toEqual(['Beta new']);
   });
 });

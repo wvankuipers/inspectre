@@ -120,6 +120,7 @@ class TestRowSerializer(serializers.ModelSerializer):
 
     passed = serializers.BooleanField()
     is_baseline_source = serializers.SerializerMethodField()
+    has_baseline = serializers.SerializerMethodField()
     screenshot_url = serializers.SerializerMethodField()
     baseline_url = serializers.SerializerMethodField()
     diff_url = serializers.SerializerMethodField()
@@ -139,6 +140,7 @@ class TestRowSerializer(serializers.ModelSerializer):
             "passed",
             "key",
             "is_baseline_source",
+            "has_baseline",
             "fuzz_level",
             "highlight_colour",
             "crop_area",
@@ -155,6 +157,12 @@ class TestRowSerializer(serializers.ModelSerializer):
     def get_is_baseline_source(self, obj):
         baseline_source_ids = self.context.get("baseline_source_ids") or set()
         return obj.id in baseline_source_ids
+
+    def get_has_baseline(self, obj):
+        baselined_keys = self.context.get("baselined_keys") or set(
+            Baseline.objects.filter(suite_id=obj.run.suite_id).values_list("key", flat=True)
+        )
+        return obj.key in baselined_keys
 
     def get_screenshot_url(self, obj):
         return _file_url(obj.screenshot)
@@ -186,10 +194,11 @@ def serialize_tests_bulk(tests):
     baseline_source_ids = set(
         Baseline.objects.filter(suite_id__in=suite_ids, test_id__isnull=False).values_list("test_id", flat=True)
     )
+    baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
     return TestRowSerializer(
         tests,
         many=True,
-        context={"baseline_source_ids": baseline_source_ids},
+        context={"baseline_source_ids": baseline_source_ids, "baselined_keys": baselined_keys},
     ).data
 
 
@@ -239,10 +248,11 @@ class RunDetailSerializer(serializers.ModelSerializer):
         baseline_source_ids = set(
             Baseline.objects.filter(suite_id=obj.suite_id, test_id__isnull=False).values_list("test_id", flat=True)
         )
+        baselined_keys = set(Baseline.objects.filter(suite_id=obj.suite_id).values_list("key", flat=True))
         return TestRowSerializer(
             obj.tests.all(),
             many=True,
-            context={"baseline_source_ids": baseline_source_ids},
+            context={"baseline_source_ids": baseline_source_ids, "baselined_keys": baselined_keys},
         ).data
 
 
