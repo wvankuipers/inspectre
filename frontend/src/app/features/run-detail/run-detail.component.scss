@@ -42,13 +42,17 @@ td { vertical-align: top; padding: 12px 8px; }
   .img-skeleton,
   .img-loaded {
     width: 240px;
-    height: 160px;
+    height: 240px;
     border-radius: 4px;
 
     img {
-      width: 240px;
-      height: 160px;
-      object-fit: cover;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto;
     }
   }
 }
