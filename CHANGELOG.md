@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.1](https://github.com/wvankuipers/inspectre/compare/1.3.0...1.3.1) - 2026-08-28
+
+- chore(deps): bump gunicorn from 26.1.0 to 26.2.0 in /backend in the backend-pip group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/85
+- fix: correct version link for 1.3.0 in CHANGELOG.md by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/87
+- fix: increase max_length for baseline screenshot and thumbnail by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/86
+
 ## [1.3.0](https://github.com/wvankuipers/inspectre/compare/1.2.0...1.3.0) - 2026-08-26
 
 - chore(deps-dev): bump pytest-django from 4.13.0 to 4.14.0 in /backend in the backend-pip group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/66
