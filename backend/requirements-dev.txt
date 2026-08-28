@@ -61,7 +61,7 @@ faker==40.37.0
     # via factory-boy
 freezegun==1.5.5
     # via inspectre (pyproject.toml)
-gunicorn==26.1.0
+gunicorn==26.2.0
     # via inspectre (pyproject.toml)
 iniconfig==2.3.0
     # via pytest
