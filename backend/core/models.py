@@ -212,11 +212,13 @@ class Baseline(models.Model):
         upload_to=baseline_screenshot_path,
         null=True,
         blank=True,
+        max_length=600,
     )
     thumbnail = models.FileField(
         upload_to=baseline_thumbnail_path,
         null=True,
         blank=True,
+        max_length=600,
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
