@@ -18,6 +18,7 @@ There is **no authentication** on any endpoint. CSRF protection is not required 
 | GET     | `/baselines/:key`                                     | `baselines#show`      | none | n/a  | PNG (default) or JSON |
 | any     | `/admin/*`                                            | Django admin          | none | n/a  | Full CRUD UI |
 | any     | `/media/:job/:name`                                   | Dragonfly middleware  | none | n/a  | Image fetch (signed Dragonfly URLs); only used when datastore is local files |
+| GET     | `/healthz/`                                           | `health#healthz`      | none | n/a  | Dependency-free health check for Kubernetes probes; not part of either the SPA or legacy Client API surface |
 
 ## Endpoints in detail
 

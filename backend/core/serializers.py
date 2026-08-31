@@ -163,9 +163,14 @@ class TestRowSerializer(serializers.ModelSerializer):
         return obj.id in baseline_source_ids
 
     def get_has_baseline(self, obj):
-        baselined_keys = self.context.get("baselined_keys") or set(
-            Baseline.objects.filter(suite_id=obj.run.suite_id).values_list("key", flat=True)
-        )
+        # Use pre-fetched keys from context when available (set by RunDetailSerializer.get_tests
+        # / serialize_tests_bulk to avoid N+1 queries). Falls back to a direct query for
+        # standalone use. Must check `is None`, not falsiness — an empty set (a suite with zero
+        # baselines) is a legitimate pre-fetched value and must not trigger the fallback query
+        # (see RunSummarySerializer.get_unbaselined for the same fix).
+        baselined_keys = self.context.get("baselined_keys")
+        if baselined_keys is None:
+            baselined_keys = set(Baseline.objects.filter(suite_id=obj.run.suite_id).values_list("key", flat=True))
         return obj.key in baselined_keys
 
     def get_screenshot_url(self, obj):

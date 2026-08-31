@@ -3,6 +3,8 @@ from unittest.mock import patch
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 pytestmark = pytest.mark.django_db
@@ -291,6 +293,37 @@ class TestRunDetail:
         by_name = {t["name"]: t for t in body["tests"]}
         assert by_name["Homepage"]["has_baseline"] is True
         assert by_name["About"]["has_baseline"] is False
+
+    def test_has_baseline_query_count_does_not_scale_with_test_count_when_no_baselines_exist(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        """Regression test for the same falsy-empty-set bug as
+        RunSummarySerializer.get_unbaselined (see test_query_count_does_not_scale_with_
+        suite_count_when_no_baselines_exist above), but in
+        TestRowSerializer.get_has_baseline: `self.context.get("baselined_keys") or set(...)`
+        treated a legitimate empty set (a suite with zero baselines) as absent, falling
+        through to a per-row Baseline query — an N+1 on this run-detail endpoint. Prove the
+        query count is the same regardless of how many test rows the run has.
+        """
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+
+        def _run_detail_query_count(num_tests):
+            run = run_factory(suite=suite)
+            for i in range(num_tests):
+                test_factory(run=run, name=f"Test {i}", passed=True)
+            with CaptureQueriesContext(connection) as ctx:
+                response = api.get(f"/api/projects/acme/suites/desktop/runs/{run.sequential_id}/")
+            assert response.status_code == 200
+            assert len(response.json()["tests"]) == num_tests
+            return len(ctx.captured_queries)
+
+        assert _run_detail_query_count(1) == _run_detail_query_count(5)
 
 
 # =============================================================================

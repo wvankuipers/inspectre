@@ -58,6 +58,10 @@ Two URL surfaces, both unauthenticated (`AllowAny`):
 - `PATCH /tests/<id>` — update test (set baseline)
 - `GET /baselines/<key>.png` / `GET /baselines/<key>.json`
 
+**Infrastructure** (neither SPA nor legacy Client API surface):
+
+- `GET /healthz/` — dependency-free health check for Kubernetes liveness/readiness probes
+
 ### Image pipeline (async, Celery)
 
 `POST /tests` stages the uploaded screenshot to S3, enqueues a `process_test` Celery task, and returns immediately with `status=pending`. The worker picks up the task and runs the full diff: crop → compare against baseline via ImageMagick (`compare`) → generate diff overlay and JPEG thumbnails → persist results to S3 → update the Test record.
