@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/wvankuipers/inspectre/compare/1.3.1...1.3.2) - 2026-08-31
+
+- chore(deps-dev): bump the frontend-npm group in /frontend with 2 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/89
+- chore(deps): bump the backend-pip group in /backend with 2 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/90
+- chore(deps): bump the frontend-npm group in /frontend with 12 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/91
+- chore(deps): bump the backend-pip group across 1 directory with 5 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/92
+- Fix/api liveness probe and nplus1 by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/93
+
 ## [1.3.1](https://github.com/wvankuipers/inspectre/compare/1.3.0...1.3.1) - 2026-08-28
 
 - chore(deps): bump gunicorn from 26.1.0 to 26.2.0 in /backend in the backend-pip group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/85
