@@ -353,8 +353,14 @@ class ProjectSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "slug", "suites"]
 
     def get_suites(self, obj):
+        suites = list(obj.suites.all())
+        # Pre-fetch baseline keys once for the whole project so RunSummarySerializer.
+        # get_unbaselined doesn't issue one Baseline query per suite (same pattern as
+        # SuiteDetailSerializer.get_latest_runs / RunDetailSerializer.get_tests).
+        suite_ids = [suite.id for suite in suites]
+        baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
         result = []
-        for suite in obj.suites.all():
+        for suite in suites:
             runs = suite.runs.all()  # hits prefetch cache, no extra query
             latest = runs[0] if runs else None
             result.append(
@@ -362,7 +368,9 @@ class ProjectSerializer(serializers.ModelSerializer):
                     "id": suite.id,
                     "name": suite.name,
                     "slug": suite.slug,
-                    "latest_run": RunSummarySerializer(latest).data if latest else None,
+                    "latest_run": RunSummarySerializer(latest, context={"baselined_keys": baselined_keys}).data
+                    if latest
+                    else None,
                 }
             )
         return result

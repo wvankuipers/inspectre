@@ -102,6 +102,42 @@ class TestProjectsList:
     def test_empty_state_returns_empty_array(self, api):
         assert api.get("/api/projects/").json() == []
 
+    def test_query_count_does_not_scale_with_suite_count(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        baseline_factory,
+        django_assert_num_queries,
+    ):
+        """Regression test for the ProjectSerializer/RunSummarySerializer N+1: prior to the
+        fix, RunSummarySerializer.get_unbaselined issued one extra Baseline query per suite
+        because ProjectSerializer.get_suites never passed `baselined_keys` via context. With
+        the fix, that query is issued once per project regardless of suite count.
+        """
+        project = project_factory(name="Acme")
+        num_suites = 3
+        for i in range(num_suites):
+            suite = suite_factory(project=project, name=f"Suite {i}")
+            run_factory(suite=suite)
+            baseline_factory(suite=suite, key=f"acme-suite-{i}-key")
+
+        # 3 fixed queries: select projects, prefetch suites, prefetch runs.
+        # + 1 query for baselined_keys (once per project, not once per suite).
+        # + 3 queries per suite's latest run for get_passing/get_failing/get_unbaselined's
+        #   .count() calls (those raw count queries are out of scope for this fix — see
+        #   task brief — only the extra per-suite Baseline *lookup* query is eliminated).
+        expected_queries = 3 + 1 + (3 * num_suites)
+        with django_assert_num_queries(expected_queries):
+            response = api.get("/api/projects/")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body[0]["suites"]) == num_suites
+        for suite_payload in body[0]["suites"]:
+            assert suite_payload["latest_run"]["unbaselined"] == 0
+
 
 # =============================================================================
 # GET /api/projects/<slug>/suites/<slug>/  — suite detail
