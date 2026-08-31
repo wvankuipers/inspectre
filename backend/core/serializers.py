@@ -271,10 +271,13 @@ class RunSummarySerializer(serializers.ModelSerializer):
 
     def get_unbaselined(self, obj):
         # Use pre-fetched keys from context when available (set by SuiteDetailSerializer
-        # to avoid N+1 queries). Falls back to a direct query for standalone use.
-        baselined_keys = self.context.get("baselined_keys") or set(
-            Baseline.objects.filter(suite_id=obj.suite_id).values_list("key", flat=True)
-        )
+        # / ProjectSerializer to avoid N+1 queries). Falls back to a direct query for
+        # standalone use. Must check `is None`, not falsiness — an empty set (a project/suite
+        # with zero baselines) is a legitimate pre-fetched value and must not trigger the
+        # fallback query.
+        baselined_keys = self.context.get("baselined_keys")
+        if baselined_keys is None:
+            baselined_keys = set(Baseline.objects.filter(suite_id=obj.suite_id).values_list("key", flat=True))
         return obj.tests.exclude(key__in=baselined_keys).count()
 
 

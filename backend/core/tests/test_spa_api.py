@@ -138,6 +138,39 @@ class TestProjectsList:
         for suite_payload in body[0]["suites"]:
             assert suite_payload["latest_run"]["unbaselined"] == 0
 
+    def test_query_count_does_not_scale_with_suite_count_when_no_baselines_exist(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+        django_assert_num_queries,
+    ):
+        """Regression test: when a project's suites collectively have zero baselines,
+        `self.context.get("baselined_keys")` returns an empty set. Using `or` to check
+        for that (instead of `is None`) treats the empty set as falsy and falls through
+        to the per-suite fallback query, silently reintroducing the N+1 in exactly this
+        state. Asserts the fixed query count holds here too.
+        """
+        project = project_factory(name="Acme")
+        num_suites = 3
+        for i in range(num_suites):
+            suite = suite_factory(project=project, name=f"Suite {i}")
+            run = run_factory(suite=suite)
+            test_factory(run=run, key=f"acme-suite-{i}-key", passed=True)
+        # No baselines created anywhere for this project.
+
+        expected_queries = 3 + 1 + (3 * num_suites)
+        with django_assert_num_queries(expected_queries):
+            response = api.get("/api/projects/")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body[0]["suites"]) == num_suites
+        for suite_payload in body[0]["suites"]:
+            assert suite_payload["latest_run"]["unbaselined"] == 1
+
 
 # =============================================================================
 # GET /api/projects/<slug>/suites/<slug>/  — suite detail
