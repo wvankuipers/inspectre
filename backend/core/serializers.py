@@ -163,9 +163,14 @@ class TestRowSerializer(serializers.ModelSerializer):
         return obj.id in baseline_source_ids
 
     def get_has_baseline(self, obj):
-        baselined_keys = self.context.get("baselined_keys") or set(
-            Baseline.objects.filter(suite_id=obj.run.suite_id).values_list("key", flat=True)
-        )
+        # Use pre-fetched keys from context when available (set by RunDetailSerializer.get_tests
+        # / serialize_tests_bulk to avoid N+1 queries). Falls back to a direct query for
+        # standalone use. Must check `is None`, not falsiness — an empty set (a suite with zero
+        # baselines) is a legitimate pre-fetched value and must not trigger the fallback query
+        # (see RunSummarySerializer.get_unbaselined for the same fix).
+        baselined_keys = self.context.get("baselined_keys")
+        if baselined_keys is None:
+            baselined_keys = set(Baseline.objects.filter(suite_id=obj.run.suite_id).values_list("key", flat=True))
         return obj.key in baselined_keys
 
     def get_screenshot_url(self, obj):
@@ -271,10 +276,13 @@ class RunSummarySerializer(serializers.ModelSerializer):
 
     def get_unbaselined(self, obj):
         # Use pre-fetched keys from context when available (set by SuiteDetailSerializer
-        # to avoid N+1 queries). Falls back to a direct query for standalone use.
-        baselined_keys = self.context.get("baselined_keys") or set(
-            Baseline.objects.filter(suite_id=obj.suite_id).values_list("key", flat=True)
-        )
+        # / ProjectSerializer to avoid N+1 queries). Falls back to a direct query for
+        # standalone use. Must check `is None`, not falsiness — an empty set (a project/suite
+        # with zero baselines) is a legitimate pre-fetched value and must not trigger the
+        # fallback query.
+        baselined_keys = self.context.get("baselined_keys")
+        if baselined_keys is None:
+            baselined_keys = set(Baseline.objects.filter(suite_id=obj.suite_id).values_list("key", flat=True))
         return obj.tests.exclude(key__in=baselined_keys).count()
 
 
@@ -353,8 +361,14 @@ class ProjectSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "slug", "suites"]
 
     def get_suites(self, obj):
+        suites = list(obj.suites.all())
+        # Pre-fetch baseline keys once for the whole project so RunSummarySerializer.
+        # get_unbaselined doesn't issue one Baseline query per suite (same pattern as
+        # SuiteDetailSerializer.get_latest_runs / RunDetailSerializer.get_tests).
+        suite_ids = [suite.id for suite in suites]
+        baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
         result = []
-        for suite in obj.suites.all():
+        for suite in suites:
             runs = suite.runs.all()  # hits prefetch cache, no extra query
             latest = runs[0] if runs else None
             result.append(
@@ -362,7 +376,9 @@ class ProjectSerializer(serializers.ModelSerializer):
                     "id": suite.id,
                     "name": suite.name,
                     "slug": suite.slug,
-                    "latest_run": RunSummarySerializer(latest).data if latest else None,
+                    "latest_run": RunSummarySerializer(latest, context={"baselined_keys": baselined_keys}).data
+                    if latest
+                    else None,
                 }
             )
         return result

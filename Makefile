@@ -14,6 +14,7 @@ PYTEST_FAST      := $(PYTEST) -m "not slow"
 # Fast tests: no real ImageMagick. The race-condition class in test_models.py
 # is marked @pytest.mark.slow and runs in test-slow.
 PYTEST_FAST_PACKS := \
+    core/tests/test_health.py \
     core/tests/test_serializers.py \
     core/tests/test_spa_api.py \
     core/tests/test_admin.py \
