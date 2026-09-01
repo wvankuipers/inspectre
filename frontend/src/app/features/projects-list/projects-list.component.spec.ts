@@ -22,7 +22,7 @@ const PROJECTS: Project[] = [
         slug: 's1',
         latest_run: {
           id: 1,
-          sequential_id: 1,
+          sequential_id: 5,
           created_at: '2026-01-01T00:00:00Z',
           passing: 0,
           failing: 3,
@@ -43,7 +43,7 @@ const PROJECTS: Project[] = [
         latest_run: {
           id: 2,
           sequential_id: 1,
-          created_at: '2026-01-01T00:00:00Z',
+          created_at: '2026-01-05T00:00:00Z',
           passing: 6,
           failing: 0,
           unbaselined: 0,
@@ -62,8 +62,8 @@ const PROJECTS: Project[] = [
         slug: 's3',
         latest_run: {
           id: 3,
-          sequential_id: 1,
-          created_at: '2026-01-01T00:00:00Z',
+          sequential_id: 3,
+          created_at: '2026-01-03T00:00:00Z',
           passing: 2,
           failing: 3,
           unbaselined: 0,
@@ -136,6 +136,21 @@ describe('ProjectsListComponent sorting', () => {
     expect(ds.sortingDataAccessor(row, 'suite')).toBe('S1');
   });
 
+  it('sortingDataAccessor sorts the latestRun column by created_at, not sequential_id', async () => {
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    const ds = component.dataSource;
+    const row = ds.data[0]; // Beta row: sequential_id 5, created_at 2026-01-01 (earliest)
+    // Beta has the *highest* sequential_id but the *earliest* created_at, so sorting
+    // by date vs. by run number gives different results — this distinguishes them.
+    expect(ds.sortingDataAccessor(row, 'latestRun')).toBe(
+      Date.parse('2026-01-01T00:00:00Z'),
+    );
+    expect(ds.sortingDataAccessor(row, 'latestRun')).not.toBe(5);
+  });
+
   it('actually reorders the connected table rows when a real MatSort is triggered', async () => {
     // Real project data loads asynchronously over HTTP. Delay the mocked
     // response so it resolves *after* the first view check (the same timing
@@ -180,6 +195,52 @@ describe('ProjectsListComponent sorting', () => {
     fixture.detectChanges();
 
     expect(renderedProjectNames()).toEqual(['Alpha', 'Beta', 'Delta', 'Gamma']);
+  });
+
+  it('reorders rows by created_at (not sequential_id) when sorting the Last run column', async () => {
+    // Fixture run numbers vs. dates deliberately diverge:
+    //   Beta:  sequential_id 5, created_at 2026-01-01 (earliest)
+    //   Alpha: sequential_id 1, created_at 2026-01-05 (latest)
+    //   Gamma: sequential_id 3, created_at 2026-01-03 (middle)
+    //   Delta: no latest_run
+    // Sorting ascending by sequential_id would give: Delta, Alpha, Gamma, Beta.
+    // Sorting ascending by created_at (the desired behavior) gives: Delta, Beta, Gamma, Alpha.
+    await TestBed.resetTestingModule()
+      .configureTestingModule({
+        imports: [ProjectsListComponent],
+        providers: [
+          provideNoopAnimations(),
+          provideRouter([]),
+          { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS).pipe(delay(0)) } },
+          { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
+        ],
+      })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges(); // first view check — table not rendered yet, data still pending
+    await new Promise((resolve) => setTimeout(resolve, 10)); // async data arrives
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const matSortDebugEl = fixture.debugElement.query(By.directive(MatSort));
+    expect(matSortDebugEl).toBeTruthy();
+    const matSort = matSortDebugEl.injector.get(MatSort);
+
+    const renderedProjectNames = (): string[] =>
+      Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          'tr.mat-mdc-row td.mat-column-project, tr.mat-row td.mat-column-project',
+        ),
+      ).map((cell) => cell.textContent?.trim() ?? '');
+
+    matSort.sort({ id: 'latestRun', start: 'asc', disableClear: false });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(renderedProjectNames()).toEqual(['Delta', 'Beta', 'Gamma', 'Alpha']);
   });
 
   it('restores a saved ascending sort on reload without flipping it to descending', async () => {

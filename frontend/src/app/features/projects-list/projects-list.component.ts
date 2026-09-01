@@ -114,7 +114,7 @@ export class ProjectsListComponent {
         case 'suite':
           return row.suite.name;
         case 'latestRun':
-          return row.suite.latest_run?.sequential_id ?? -1;
+          return row.suite.latest_run ? Date.parse(row.suite.latest_run.created_at) : -1;
         default:
           return '';
       }
