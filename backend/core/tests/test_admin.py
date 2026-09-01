@@ -1,6 +1,10 @@
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
+from core.models import Test
 
 pytestmark = pytest.mark.django_db
 
@@ -80,6 +84,7 @@ class TestAdminCrud:
             "core/run",
             "core/test",
             "core/baseline",
+            "core/processingqueuetest",
         ],
     )
     def test_changelist_loads(self, admin_client, model_path):
@@ -283,3 +288,126 @@ class TestEnsureAdminUser:
             call_command("ensure_admin_user")
 
         assert User.objects.filter(username="admin").count() == 1
+
+
+# =============================================================================
+# ProcessingQueueAdmin — read-only overview of pending/processing Tests
+# =============================================================================
+
+
+class TestProcessingQueueAdmin:
+    """The `ProcessingQueueTest` proxy model gives pending/processing rows their
+    own read-only admin section, without touching the existing `core/test`
+    changelist (which shows every Test regardless of status).
+    """
+
+    @pytest.fixture
+    def admin_client(self, client):
+        User.objects.create_user(
+            username="admin",
+            password="secret",
+            is_staff=True,
+            is_superuser=True,
+        )
+        client.login(username="admin", password="secret")
+        return client
+
+    def test_only_pending_and_processing_tests_are_listed(self, admin_client, test_factory):
+        pending = test_factory(name="pending-test", status=Test.STATUS_PENDING)
+        processing = test_factory(name="processing-test", status=Test.STATUS_PROCESSING)
+        done = test_factory(name="done-test", status=Test.STATUS_DONE)
+        failed = test_factory(name="failed-test", status=Test.STATUS_FAILED)
+
+        response = admin_client.get("/admin/core/processingqueuetest/")
+
+        assert response.status_code == 200
+        assert pending.name.encode() in response.content
+        assert processing.name.encode() in response.content
+        assert done.name.encode() not in response.content
+        assert failed.name.encode() not in response.content
+
+    def test_no_add_link_on_changelist(self, admin_client, test_factory):
+        """`has_add_permission` returning False hides the "Add" button."""
+        test_factory(status=Test.STATUS_PENDING)
+
+        response = admin_client.get("/admin/core/processingqueuetest/")
+
+        assert response.status_code == 200
+        assert b"Add processing queue" not in response.content
+
+    def test_add_page_is_forbidden(self, admin_client):
+        """Django's admin raises PermissionDenied (403) when `has_add_permission`
+        is False and the /add/ URL is hit directly — unlike Project/Suite, which
+        render a normal add form (see `test_add_page_loads` above).
+        """
+        response = admin_client.get("/admin/core/processingqueuetest/add/")
+        assert response.status_code == 403
+
+    def test_change_page_is_read_only(self, admin_client, test_factory):
+        """`has_change_permission` returning False renders the detail page
+        read-only (no Save button) — but the page itself still renders because
+        `has_view_permission`'s default checks the view-or-change permission
+        *strings*, and a superuser satisfies any permission check.
+        """
+        obj = test_factory(status=Test.STATUS_PENDING)
+
+        response = admin_client.get(f"/admin/core/processingqueuetest/{obj.pk}/change/")
+
+        assert response.status_code == 200
+        assert b'<input type="submit"' not in response.content
+        assert b"_save" not in response.content
+
+    def test_delete_action_is_unavailable(self, admin_client, test_factory):
+        """No delete link/button on the read-only detail page."""
+        obj = test_factory(status=Test.STATUS_PENDING)
+
+        response = admin_client.get(f"/admin/core/processingqueuetest/{obj.pk}/change/")
+
+        assert response.status_code == 200
+        assert b"Delete" not in response.content
+
+    def test_waiting_since_column_renders(self, admin_client, test_factory):
+        """Smoke-test for the custom `waiting_since` display method, mirroring
+        `test_test_admin_changelist_shows_diff_pct_column` for `TestAdmin.diff_pct`.
+        """
+        test_factory(status=Test.STATUS_PENDING)
+        response = admin_client.get("/admin/core/processingqueuetest/")
+        assert response.status_code == 200
+
+    def test_changelist_query_count_does_not_scale_with_row_count(
+        self,
+        admin_client,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        """`list_select_related` must prevent an N+1 on `run_label`, which walks
+        run -> suite -> project for every row. Query count for a handful of
+        rows across distinct runs/suites/projects should match the query count
+        for a couple of rows — not grow with row count.
+        """
+
+        def _make_rows(count):
+            for _i in range(count):
+                project = project_factory()
+                suite = suite_factory(project=project)
+                run = run_factory(suite=suite)
+                test_factory(run=run, status=Test.STATUS_PENDING)
+
+        _make_rows(2)
+        with CaptureQueriesContext(connection) as small:
+            response = admin_client.get("/admin/core/processingqueuetest/")
+        assert response.status_code == 200
+        small_count = len(small.captured_queries)
+
+        _make_rows(4)  # now 6 rows total, across 6 distinct projects/suites/runs
+        with CaptureQueriesContext(connection) as large:
+            response = admin_client.get("/admin/core/processingqueuetest/")
+        assert response.status_code == 200
+        large_count = len(large.captured_queries)
+
+        assert large_count == small_count, (
+            f"query count grew with row count ({small_count} -> {large_count}); "
+            "list_select_related isn't preventing the N+1 on run_label"
+        )
