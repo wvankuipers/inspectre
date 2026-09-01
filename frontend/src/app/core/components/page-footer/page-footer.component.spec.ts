@@ -23,9 +23,10 @@ describe('PageFooterComponent', () => {
     const el = fixture.nativeElement as HTMLElement;
     const renderedEl = el.querySelector('.footer-rendered');
     // Timezone abbreviation depends on the runner's locale/TZ (CET, UTC, ...),
-    // so assert the format structure rather than a specific zone.
+    // and en-GB month abbreviations aren't always 3 letters (e.g. "Sept"),
+    // so assert the format structure rather than exact lengths/specific zone.
     expect(renderedEl?.textContent).toMatch(
-      /rendered \d{1,2} \w{3} \d{4}, \d{2}:\d{2} \S+/,
+      /rendered \d{1,2} \w{3,4} \d{4}, \d{2}:\d{2} \S+/,
     );
   });
 });
