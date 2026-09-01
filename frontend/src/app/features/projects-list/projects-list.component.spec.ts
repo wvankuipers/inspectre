@@ -2,7 +2,7 @@ import { By } from '@angular/platform-browser';
 import { TestBed } from '@angular/core/testing';
 import { MatSort } from '@angular/material/sort';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { delay, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
@@ -462,6 +462,144 @@ describe('ProjectsListComponent status filter', () => {
     const rows = fixture.componentInstance.dataSource.filteredData;
     expect(rows.length).toBe(1);
     expect(rows[0].project.name).toBe('Alpha');
+  });
+});
+
+describe('ProjectsListComponent query params', () => {
+  afterEach(() => {
+    localStorage.clear();
+    vi.useRealTimers();
+  });
+
+  function configureWithQueryParams(
+    queryParams: Record<string, string>,
+    sortGet: { active: string; direction: '' | 'asc' | 'desc' } = { active: '', direction: '' },
+  ) {
+    localStorage.clear();
+    const getSpy = vi.fn().mockReturnValue(sortGet);
+    const saveSpy = vi.fn();
+    const paramMap = { get: (k: string) => queryParams[k] ?? null };
+
+    return TestBed.configureTestingModule({
+      imports: [ProjectsListComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS) } },
+        { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { queryParamMap: paramMap },
+            queryParamMap: of(paramMap),
+          },
+        },
+      ],
+    }).compileComponents();
+  }
+
+  it('seeds searchTerm, activeStatuses, and sortState from URL query params on init', async () => {
+    await configureWithQueryParams({ q: 'alpha', status: 'fail,new', sort: 'suite', dir: 'desc' });
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    expect(component.searchTerm()).toBe('alpha');
+    expect(component.activeStatuses()).toEqual(new Set(['fail', 'new']));
+    expect(component.sortState()).toEqual({ active: 'suite', direction: 'desc' });
+  });
+
+  it('falls back to SortStateService when the URL has no sort/dir params', async () => {
+    await configureWithQueryParams({}, { active: 'project', direction: 'asc' });
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.sortState()).toEqual({ active: 'project', direction: 'asc' });
+  });
+
+  it('updates the URL query params immediately when sort changes', async () => {
+    await configureWithQueryParams({});
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate');
+    const component = fixture.componentInstance;
+    (component as unknown as { sort: MatSort }).sort.sort({
+      id: 'project',
+      start: 'asc',
+      disableClear: false,
+    });
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { sort: 'project', dir: 'asc' },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      }),
+    );
+  });
+
+  it('updates the URL query params immediately when a status filter is toggled', async () => {
+    await configureWithQueryParams({});
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate');
+    fixture.componentInstance.toggleStatus('fail');
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { status: 'fail' },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      }),
+    );
+  });
+
+  it('removes the status query param when the last active filter is toggled off', async () => {
+    await configureWithQueryParams({ status: 'fail' });
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate');
+    fixture.componentInstance.toggleStatus('fail');
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { status: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      }),
+    );
+  });
+
+  it('debounces search term updates to the URL by ~300ms', async () => {
+    vi.useFakeTimers();
+    await configureWithQueryParams({});
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate');
+
+    fixture.componentInstance.onSearch('alpha');
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(299);
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { q: 'alpha' },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      }),
+    );
   });
 });
 

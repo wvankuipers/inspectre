@@ -12,8 +12,8 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
-import { RouterLink } from '@angular/router';
-import { catchError, of } from 'rxjs';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Subject, catchError, debounceTime, of } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { RunStatsChipsComponent } from '../../core/components/run-stats-chips/run-stats-chips.component';
@@ -25,6 +25,9 @@ interface Row {
   project: Project;
   suite: SuiteSummary;
 }
+
+const VALID_STATUSES = ['pass', 'fail', 'new'] as const;
+type Status = (typeof VALID_STATUSES)[number];
 
 @Component({
   selector: 'app-projects-list',
@@ -45,6 +48,8 @@ export class ProjectsListComponent {
   private api = inject(InspectreApiService);
   private sortService = inject(SortStateService);
   private destroyRef = inject(DestroyRef);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
 
   private _sort: MatSort | undefined;
 
@@ -60,14 +65,45 @@ export class ProjectsListComponent {
     sort.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s: Sort) => {
       this.sortState.set(s);
       this.sortService.save('projects', s);
+      this.writeQueryParams(
+        s.active && s.direction ? { sort: s.active, dir: s.direction } : { sort: null, dir: null },
+      );
     });
   }
 
+  private readonly initialQueryParams = this.route.snapshot.queryParamMap;
+
   readonly columns = ['project', 'suite', 'latestRun', 'status'];
-  readonly sortState = signal<Sort>(this.sortService.get('projects'));
-  readonly searchTerm = signal<string>('');
-  readonly activeStatuses = signal<Set<'pass' | 'fail' | 'new'>>(new Set());
+  readonly sortState = signal<Sort>(this.readInitialSort());
+  readonly searchTerm = signal<string>(this.initialQueryParams.get('q') ?? '');
+  readonly activeStatuses = signal<Set<Status>>(this.readInitialStatuses());
   readonly dataSource = new MatTableDataSource<Row>();
+
+  private readonly searchWrite$ = new Subject<string>();
+
+  private readInitialSort(): Sort {
+    const active = this.initialQueryParams.get('sort');
+    if (active) {
+      const dir = this.initialQueryParams.get('dir');
+      return { active, direction: dir === 'desc' ? 'desc' : 'asc' };
+    }
+    return this.sortService.get('projects');
+  }
+
+  private readInitialStatuses(): Set<Status> {
+    const raw = this.initialQueryParams.get('status');
+    if (!raw) return new Set();
+    return new Set(raw.split(',').filter((s): s is Status => VALID_STATUSES.includes(s as Status)));
+  }
+
+  private writeQueryParams(queryParams: Record<string, string | null>): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams,
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 
   private projects = toSignal(
     this.api.projects().pipe(
@@ -123,14 +159,21 @@ export class ProjectsListComponent {
     effect(() => {
       this.dataSource.data = this.visibleRows();
     });
+
+    this.dataSource.filter = this.searchTerm().trim().toLowerCase();
+
+    this.searchWrite$.pipe(debounceTime(300), takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
+      this.writeQueryParams({ q: value.trim() || null });
+    });
   }
 
   onSearch(value: string): void {
     this.searchTerm.set(value);
     this.dataSource.filter = value.trim().toLowerCase();
+    this.searchWrite$.next(value);
   }
 
-  toggleStatus(status: 'pass' | 'fail' | 'new'): void {
+  toggleStatus(status: Status): void {
     this.activeStatuses.update((currentStatuses) => {
       const next = new Set(currentStatuses);
       if (next.has(status)) {
@@ -140,5 +183,7 @@ export class ProjectsListComponent {
       }
       return next;
     });
+    const statuses = this.activeStatuses();
+    this.writeQueryParams({ status: statuses.size > 0 ? Array.from(statuses).join(',') : null });
   }
 }
