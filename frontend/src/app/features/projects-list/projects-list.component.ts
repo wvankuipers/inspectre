@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import {
-  AfterViewInit,
   Component,
   DestroyRef,
   ViewChild,
@@ -42,12 +41,35 @@ interface Row {
   templateUrl: './projects-list.component.html',
   styleUrl: './projects-list.component.scss',
 })
-export class ProjectsListComponent implements AfterViewInit {
+export class ProjectsListComponent {
   private api = inject(InspectreApiService);
   private sortService = inject(SortStateService);
   private destroyRef = inject(DestroyRef);
 
-  @ViewChild(MatSort) private sort!: MatSort;
+  private _sort: MatSort | undefined;
+
+  private get sort(): MatSort | undefined {
+    return this._sort;
+  }
+
+  @ViewChild(MatSort)
+  private set sort(sort: MatSort | undefined) {
+    if (!sort) return;
+    this._sort = sort;
+    this.dataSource.sort = sort;
+    const saved = this.sortState();
+    if (saved.active) {
+      sort.sort({
+        id: saved.active,
+        start: saved.direction as 'asc' | 'desc',
+        disableClear: false,
+      });
+    }
+    sort.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s: Sort) => {
+      this.sortState.set(s);
+      this.sortService.save('projects', s);
+    });
+  }
 
   readonly columns = ['project', 'suite', 'latestRun', 'status'];
   readonly sortState = signal<Sort>(this.sortService.get('projects'));
@@ -108,22 +130,6 @@ export class ProjectsListComponent implements AfterViewInit {
 
     effect(() => {
       this.dataSource.data = this.visibleRows();
-    });
-  }
-
-  ngAfterViewInit(): void {
-    this.dataSource.sort = this.sort;
-    const saved = this.sortState();
-    if (saved.active) {
-      this.sort?.sort({
-        id: saved.active,
-        start: saved.direction as 'asc' | 'desc',
-        disableClear: false,
-      });
-    }
-    this.sort?.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((sort: Sort) => {
-      this.sortState.set(sort);
-      this.sortService.save('projects', sort);
     });
   }
 
