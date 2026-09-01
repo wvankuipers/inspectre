@@ -304,16 +304,18 @@ class RunSummarySerializer(serializers.ModelSerializer):
             # Standalone fallback: one query for (passed, key) rows plus, if not already
             # pre-fetched via context (must check `is None`, not falsiness — an empty set is
             # a legitimate pre-fetched value), one query for baseline keys — instead of three
-            # separate .count() queries.
-            rows = list(instance.tests.values_list("passed", "key"))
+            # separate .count() queries. order_by() clears Test.Meta.ordering, which would
+            # otherwise sort by created_at for no reason on a pure counting query. Counts are
+            # derived in a single streaming pass rather than three passes over a materialized list.
             baselined_keys = self.context.get("baselined_keys")
             if baselined_keys is None:
                 baselined_keys = set(Baseline.objects.filter(suite_id=instance.suite_id).values_list("key", flat=True))
-            self._counts = {
-                "passing": sum(1 for passed, _ in rows if passed),
-                "failing": sum(1 for passed, _ in rows if not passed),
-                "unbaselined": sum(1 for _, key in rows if key not in baselined_keys),
-            }
+            counts = {"passing": 0, "failing": 0, "unbaselined": 0}
+            for passed, key in instance.tests.order_by().values_list("passed", "key"):
+                counts["passing" if passed else "failing"] += 1
+                if key not in baselined_keys:
+                    counts["unbaselined"] += 1
+            self._counts = counts
         return super().to_representation(instance)
 
     def get_passing(self, obj):
