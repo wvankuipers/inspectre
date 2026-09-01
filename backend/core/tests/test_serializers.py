@@ -360,8 +360,9 @@ def test_project_serializer_suite_with_runs_includes_latest_run_summary(
 # ---- RunSummarySerializer.unbaselined ------------------------------------
 
 
-def test_run_summary_serializer_uses_one_query_per_run(django_assert_num_queries, suite_factory, run_factory):
-    """passing/failing/unbaselined must come from a single query per run, not three."""
+def test_run_summary_serializer_uses_one_test_query_per_run(django_assert_num_queries, suite_factory, run_factory):
+    """passing/failing/unbaselined must come from a single query for test data (plus the
+    unavoidable baseline fallback query when no context is passed), not three test queries."""
     from core.models import Test
 
     suite = suite_factory()

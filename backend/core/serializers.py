@@ -145,7 +145,7 @@ class TestRowSerializer(serializers.ModelSerializer):
     `has_baseline` — not `is_baseline_source` — is what drives the SPA's "New
     baseline" chip. It means "does any Baseline exist for this key at all,"
     which stays true even after supersession (mirrors
-    RunSummarySerializer.get_unbaselined's definition).
+    RunSummarySerializer.to_representation's definition).
     """
 
     passed = serializers.BooleanField()
@@ -193,7 +193,7 @@ class TestRowSerializer(serializers.ModelSerializer):
         # / serialize_tests_bulk to avoid N+1 queries). Falls back to a direct query for
         # standalone use. Must check `is None`, not falsiness — an empty set (a suite with zero
         # baselines) is a legitimate pre-fetched value and must not trigger the fallback query
-        # (see RunSummarySerializer.get_unbaselined for the same fix).
+        # (see RunSummarySerializer.to_representation for the same fix).
         baselined_keys = self.context.get("baselined_keys")
         if baselined_keys is None:
             baselined_keys = set(Baseline.objects.filter(suite_id=obj.run.suite_id).values_list("key", flat=True))
