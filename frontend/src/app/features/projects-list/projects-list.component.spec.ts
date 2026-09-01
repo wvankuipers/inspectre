@@ -1,8 +1,9 @@
+import { By } from '@angular/platform-browser';
 import { TestBed } from '@angular/core/testing';
 import { MatSort } from '@angular/material/sort';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { delay, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { Project } from '../../core/models/api';
@@ -133,6 +134,52 @@ describe('ProjectsListComponent sorting', () => {
     const row = ds.data[0]; // Beta row
     expect(ds.sortingDataAccessor(row, 'project')).toBe('Beta');
     expect(ds.sortingDataAccessor(row, 'suite')).toBe('S1');
+  });
+
+  it('actually reorders the connected table rows when a real MatSort is triggered', async () => {
+    // Real project data loads asynchronously over HTTP. Delay the mocked
+    // response so it resolves *after* the first view check (the same timing
+    // that exposed the original bug: the @if-gated <table>/MatSort don't
+    // exist yet when ngAfterViewInit fires).
+    await TestBed.resetTestingModule()
+      .configureTestingModule({
+        imports: [ProjectsListComponent],
+        providers: [
+          provideNoopAnimations(),
+          provideRouter([]),
+          { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS).pipe(delay(0)) } },
+          { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
+        ],
+      })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges(); // first view check — table not rendered yet, data still pending
+    await new Promise((resolve) => setTimeout(resolve, 10)); // async data arrives
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const matSortDebugEl = fixture.debugElement.query(By.directive(MatSort));
+    expect(matSortDebugEl).toBeTruthy();
+    const matSort = matSortDebugEl.injector.get(MatSort);
+
+    const renderedProjectNames = (): string[] =>
+      Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          'tr.mat-mdc-row td.mat-column-project, tr.mat-row td.mat-column-project',
+        ),
+      ).map((cell) => cell.textContent?.trim() ?? '');
+
+    // Unsorted order from the API fixture is Beta, Alpha, Gamma, Delta.
+    expect(renderedProjectNames()).toEqual(['Beta', 'Alpha', 'Gamma', 'Delta']);
+
+    matSort.sort({ id: 'project', start: 'asc', disableClear: false });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(renderedProjectNames()).toEqual(['Alpha', 'Beta', 'Delta', 'Gamma']);
   });
 });
 
