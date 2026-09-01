@@ -1,22 +1,14 @@
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import {
-  AfterViewInit,
-  Component,
-  DestroyRef,
-  ViewChild,
-  computed,
-  inject,
-  signal,
-} from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectChange, MatSelectModule } from '@angular/material/select';
-import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
+import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { catchError, of, switchMap } from 'rxjs';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -47,23 +39,53 @@ import { SortStateService } from '../../core/services/sort-state.service';
   templateUrl: './run-detail.component.html',
   styleUrl: './run-detail.component.scss',
 })
-export class RunDetailComponent implements AfterViewInit {
+export class RunDetailComponent {
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private api = inject(InspectreApiService);
   private sortService = inject(SortStateService);
   private dialog = inject(MatDialog);
   private destroyRef = inject(DestroyRef);
 
-  @ViewChild(MatSort) private sort!: MatSort;
-
   readonly columns = ['name', 'baseline', 'screenshot', 'diff', 'result'];
 
+  private readonly initialQueryParams = this.route.snapshot.queryParamMap;
+
+  private readInitialSort(
+    sortParam: string,
+    dirParam: string,
+    sortServiceKey: string,
+    fallback: Sort,
+  ): Sort {
+    const active = this.initialQueryParams.get(sortParam);
+    if (active) {
+      const dir = this.initialQueryParams.get(dirParam);
+      return { active, direction: dir === 'desc' ? 'desc' : 'asc' };
+    }
+    const saved = this.sortService.get(sortServiceKey);
+    return saved.active ? saved : fallback;
+  }
+
+  private readInitialSet(param: string): Set<string> {
+    const raw = this.initialQueryParams.get(param);
+    if (!raw) return new Set();
+    return new Set(raw.split(',').filter(Boolean));
+  }
+
+  private writeQueryParams(queryParams: Record<string, string | null>): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams,
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
   readonly sortState = signal<Sort>(
-    (() => {
-      const saved = this.sortService.get('run-tests');
-      return saved.active ? saved : { active: 'name', direction: 'asc' };
-    })(),
+    this.readInitialSort('sort', 'dir', 'run-tests', { active: 'name', direction: 'asc' }),
   );
+
+  private readonly searchWrite$ = new Subject<string>();
 
   private params = toSignal(this.route.paramMap, {
     initialValue: this.route.snapshot.paramMap,
@@ -136,6 +158,12 @@ export class RunDetailComponent implements AfterViewInit {
       });
 
     this.destroyRef.onDestroy(() => clearTimeout(this.pollTimer));
+
+    this.searchWrite$
+      .pipe(debounceTime(300), takeUntilDestroyed(this.destroyRef))
+      .subscribe((value) => {
+        this.writeQueryParams({ q: value.trim() || null });
+      });
   }
 
   private schedulePollIfNeeded(): void {
@@ -173,10 +201,12 @@ export class RunDetailComponent implements AfterViewInit {
   }
 
   readonly pendingId = signal<Set<number>>(new Set());
-  readonly searchTerm = signal<string>('');
-  readonly activeStatuses = signal<Set<'pass' | 'fail' | 'new'>>(new Set());
-  readonly activeBrowsers = signal<Set<string>>(new Set());
-  readonly activeSizes = signal<Set<string>>(new Set());
+  readonly searchTerm = signal<string>(this.initialQueryParams.get('q') ?? '');
+  readonly activeStatuses = signal<Set<'pass' | 'fail' | 'new'>>(
+    this.readInitialSet('status') as Set<'pass' | 'fail' | 'new'>,
+  );
+  readonly activeBrowsers = signal<Set<string>>(this.readInitialSet('browser'));
+  readonly activeSizes = signal<Set<string>>(this.readInitialSet('size'));
 
   readonly availableBrowsers = computed<string[]>(() =>
     Array.from(new Set((this.run()?.tests ?? []).map((t) => t.browser))).sort(),
@@ -228,36 +258,37 @@ export class RunDetailComponent implements AfterViewInit {
       .filter((testRow) => sizes.size === 0 || sizes.has(testRow.size));
   });
 
-  ngAfterViewInit(): void {
-    const saved = this.sortState();
-    if (saved.active) {
-      this.sort?.sort({
-        id: saved.active,
-        start: saved.direction as 'asc' | 'desc',
-        disableClear: false,
-      });
-    }
-  }
-
   onSortChange(sort: Sort): void {
     this.sortState.set(sort);
     this.sortService.save('run-tests', sort);
+    this.writeQueryParams(
+      sort.active && sort.direction
+        ? { sort: sort.active, dir: sort.direction }
+        : { sort: null, dir: null },
+    );
   }
 
   onSearch(value: string): void {
     this.searchTerm.set(value);
+    this.searchWrite$.next(value);
   }
 
   onStatusSelectionChange(event: MatSelectChange): void {
-    this.activeStatuses.set(new Set(event.value as ('pass' | 'fail' | 'new')[]));
+    const values = event.value as ('pass' | 'fail' | 'new')[];
+    this.activeStatuses.set(new Set(values));
+    this.writeQueryParams({ status: values.length ? values.join(',') : null });
   }
 
   onBrowserSelectionChange(event: MatSelectChange): void {
-    this.activeBrowsers.set(new Set(event.value as string[]));
+    const values = event.value as string[];
+    this.activeBrowsers.set(new Set(values));
+    this.writeQueryParams({ browser: values.length ? values.join(',') : null });
   }
 
   onSizeSelectionChange(event: MatSelectChange): void {
-    this.activeSizes.set(new Set(event.value as string[]));
+    const values = event.value as string[];
+    this.activeSizes.set(new Set(values));
+    this.writeQueryParams({ size: values.length ? values.join(',') : null });
   }
 
   openViewer(test: TestRow, slot: ImageSlot): void {
