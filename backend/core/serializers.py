@@ -382,11 +382,16 @@ class SuiteDetailSerializer(serializers.ModelSerializer):
         return obj.project.name
 
     def get_latest_runs(self, obj):
-        runs = obj.runs.all()[:5]
+        runs = list(obj.runs.all()[:5])
         # Pre-fetch baseline keys once for the suite so RunSummarySerializer.get_unbaselined
         # doesn't issue one Baseline query per run (same pattern as RunDetailSerializer).
         baselined_keys = set(Baseline.objects.filter(suite_id=obj.pk).values_list("key", flat=True))
-        return RunSummarySerializer(runs, many=True, context={"baselined_keys": baselined_keys}).data
+        # Batch passing/failing/unbaselined counts for these runs into two GROUP BY queries
+        # total, instead of 3 raw .count() queries per run (same pattern as ProjectSerializer).
+        run_counts = build_run_counts([run.id for run in runs], baselined_keys)
+        return RunSummarySerializer(
+            runs, many=True, context={"baselined_keys": baselined_keys, "run_counts": run_counts}
+        ).data
 
 
 class ProjectSerializer(serializers.ModelSerializer):

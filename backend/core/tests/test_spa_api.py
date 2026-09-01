@@ -260,6 +260,36 @@ class TestSuiteDetail:
         assert api.get("/api/projects/no-such-project/suites/desktop/").status_code == 404
         assert api.get("/api/projects/acme/suites/no-such-suite/").status_code == 404
 
+    def test_query_count_does_not_scale_with_run_count(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+        baseline_factory,
+    ):
+        """Regression test for the SuiteDetailSerializer/RunSummarySerializer N+1: prior to
+        the fix, RunSummarySerializer.get_passing/get_failing/get_unbaselined issued 3 extra
+        queries per run because get_latest_runs never batched counts via build_run_counts.
+        Query count must stay the same whether the suite has 1 run or the full 5-run cap.
+        """
+        project = project_factory(name="Acme")
+
+        def _suite_detail_query_count(num_runs):
+            suite = suite_factory(project=project, name=f"Suite-{num_runs}-runs")
+            for i in range(num_runs):
+                run = run_factory(suite=suite)
+                test_factory(run=run, key=f"suite-{num_runs}-run-{i}-key", passed=(i % 2 == 0))
+            baseline_factory(suite=suite, key=f"suite-{num_runs}-run-0-key")
+            with CaptureQueriesContext(connection) as ctx:
+                response = api.get(f"/api/projects/{project.slug}/suites/{suite.slug}/")
+            assert response.status_code == 200
+            assert len(response.json()["latest_runs"]) == num_runs
+            return len(ctx.captured_queries)
+
+        assert _suite_detail_query_count(1) == _suite_detail_query_count(5)
+
 
 # =============================================================================
 # GET /api/projects/<slug>/suites/<slug>/runs/<seq>/  — run detail
