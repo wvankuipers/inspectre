@@ -1,3 +1,4 @@
+from django.db.models import Count, Q
 from rest_framework import serializers
 
 from core.models import Baseline, Project, Run, Suite, Test
@@ -107,6 +108,34 @@ class LegacyBaselineSerializer(serializers.ModelSerializer):
 
 def _file_url(field):
     return generate_presigned_url(field.name) if field else None
+
+
+def build_run_counts(run_ids, baselined_keys):
+    """Batch passing/failing/unbaselined counts for a set of runs into one dict.
+
+    Two GROUP BY queries total, regardless of len(run_ids) — replaces the
+    3-queries-per-run pattern in RunSummarySerializer. Every id in `run_ids`
+    is guaranteed to be a key in the result (defaulting to zeros), so this
+    dict is always dense over its input, never sparse.
+    """
+    if not run_ids:
+        return {}
+    counts = {run_id: {"passing": 0, "failing": 0, "unbaselined": 0} for run_id in run_ids}
+    for row in (
+        Test.objects.filter(run_id__in=run_ids)
+        .values("run_id")
+        .annotate(passing=Count("id", filter=Q(passed=True)), failing=Count("id", filter=Q(passed=False)))
+    ):
+        counts[row["run_id"]]["passing"] = row["passing"]
+        counts[row["run_id"]]["failing"] = row["failing"]
+    for row in (
+        Test.objects.filter(run_id__in=run_ids)
+        .exclude(key__in=baselined_keys)
+        .values("run_id")
+        .annotate(n=Count("id"))
+    ):
+        counts[row["run_id"]]["unbaselined"] = row["n"]
+    return counts
 
 
 class TestRowSerializer(serializers.ModelSerializer):
@@ -269,12 +298,21 @@ class RunSummarySerializer(serializers.ModelSerializer):
         fields = ["id", "sequential_id", "created_at", "passing", "failing", "unbaselined"]
 
     def get_passing(self, obj):
+        run_counts = self.context.get("run_counts")
+        if run_counts is not None and obj.id in run_counts:
+            return run_counts[obj.id]["passing"]
         return obj.tests.filter(passed=True).count()
 
     def get_failing(self, obj):
+        run_counts = self.context.get("run_counts")
+        if run_counts is not None and obj.id in run_counts:
+            return run_counts[obj.id]["failing"]
         return obj.tests.filter(passed=False).count()
 
     def get_unbaselined(self, obj):
+        run_counts = self.context.get("run_counts")
+        if run_counts is not None and obj.id in run_counts:
+            return run_counts[obj.id]["unbaselined"]
         # Use pre-fetched keys from context when available (set by SuiteDetailSerializer
         # / ProjectSerializer to avoid N+1 queries). Falls back to a direct query for
         # standalone use. Must check `is None`, not falsiness — an empty set (a project/suite

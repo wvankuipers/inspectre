@@ -11,6 +11,7 @@ from core.serializers import (
     SuiteDetailSerializer,
     TestHistoryEntrySerializer,
     TestRowSerializer,
+    build_run_counts,
     serialize_test_history,
 )
 
@@ -393,6 +394,85 @@ def test_run_summary_unbaselined_is_zero_when_run_has_no_tests(run_factory):
     run = run_factory()
     body = RunSummarySerializer(run).data
     assert body["unbaselined"] == 0
+
+
+# ---- build_run_counts helper -----------------------------------------------
+
+
+def test_build_run_counts_returns_passing_failing_unbaselined_per_run(suite_factory, run_factory, baseline_factory):
+    """Batch passing/failing/unbaselined counts for a set of runs into one dict.
+
+    Verifies that:
+    - Passing tests (passed=True) are counted correctly per run
+    - Failing tests (passed=False) are counted correctly per run
+    - Unbaselined tests (key not in baselined_keys) are counted correctly per run
+    - Runs with zero tests are still present in the result (not sparse)
+    """
+    from core.models import Test
+
+    suite = suite_factory()
+    run_a = run_factory(suite=suite)
+    run_b = run_factory(suite=suite)
+
+    # Create tests for run_a: 2 passed (one baselined, one not), 1 failed
+    t1_passed_baselined = Test.objects.create(
+        run=run_a, name="home", browser="Chrome", size="1024", passed=True
+    )
+    Test.objects.create(run=run_a, name="about", browser="Chrome", size="1024", passed=True)
+    Test.objects.create(run=run_a, name="contact", browser="Chrome", size="1024", passed=False)
+
+    # Create a baseline for one of run_a's tests
+    baseline_factory(suite=suite, key=t1_passed_baselined.key)
+
+    # run_b has zero tests
+
+    # Call build_run_counts
+    baselined_keys = {t1_passed_baselined.key}
+    result = build_run_counts([run_a.id, run_b.id], baselined_keys)
+
+    # Verify run_a counts
+    assert result[run_a.id]["passing"] == 2  # Both t1 and t2
+    assert result[run_a.id]["failing"] == 1  # t3
+    assert result[run_a.id]["unbaselined"] == 2  # t2 and t3 (t1 is baselined)
+
+    # Verify run_b has zero counts (not sparse)
+    assert result[run_b.id]["passing"] == 0
+    assert result[run_b.id]["failing"] == 0
+    assert result[run_b.id]["unbaselined"] == 0
+
+
+def test_build_run_counts_returns_empty_dict_for_empty_run_ids(django_assert_num_queries):
+    """Empty run_ids list returns empty dict without issuing any queries."""
+    with django_assert_num_queries(0):
+        result = build_run_counts([], set())
+    assert result == {}
+
+
+def test_run_summary_uses_run_counts_context_without_extra_queries(
+    run_factory, test_factory, django_assert_num_queries
+):
+    """RunSummarySerializer reads run_counts context without querying the database.
+
+    Verifies that when run_counts is provided in the serializer context, the serializer
+    uses it instead of issuing queries for passing/failing/unbaselined counts.
+    """
+    run = run_factory()
+    # Create some tests with real counts
+    test_factory(run=run, passed=True)
+    test_factory(run=run, passed=True)
+    test_factory(run=run, passed=False)
+
+    # Now serialize with fake counts in context
+    with django_assert_num_queries(0):
+        body = RunSummarySerializer(
+            run,
+            context={"run_counts": {run.id: {"passing": 11, "failing": 22, "unbaselined": 33}}}
+        ).data
+
+    # Verify it reads from context, not the database
+    assert body["passing"] == 11
+    assert body["failing"] == 22
+    assert body["unbaselined"] == 33
 
 
 # ---- TestHistoryEntrySerializer / serialize_test_history ------------------
