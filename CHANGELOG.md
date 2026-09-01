@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.4.0](https://github.com/wvankuipers/inspectre/compare/1.3.2...1.4.0) - 2026-09-01
+
+- fix: allow 4-letter month abbreviations in page-footer timestamp test by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/100
+- feat: add /healthz endpoint to SPA nginx config for container by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/95
+- fix: wire up MatSort via setter so ProjectsListComponent sorting actu… by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/99
+- Feat/url based sorting by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/97
+- feat: add read-only Processing queue admin page for pending images by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/96
+- chore(deps): bump the backend-pip group in /backend with 4 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/103
+- Feat/improve projects index by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/102
+- Perf/query optimizations by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/104
+
 ## [1.3.2](https://github.com/wvankuipers/inspectre/compare/1.3.1...1.3.2) - 2026-08-31
 
 - chore(deps-dev): bump the frontend-npm group in /frontend with 2 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/89
