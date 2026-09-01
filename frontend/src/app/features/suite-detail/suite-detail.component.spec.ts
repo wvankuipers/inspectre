@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
@@ -84,7 +84,7 @@ describe('SuiteDetailComponent sorting', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => 'test' } },
+            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
           },
         },
@@ -192,7 +192,7 @@ describe('SuiteDetailComponent baselines search', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => 'test' } },
+            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
           },
         },
@@ -248,7 +248,7 @@ describe('SuiteDetailComponent unbaselined chip', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => 'test' } },
+            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
           },
         },
@@ -298,7 +298,7 @@ describe('SuiteDetailComponent tabs', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => 'test' } },
+            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
           },
         },
@@ -356,7 +356,7 @@ describe('SuiteDetailComponent API failure', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => 'test' } },
+            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
           },
         },
@@ -382,5 +382,144 @@ describe('SuiteDetailComponent API failure', () => {
     await fixture.whenStable();
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
     expect(h1).toBeNull();
+  });
+});
+
+describe('SuiteDetailComponent query params', () => {
+  afterEach(() => {
+    localStorage.clear();
+    vi.useRealTimers();
+  });
+
+  function configureWithQueryParams(
+    queryParams: Record<string, string>,
+    sortGet: (key: string) => { active: string; direction: '' | 'asc' | 'desc' } = () => ({
+      active: '',
+      direction: '',
+    }),
+  ) {
+    localStorage.clear();
+    const sortServiceGet = vi.fn(sortGet);
+    const sortServiceSave = vi.fn();
+    const paramMap = { get: (k: string) => queryParams[k] ?? null };
+
+    return TestBed.configureTestingModule({
+      imports: [SuiteDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              paramMap: { get: () => 'test' },
+              queryParamMap: paramMap,
+            },
+            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
+            queryParamMap: of(paramMap),
+          },
+        },
+        { provide: InspectreApiService, useValue: { suite: () => of(SUITE) } },
+        { provide: SortStateService, useValue: { get: sortServiceGet, save: sortServiceSave } },
+      ],
+    }).compileComponents();
+  }
+
+  it('seeds runsSort/runsDir, baselinesQ and baselinesSort/baselinesDir from URL params on init', async () => {
+    await configureWithQueryParams({
+      runsSort: 'when',
+      runsDir: 'asc',
+      baselinesQ: 'alpha',
+      baselinesSort: 'browser',
+      baselinesDir: 'desc',
+    });
+    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    expect(component.runSortState()).toEqual({ active: 'when', direction: 'asc' });
+    expect(component.baselineSortState()).toEqual({ active: 'browser', direction: 'desc' });
+    expect(component.baselinesSearchTerm()).toBe('alpha');
+    expect(component.baselinesDataSource.filter).toBe('alpha');
+  });
+
+  it('falls back to SortStateService when the URL has no sort params (regression)', async () => {
+    await configureWithQueryParams({}, (key: string) => {
+      if (key === 'suite-runs') return { active: 'seq', direction: 'desc' };
+      if (key === 'suite-baselines') return { active: 'name', direction: 'asc' };
+      return { active: '', direction: '' };
+    });
+    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    expect(component.runSortState()).toEqual({ active: 'seq', direction: 'desc' });
+    expect(component.baselineSortState()).toEqual({ active: 'name', direction: 'asc' });
+    expect(component.baselinesSearchTerm()).toBe('');
+  });
+
+  it('writes runsSort/runsDir to the URL immediately when runs sort changes', async () => {
+    await configureWithQueryParams({});
+    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate');
+    const component = fixture.componentInstance;
+    component.onRunSortChange({ active: 'when', direction: 'asc' });
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { runsSort: 'when', runsDir: 'asc' },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      }),
+    );
+  });
+
+  it('writes baselinesSort/baselinesDir to the URL immediately when baselines sort changes', async () => {
+    await configureWithQueryParams({});
+    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate');
+    const component = fixture.componentInstance;
+    component.baselinesSort!.sort({ id: 'browser', start: 'asc', disableClear: false });
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { baselinesSort: 'browser', baselinesDir: 'asc' },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      }),
+    );
+  });
+
+  it('debounces baselinesQ updates to the URL by ~300ms', async () => {
+    vi.useFakeTimers();
+    await configureWithQueryParams({});
+    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate');
+    const component = fixture.componentInstance;
+
+    component.onBaselinesSearch('alpha');
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(299);
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { baselinesQ: 'alpha' },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      }),
+    );
   });
 });

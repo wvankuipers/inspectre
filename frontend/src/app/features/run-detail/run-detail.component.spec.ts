@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSelectChange } from '@angular/material/select';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
@@ -226,7 +226,7 @@ describe('RunDetailComponent sorting', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' } },
+            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
           },
         },
@@ -305,7 +305,7 @@ describe('RunDetailComponent filtering', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' } },
+            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
           },
         },
@@ -403,13 +403,17 @@ describe('RunDetailComponent browser/size filtering', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '4' } },
+            snapshot: { paramMap: { get: () => '4' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'seqId' ? '4' : 'test') }),
           },
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN_MIXED_BROWSER_SIZE), setBaseline: () => of({}), testsBulk: () => of([]) },
+          useValue: {
+            run: () => of(RUN_MIXED_BROWSER_SIZE),
+            setBaseline: () => of({}),
+            testsBulk: () => of([]),
+          },
         },
         {
           provide: SortStateService,
@@ -489,13 +493,17 @@ describe('RunDetailComponent empty run', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '2' } },
+            snapshot: { paramMap: { get: () => '2' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'seqId' ? '2' : 'test') }),
           },
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN_EMPTY), setBaseline: () => of({}), testsBulk: () => of([]) },
+          useValue: {
+            run: () => of(RUN_EMPTY),
+            setBaseline: () => of({}),
+            testsBulk: () => of([]),
+          },
         },
         {
           provide: SortStateService,
@@ -533,7 +541,7 @@ describe('RunDetailComponent onImgError guard', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' } },
+            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
           },
         },
@@ -598,7 +606,7 @@ describe('RunDetailComponent rebaseline refresh', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' } },
+            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
           },
         },
@@ -662,13 +670,17 @@ describe('RunDetailComponent image viewer', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '3' } },
+            snapshot: { paramMap: { get: () => '3' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'seqId' ? '3' : 'test') }),
           },
         },
         {
           provide: InspectreApiService,
-          useValue: { run: () => of(RUN_WITH_THUMBS), setBaseline: () => of({}), testsBulk: () => of([]) },
+          useValue: {
+            run: () => of(RUN_WITH_THUMBS),
+            setBaseline: () => of({}),
+            testsBulk: () => of([]),
+          },
         },
         {
           provide: SortStateService,
@@ -723,7 +735,7 @@ describe('RunDetailComponent API failure', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' } },
+            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
           },
         },
@@ -773,7 +785,7 @@ async function setup({
       {
         provide: ActivatedRoute,
         useValue: {
-          snapshot: { paramMap: { get: () => '1' } },
+          snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
           paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
         },
       },
@@ -931,7 +943,7 @@ describe('RunDetailComponent thumbnail skeleton', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' } },
+            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
             paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
           },
         },
@@ -981,7 +993,10 @@ describe('RunDetailComponent pending-test polling', () => {
   it('does not call testsBulk before 10s have passed', async () => {
     vi.useFakeTimers();
     const testsBulkSpy = vi.fn().mockReturnValue(of([]));
-    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+    const fixturePromise = setup({
+      apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)),
+      testsBulkSpy,
+    });
 
     await vi.advanceTimersByTimeAsync(0);
     await fixturePromise;
@@ -995,7 +1010,10 @@ describe('RunDetailComponent pending-test polling', () => {
   it('calls testsBulk with only the pending ids after 10s', async () => {
     vi.useFakeTimers();
     const testsBulkSpy = vi.fn().mockReturnValue(of([]));
-    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+    const fixturePromise = setup({
+      apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)),
+      testsBulkSpy,
+    });
 
     await vi.advanceTimersByTimeAsync(0);
     await fixturePromise;
@@ -1074,7 +1092,10 @@ describe('RunDetailComponent pending-test polling', () => {
       .fn()
       .mockReturnValueOnce(throwError(() => new Error('network')))
       .mockReturnValueOnce(of([]));
-    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+    const fixturePromise = setup({
+      apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)),
+      testsBulkSpy,
+    });
 
     await vi.advanceTimersByTimeAsync(0);
     await fixturePromise;
@@ -1090,7 +1111,10 @@ describe('RunDetailComponent pending-test polling', () => {
   it('stops polling after 3 consecutive empty testsBulk responses', async () => {
     vi.useFakeTimers();
     const testsBulkSpy = vi.fn().mockReturnValue(of([]));
-    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+    const fixturePromise = setup({
+      apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)),
+      testsBulkSpy,
+    });
 
     await vi.advanceTimersByTimeAsync(0);
     await fixturePromise;
@@ -1109,7 +1133,10 @@ describe('RunDetailComponent pending-test polling', () => {
   it('stops polling after 3 consecutive testsBulk errors', async () => {
     vi.useFakeTimers();
     const testsBulkSpy = vi.fn().mockReturnValue(throwError(() => new Error('network')));
-    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+    const fixturePromise = setup({
+      apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)),
+      testsBulkSpy,
+    });
 
     await vi.advanceTimersByTimeAsync(0);
     await fixturePromise;
@@ -1132,7 +1159,10 @@ describe('RunDetailComponent pending-test polling', () => {
       .mockReturnValueOnce(of([])) // unproductive: 2
       .mockReturnValueOnce(of([resolved])) // productive: resets counter, and resolves the only pending test
       .mockReturnValue(of([]));
-    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+    const fixturePromise = setup({
+      apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)),
+      testsBulkSpy,
+    });
 
     await vi.advanceTimersByTimeAsync(0);
     await fixturePromise;
@@ -1152,7 +1182,10 @@ describe('RunDetailComponent pending-test polling', () => {
   it('clears the pending timer on destroy so no further request fires', async () => {
     vi.useFakeTimers();
     const testsBulkSpy = vi.fn().mockReturnValue(of([]));
-    const fixturePromise = setup({ apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)), testsBulkSpy });
+    const fixturePromise = setup({
+      apiSpy: vi.fn().mockReturnValue(of(PENDING_RUN)),
+      testsBulkSpy,
+    });
 
     await vi.advanceTimersByTimeAsync(0);
     const fixture = await fixturePromise;
@@ -1161,5 +1194,167 @@ describe('RunDetailComponent pending-test polling', () => {
 
     await vi.advanceTimersByTimeAsync(20000);
     expect(testsBulkSpy).not.toHaveBeenCalled();
+  });
+});
+
+function buildQueryParamMap(params: Record<string, string>) {
+  return { get: (key: string) => params[key] ?? null };
+}
+
+async function setupWithQueryParams({
+  queryParams = {},
+  apiSpy = vi.fn().mockReturnValue(of(RUN)),
+  sortServiceGet = vi.fn().mockReturnValue({ active: '', direction: '' }),
+  sortServiceSave = vi.fn(),
+  navigateSpy = vi.fn(),
+}: {
+  queryParams?: Record<string, string>;
+  apiSpy?: ReturnType<typeof vi.fn>;
+  sortServiceGet?: ReturnType<typeof vi.fn>;
+  sortServiceSave?: ReturnType<typeof vi.fn>;
+  navigateSpy?: ReturnType<typeof vi.fn>;
+} = {}) {
+  localStorage.clear();
+
+  await TestBed.configureTestingModule({
+    imports: [RunDetailComponent],
+    providers: [
+      provideNoopAnimations(),
+      provideRouter([]),
+      {
+        provide: ActivatedRoute,
+        useValue: {
+          snapshot: {
+            paramMap: { get: () => '1' },
+            queryParamMap: buildQueryParamMap(queryParams),
+          },
+          paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+        },
+      },
+      {
+        provide: InspectreApiService,
+        useValue: { run: apiSpy, setBaseline: () => of({}), testsBulk: () => of([]) },
+      },
+      { provide: SortStateService, useValue: { get: sortServiceGet, save: sortServiceSave } },
+    ],
+  })
+    .overrideProvider(Router, { useValue: { navigate: navigateSpy } })
+    .compileComponents();
+
+  const fixture = TestBed.createComponent(RunDetailComponent);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  return fixture;
+}
+
+describe('RunDetailComponent query param sync', () => {
+  afterEach(() => {
+    localStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('seeds search/status/browser/size/sort signals from URL query params on init', async () => {
+    const fixture = await setupWithQueryParams({
+      queryParams: {
+        q: 'alpha',
+        status: 'pass,fail',
+        browser: 'chrome',
+        size: '1280x800',
+        sort: 'result',
+        dir: 'desc',
+      },
+    });
+    const component = fixture.componentInstance;
+    expect(component.searchTerm()).toBe('alpha');
+    expect(component.activeStatuses()).toEqual(new Set(['pass', 'fail']));
+    expect(component.activeBrowsers()).toEqual(new Set(['chrome']));
+    expect(component.activeSizes()).toEqual(new Set(['1280x800']));
+    expect(component.sortState()).toEqual({ active: 'result', direction: 'desc' });
+  });
+
+  it('falls back to SortStateService default when URL has no sort params', async () => {
+    const sortServiceGet = vi.fn().mockReturnValue({ active: 'result', direction: 'desc' });
+    const fixture = await setupWithQueryParams({ queryParams: {}, sortServiceGet });
+    const component = fixture.componentInstance;
+    expect(sortServiceGet).toHaveBeenCalledWith('run-tests');
+    expect(component.sortState()).toEqual({ active: 'result', direction: 'desc' });
+  });
+
+  it('writes sort/dir to the URL immediately on sort change', async () => {
+    const navigateSpy = vi.fn();
+    const fixture = await setupWithQueryParams({ navigateSpy });
+    const component = fixture.componentInstance;
+    component.onSortChange({ active: 'result', direction: 'desc' });
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { sort: 'result', dir: 'desc' } }),
+    );
+  });
+
+  it('a URL-restored ascending sort renders rows in ascending order, not flipped to descending', async () => {
+    const fixture = await setupWithQueryParams({ queryParams: { sort: 'name', dir: 'asc' } });
+    const el = fixture.nativeElement as HTMLElement;
+    const names = Array.from(el.querySelectorAll('tr[mat-row] .test-name a')).map((a) =>
+      a.textContent?.trim(),
+    );
+    expect(names).toEqual(['Alpha page', 'Beta new', 'Zeta page']);
+  });
+
+  it('writes status filter to the URL immediately on change', async () => {
+    const navigateSpy = vi.fn();
+    const fixture = await setupWithQueryParams({ navigateSpy });
+    const component = fixture.componentInstance;
+    component.onStatusSelectionChange({ value: ['pass', 'fail'] } as MatSelectChange);
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { status: 'pass,fail' } }),
+    );
+  });
+
+  it('writes browser filter to the URL immediately on change', async () => {
+    const navigateSpy = vi.fn();
+    const fixture = await setupWithQueryParams({ navigateSpy });
+    const component = fixture.componentInstance;
+    component.onBrowserSelectionChange({ value: ['chrome'] } as MatSelectChange);
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { browser: 'chrome' } }),
+    );
+  });
+
+  it('writes size filter to the URL immediately on change, and null when cleared', async () => {
+    const navigateSpy = vi.fn();
+    const fixture = await setupWithQueryParams({ navigateSpy });
+    const component = fixture.componentInstance;
+    component.onSizeSelectionChange({ value: ['1280x800'] } as MatSelectChange);
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { size: '1280x800' } }),
+    );
+    component.onSizeSelectionChange({ value: [] } as unknown as MatSelectChange);
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { size: null } }),
+    );
+  });
+
+  it('debounces search-term URL writes by ~300ms', async () => {
+    vi.useFakeTimers();
+    const navigateSpy = vi.fn();
+    const fixture = await setupWithQueryParams({ navigateSpy });
+    const component = fixture.componentInstance;
+
+    component.onSearch('alpha');
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(299);
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { q: 'alpha' } }),
+    );
+    vi.useRealTimers();
   });
 });

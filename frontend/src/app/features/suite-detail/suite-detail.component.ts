@@ -1,20 +1,11 @@
 import { DatePipe } from '@angular/common';
-import {
-  AfterViewInit,
-  Component,
-  DestroyRef,
-  ViewChild,
-  computed,
-  effect,
-  inject,
-  signal,
-} from '@angular/core';
+import { Component, DestroyRef, ViewChild, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatTabsModule } from '@angular/material/tabs';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { catchError, of, switchMap } from 'rxjs';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -39,13 +30,12 @@ import { SortStateService } from '../../core/services/sort-state.service';
   templateUrl: './suite-detail.component.html',
   styleUrl: './suite-detail.component.scss',
 })
-export class SuiteDetailComponent implements AfterViewInit {
+export class SuiteDetailComponent {
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private api = inject(InspectreApiService);
   private sortService = inject(SortStateService);
   private destroyRef = inject(DestroyRef);
-
-  @ViewChild('runsSort') private runsSort!: MatSort;
 
   private _baselinesSort: MatSort | undefined;
 
@@ -58,33 +48,64 @@ export class SuiteDetailComponent implements AfterViewInit {
     if (!sort) return;
     this._baselinesSort = sort;
     this.baselinesDataSource.sort = sort;
-    sort.sortChange
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((s: Sort) => {
-        this.baselineSortState.set(s);
-        this.sortService.save('suite-baselines', s);
-      });
+    sort.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s: Sort) => {
+      this.baselineSortState.set(s);
+      this.sortService.save('suite-baselines', s);
+      this.writeQueryParams(
+        s.active && s.direction
+          ? { baselinesSort: s.active, baselinesDir: s.direction }
+          : { baselinesSort: null, baselinesDir: null },
+      );
+    });
   }
 
   readonly runColumns = ['seq', 'when', 'status'];
   readonly baselineColumns = ['name', 'browser', 'size', 'thumb'];
 
+  private readonly initialQueryParams = this.route.snapshot.queryParamMap;
+
   readonly runSortState = signal<Sort>(
-    (() => {
-      const saved = this.sortService.get('suite-runs');
-      return saved.active ? saved : { active: 'seq', direction: 'desc' };
-    })(),
+    this.readInitialSort('runsSort', 'runsDir', 'suite-runs', {
+      active: 'seq',
+      direction: 'desc',
+    }),
   );
 
   readonly baselineSortState = signal<Sort>(
-    (() => {
-      const saved = this.sortService.get('suite-baselines');
-      return saved.active ? saved : { active: 'name', direction: 'asc' };
-    })(),
+    this.readInitialSort('baselinesSort', 'baselinesDir', 'suite-baselines', {
+      active: 'name',
+      direction: 'asc',
+    }),
   );
 
-  readonly baselinesSearchTerm = signal<string>('');
+  readonly baselinesSearchTerm = signal<string>(this.initialQueryParams.get('baselinesQ') ?? '');
   readonly baselinesDataSource = new MatTableDataSource<Baseline>();
+
+  private readonly baselinesSearchWrite$ = new Subject<string>();
+
+  private readInitialSort(
+    sortParam: string,
+    dirParam: string,
+    sortServiceKey: string,
+    fallback: Sort,
+  ): Sort {
+    const active = this.initialQueryParams.get(sortParam);
+    if (active) {
+      const dir = this.initialQueryParams.get(dirParam);
+      return { active, direction: dir === 'desc' ? 'desc' : 'asc' };
+    }
+    const saved = this.sortService.get(sortServiceKey);
+    return saved.active ? saved : fallback;
+  }
+
+  private writeQueryParams(queryParams: Record<string, string | null>): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams,
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 
   private params = toSignal(this.route.paramMap, {
     initialValue: this.route.snapshot.paramMap,
@@ -131,27 +152,29 @@ export class SuiteDetailComponent implements AfterViewInit {
     effect(() => {
       this.baselinesDataSource.data = this.suite()?.baselines ?? [];
     });
-  }
 
-  ngAfterViewInit(): void {
-    const savedRuns = this.runSortState();
-    if (savedRuns.active) {
-      this.runsSort?.sort({
-        id: savedRuns.active,
-        start: savedRuns.direction as 'asc' | 'desc',
-        disableClear: false,
+    this.baselinesDataSource.filter = this.baselinesSearchTerm().trim().toLowerCase();
+
+    this.baselinesSearchWrite$
+      .pipe(debounceTime(300), takeUntilDestroyed(this.destroyRef))
+      .subscribe((value) => {
+        this.writeQueryParams({ baselinesQ: value.trim() || null });
       });
-    }
-
   }
 
   onRunSortChange(sort: Sort): void {
     this.runSortState.set(sort);
     this.sortService.save('suite-runs', sort);
+    this.writeQueryParams(
+      sort.active && sort.direction
+        ? { runsSort: sort.active, runsDir: sort.direction }
+        : { runsSort: null, runsDir: null },
+    );
   }
 
   onBaselinesSearch(value: string): void {
     this.baselinesSearchTerm.set(value);
     this.baselinesDataSource.filter = value.trim().toLowerCase();
+    this.baselinesSearchWrite$.next(value);
   }
 }
