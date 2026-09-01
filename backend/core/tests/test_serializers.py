@@ -360,6 +360,24 @@ def test_project_serializer_suite_with_runs_includes_latest_run_summary(
 # ---- RunSummarySerializer.unbaselined ------------------------------------
 
 
+def test_run_summary_serializer_uses_one_test_query_per_run(django_assert_num_queries, suite_factory, run_factory):
+    """passing/failing/unbaselined must come from a single query for test data (plus the
+    unavoidable baseline fallback query when no context is passed), not three test queries."""
+    from core.models import Test
+
+    suite = suite_factory()
+    run = run_factory(suite=suite)
+    Test.objects.create(run=run, name="home", browser="Chrome", size="1024", passed=True)
+    Test.objects.create(run=run, name="about", browser="Chrome", size="1024", passed=False)
+
+    with django_assert_num_queries(2):
+        body = RunSummarySerializer(run).data
+
+    assert body["passing"] == 1
+    assert body["failing"] == 1
+    assert body["unbaselined"] == 2
+
+
 def test_run_summary_unbaselined_counts_tests_with_no_baseline(suite_factory, run_factory, baseline_factory):
     """Tests whose key is absent from the suite's Baseline table count as unbaselined."""
     from core.models import Test
@@ -477,26 +495,26 @@ def test_run_summary_unbaselined_reads_empty_baselined_keys_set_from_context_wit
 ):
     """Re-arms the `baselined_keys is None` vs truthiness regression guard.
 
-    With `run_counts` now checked first in `get_unbaselined` and always covering every run
+    With `run_counts` now checked first in `to_representation` and always covering every run
     at both production call sites, the `baselined_keys` branch is never reached there
     anymore — the endpoint-level query-count tests can no longer catch a regression where
     `if baselined_keys is None` gets rewritten as `if baselined_keys:`. This test exercises
-    that branch directly, with no `run_counts` in context so `get_passing`/`get_failing`/
-    `get_unbaselined` all fall through to their own per-run queries (2 for passing/failing,
-    1 for unbaselined's `.exclude(...).count()`) — 3 queries total.
+    that branch directly, with no `run_counts` in context so `to_representation` falls
+    through to its single-query fallback: one query to fetch (passed, key) rows, deriving
+    all three counts in Python.
 
     The key assertion is the *query count*, not just the value: a legitimately empty
     `baselined_keys` set (a suite with zero baselines) must be read as-is from context. If
     `is None` were weakened to a truthiness check, the empty set would look falsy and
-    trigger an extra `Baseline.objects.filter(...)` lookup before re-doing the exclude
-    count — 4 queries instead of 3 — which this test would catch.
+    trigger an extra `Baseline.objects.filter(...)` lookup — 2 queries instead of 1 — which
+    this test would catch.
     """
     run = run_factory()
     test_factory(run=run, passed=True)
     test_factory(run=run, passed=True)
     test_factory(run=run, passed=False)
 
-    with django_assert_num_queries(3):
+    with django_assert_num_queries(1):
         body = RunSummarySerializer(run, context={"baselined_keys": set()}).data
 
     assert body["unbaselined"] == 3

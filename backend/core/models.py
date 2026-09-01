@@ -181,6 +181,9 @@ class Test(models.Model):
 
     class Meta:
         ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["status", "created_at"], name="core_test_status_created_idx"),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.browser}, {self.size})"

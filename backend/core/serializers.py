@@ -145,7 +145,7 @@ class TestRowSerializer(serializers.ModelSerializer):
     `has_baseline` — not `is_baseline_source` — is what drives the SPA's "New
     baseline" chip. It means "does any Baseline exist for this key at all,"
     which stays true even after supersession (mirrors
-    RunSummarySerializer.get_unbaselined's definition).
+    RunSummarySerializer.to_representation's definition).
     """
 
     passed = serializers.BooleanField()
@@ -193,7 +193,7 @@ class TestRowSerializer(serializers.ModelSerializer):
         # / serialize_tests_bulk to avoid N+1 queries). Falls back to a direct query for
         # standalone use. Must check `is None`, not falsiness — an empty set (a suite with zero
         # baselines) is a legitimate pre-fetched value and must not trigger the fallback query
-        # (see RunSummarySerializer.get_unbaselined for the same fix).
+        # (see RunSummarySerializer.to_representation for the same fix).
         baselined_keys = self.context.get("baselined_keys")
         if baselined_keys is None:
             baselined_keys = set(Baseline.objects.filter(suite_id=obj.run.suite_id).values_list("key", flat=True))
@@ -294,31 +294,38 @@ class RunSummarySerializer(serializers.ModelSerializer):
         model = Run
         fields = ["id", "sequential_id", "created_at", "passing", "failing", "unbaselined"]
 
-    def get_passing(self, obj):
+    def to_representation(self, instance):
+        # Fast path: counts were pre-batched across many runs by SuiteDetailSerializer /
+        # ProjectSerializer (see build_run_counts) — zero extra queries here.
         run_counts = self.context.get("run_counts")
-        if run_counts is not None and obj.id in run_counts:
-            return run_counts[obj.id]["passing"]
-        return obj.tests.filter(passed=True).count()
+        if run_counts is not None and instance.id in run_counts:
+            self._counts = run_counts[instance.id]
+        else:
+            # Standalone fallback: one query for (passed, key) rows plus, if not already
+            # pre-fetched via context (must check `is None`, not falsiness — an empty set is
+            # a legitimate pre-fetched value), one query for baseline keys — instead of three
+            # separate .count() queries. order_by() clears Test.Meta.ordering, which would
+            # otherwise sort by created_at for no reason on a pure counting query. Counts are
+            # derived in a single streaming pass rather than three passes over a materialized list.
+            baselined_keys = self.context.get("baselined_keys")
+            if baselined_keys is None:
+                baselined_keys = set(Baseline.objects.filter(suite_id=instance.suite_id).values_list("key", flat=True))
+            counts = {"passing": 0, "failing": 0, "unbaselined": 0}
+            for passed, key in instance.tests.order_by().values_list("passed", "key"):
+                counts["passing" if passed else "failing"] += 1
+                if key not in baselined_keys:
+                    counts["unbaselined"] += 1
+            self._counts = counts
+        return super().to_representation(instance)
+
+    def get_passing(self, obj):
+        return self._counts["passing"]
 
     def get_failing(self, obj):
-        run_counts = self.context.get("run_counts")
-        if run_counts is not None and obj.id in run_counts:
-            return run_counts[obj.id]["failing"]
-        return obj.tests.filter(passed=False).count()
+        return self._counts["failing"]
 
     def get_unbaselined(self, obj):
-        run_counts = self.context.get("run_counts")
-        if run_counts is not None and obj.id in run_counts:
-            return run_counts[obj.id]["unbaselined"]
-        # Use pre-fetched keys from context when available (set by SuiteDetailSerializer
-        # / ProjectSerializer to avoid N+1 queries). Falls back to a direct query for
-        # standalone use. Must check `is None`, not falsiness — an empty set (a project/suite
-        # with zero baselines) is a legitimate pre-fetched value and must not trigger the
-        # fallback query.
-        baselined_keys = self.context.get("baselined_keys")
-        if baselined_keys is None:
-            baselined_keys = set(Baseline.objects.filter(suite_id=obj.suite_id).values_list("key", flat=True))
-        return obj.tests.exclude(key__in=baselined_keys).count()
+        return self._counts["unbaselined"]
 
 
 class RunDetailSerializer(serializers.ModelSerializer):

@@ -514,3 +514,10 @@ class TestTestStatusField:
         test.save()
         test.refresh_from_db()
         assert test.is_new_baseline is True
+
+    def test_test_status_has_composite_index_with_created_at(self):
+        """ProcessingQueueAdmin filters on status and orders by created_at — both
+        columns must be covered by one index so that query doesn't full-scan as
+        the Test table grows."""
+        index_fields = [tuple(idx.fields) for idx in Test._meta.indexes]
+        assert ("status", "created_at") in index_fields
