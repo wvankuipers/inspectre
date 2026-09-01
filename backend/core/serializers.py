@@ -1,3 +1,4 @@
+from django.db.models import Count, Q
 from rest_framework import serializers
 
 from core.models import Baseline, Project, Run, Suite, Test
@@ -107,6 +108,31 @@ class LegacyBaselineSerializer(serializers.ModelSerializer):
 
 def _file_url(field):
     return generate_presigned_url(field.name) if field else None
+
+
+def build_run_counts(run_ids, baselined_keys):
+    """Batch passing/failing/unbaselined counts for a set of runs into one dict.
+
+    Two GROUP BY queries total, regardless of len(run_ids) — replaces the
+    3-queries-per-run pattern in RunSummarySerializer. Every id in `run_ids`
+    is guaranteed to be a key in the result (defaulting to zeros), so this
+    dict is always dense over its input, never sparse.
+    """
+    if not run_ids:
+        return {}
+    counts = {run_id: {"passing": 0, "failing": 0, "unbaselined": 0} for run_id in run_ids}
+    for row in (
+        Test.objects.filter(run_id__in=run_ids)
+        .values("run_id")
+        .annotate(passing=Count("id", filter=Q(passed=True)), failing=Count("id", filter=Q(passed=False)))
+    ):
+        counts[row["run_id"]]["passing"] = row["passing"]
+        counts[row["run_id"]]["failing"] = row["failing"]
+    for row in (
+        Test.objects.filter(run_id__in=run_ids).exclude(key__in=baselined_keys).values("run_id").annotate(n=Count("id"))
+    ):
+        counts[row["run_id"]]["unbaselined"] = row["n"]
+    return counts
 
 
 class TestRowSerializer(serializers.ModelSerializer):
@@ -269,12 +295,21 @@ class RunSummarySerializer(serializers.ModelSerializer):
         fields = ["id", "sequential_id", "created_at", "passing", "failing", "unbaselined"]
 
     def get_passing(self, obj):
+        run_counts = self.context.get("run_counts")
+        if run_counts is not None and obj.id in run_counts:
+            return run_counts[obj.id]["passing"]
         return obj.tests.filter(passed=True).count()
 
     def get_failing(self, obj):
+        run_counts = self.context.get("run_counts")
+        if run_counts is not None and obj.id in run_counts:
+            return run_counts[obj.id]["failing"]
         return obj.tests.filter(passed=False).count()
 
     def get_unbaselined(self, obj):
+        run_counts = self.context.get("run_counts")
+        if run_counts is not None and obj.id in run_counts:
+            return run_counts[obj.id]["unbaselined"]
         # Use pre-fetched keys from context when available (set by SuiteDetailSerializer
         # / ProjectSerializer to avoid N+1 queries). Falls back to a direct query for
         # standalone use. Must check `is None`, not falsiness — an empty set (a project/suite
@@ -344,11 +379,16 @@ class SuiteDetailSerializer(serializers.ModelSerializer):
         return obj.project.name
 
     def get_latest_runs(self, obj):
-        runs = obj.runs.all()[:5]
+        runs = list(obj.runs.all()[:5])
         # Pre-fetch baseline keys once for the suite so RunSummarySerializer.get_unbaselined
         # doesn't issue one Baseline query per run (same pattern as RunDetailSerializer).
         baselined_keys = set(Baseline.objects.filter(suite_id=obj.pk).values_list("key", flat=True))
-        return RunSummarySerializer(runs, many=True, context={"baselined_keys": baselined_keys}).data
+        # Batch passing/failing/unbaselined counts for these runs into two GROUP BY queries
+        # total, instead of 3 raw .count() queries per run (same pattern as ProjectSerializer).
+        run_counts = build_run_counts([run.id for run in runs], baselined_keys)
+        return RunSummarySerializer(
+            runs, many=True, context={"baselined_keys": baselined_keys, "run_counts": run_counts}
+        ).data
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -367,16 +407,24 @@ class ProjectSerializer(serializers.ModelSerializer):
         # SuiteDetailSerializer.get_latest_runs / RunDetailSerializer.get_tests).
         suite_ids = [suite.id for suite in suites]
         baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
+        # Batch passing/failing/unbaselined counts for every suite's latest run into two
+        # GROUP BY queries total, instead of 3 raw .count() queries per suite.
+        latest_by_suite = {}
+        for suite in suites:
+            suite_runs = list(suite.runs.all())
+            latest_by_suite[suite.id] = suite_runs[0] if suite_runs else None
+        run_counts = build_run_counts([run.id for run in latest_by_suite.values() if run is not None], baselined_keys)
         result = []
         for suite in suites:
-            runs = suite.runs.all()  # hits prefetch cache, no extra query
-            latest = runs[0] if runs else None
+            latest = latest_by_suite[suite.id]
             result.append(
                 {
                     "id": suite.id,
                     "name": suite.name,
                     "slug": suite.slug,
-                    "latest_run": RunSummarySerializer(latest, context={"baselined_keys": baselined_keys}).data
+                    "latest_run": RunSummarySerializer(
+                        latest, context={"baselined_keys": baselined_keys, "run_counts": run_counts}
+                    ).data
                     if latest
                     else None,
                 }

@@ -117,6 +117,12 @@ class TestProjectsList:
         fix, RunSummarySerializer.get_unbaselined issued one extra Baseline query per suite
         because ProjectSerializer.get_suites never passed `baselined_keys` via context. With
         the fix, that query is issued once per project regardless of suite count.
+
+        Also pins the newer `build_run_counts` batching: ProjectSerializer.get_suites now
+        computes passing/failing/unbaselined counts for every suite's latest run via two
+        GROUP BY queries total (see `expected_queries` below), instead of up to 3 raw
+        `.count()` queries per suite, so total query count stays constant per project
+        regardless of suite count.
         """
         project = project_factory(name="Acme")
         num_suites = 3
@@ -127,10 +133,10 @@ class TestProjectsList:
 
         # 3 fixed queries: select projects, prefetch suites, prefetch runs.
         # + 1 query for baselined_keys (once per project, not once per suite).
-        # + 3 queries per suite's latest run for get_passing/get_failing/get_unbaselined's
-        #   .count() calls (those raw count queries are out of scope for this fix — see
-        #   task brief — only the extra per-suite Baseline *lookup* query is eliminated).
-        expected_queries = 3 + 1 + (3 * num_suites)
+        # + 2 build_run_counts aggregate queries (passing/failing GROUP BY, unbaselined
+        #   GROUP BY) covering every suite's latest run in one shot each — constant per
+        #   project, never scaling with num_suites.
+        expected_queries = 3 + 1 + 2
         with django_assert_num_queries(expected_queries):
             response = api.get("/api/projects/")
 
@@ -149,11 +155,22 @@ class TestProjectsList:
         test_factory,
         django_assert_num_queries,
     ):
-        """Regression test: when a project's suites collectively have zero baselines,
-        `self.context.get("baselined_keys")` returns an empty set. Using `or` to check
-        for that (instead of `is None`) treats the empty set as falsy and falls through
-        to the per-suite fallback query, silently reintroducing the N+1 in exactly this
-        state. Asserts the fixed query count holds here too.
+        """Regression test: the endpoint's total query count must stay constant per
+        project even when a project has zero baselines anywhere.
+
+        `ProjectSerializer.get_suites` now computes `unbaselined` for every suite's latest
+        run via `build_run_counts`, which is passed to `RunSummarySerializer` as
+        `run_counts` context and checked before `baselined_keys`. This test proves that
+        path (rather than any per-suite fallback) is what actually runs when there are no
+        baselines, so the query count doesn't scale with suite count in this state either.
+
+        Note: this test no longer exercises the `baselined_keys is None` vs truthiness
+        distinction at the endpoint level — `run_counts` always covers every run at this
+        call site now, so `get_unbaselined` returns before ever reaching the
+        `baselined_keys` branch. That guard is re-armed directly in
+        `test_run_summary_unbaselined_reads_empty_baselined_keys_set_from_context_without_extra_query`
+        in `test_serializers.py`, which exercises `RunSummarySerializer` standalone with no
+        `run_counts` in context.
         """
         project = project_factory(name="Acme")
         num_suites = 3
@@ -163,7 +180,7 @@ class TestProjectsList:
             test_factory(run=run, key=f"acme-suite-{i}-key", passed=True)
         # No baselines created anywhere for this project.
 
-        expected_queries = 3 + 1 + (3 * num_suites)
+        expected_queries = 3 + 1 + 2
         with django_assert_num_queries(expected_queries):
             response = api.get("/api/projects/")
 
@@ -172,6 +189,43 @@ class TestProjectsList:
         assert len(body[0]["suites"]) == num_suites
         for suite_payload in body[0]["suites"]:
             assert suite_payload["latest_run"]["unbaselined"] == 1
+
+    def test_query_count_does_not_scale_with_total_suites_across_projects(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        baseline_factory,
+        django_assert_num_queries,
+    ):
+        """The two tests above only prove constant-per-suite cost within a single
+        project. This test proves the fix holds across multiple projects too: total
+        query count scales with project count P, never with total suite count S.
+        """
+        num_projects = 2
+        num_suites_per_project = 3
+        for p in range(num_projects):
+            project = project_factory(name=f"Project {p}")
+            for i in range(num_suites_per_project):
+                suite = suite_factory(project=project, name=f"Suite {p}-{i}")
+                run_factory(suite=suite)
+                baseline_factory(suite=suite, key=f"project-{p}-suite-{i}-key")
+
+        # 3 fixed queries total (select projects, prefetch suites, prefetch runs)
+        # + P * (1 baselined_keys query + 2 build_run_counts queries) — one set per
+        # project, independent of total suite count across all projects.
+        expected_queries = 3 + num_projects * (1 + 2)
+        with django_assert_num_queries(expected_queries):
+            response = api.get("/api/projects/")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == num_projects
+        for project_payload in body:
+            assert len(project_payload["suites"]) == num_suites_per_project
+            for suite_payload in project_payload["suites"]:
+                assert suite_payload["latest_run"]["unbaselined"] == 0
 
 
 # =============================================================================
@@ -222,6 +276,36 @@ class TestSuiteDetail:
 
         assert api.get("/api/projects/no-such-project/suites/desktop/").status_code == 404
         assert api.get("/api/projects/acme/suites/no-such-suite/").status_code == 404
+
+    def test_query_count_does_not_scale_with_run_count(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+        baseline_factory,
+    ):
+        """Regression test for the SuiteDetailSerializer/RunSummarySerializer N+1: prior to
+        the fix, RunSummarySerializer.get_passing/get_failing/get_unbaselined issued 3 extra
+        queries per run because get_latest_runs never batched counts via build_run_counts.
+        Query count must stay the same whether the suite has 1 run or the full 5-run cap.
+        """
+        project = project_factory(name="Acme")
+
+        def _suite_detail_query_count(num_runs):
+            suite = suite_factory(project=project, name=f"Suite-{num_runs}-runs")
+            for i in range(num_runs):
+                run = run_factory(suite=suite)
+                test_factory(run=run, key=f"suite-{num_runs}-run-{i}-key", passed=(i % 2 == 0))
+            baseline_factory(suite=suite, key=f"suite-{num_runs}-run-0-key")
+            with CaptureQueriesContext(connection) as ctx:
+                response = api.get(f"/api/projects/{project.slug}/suites/{suite.slug}/")
+            assert response.status_code == 200
+            assert len(response.json()["latest_runs"]) == num_runs
+            return len(ctx.captured_queries)
+
+        assert _suite_detail_query_count(1) == _suite_detail_query_count(5)
 
 
 # =============================================================================
