@@ -194,6 +194,17 @@ class Test(models.Model):
         return slugify(f"{suite.project.name} {suite.name} {self.name} {self.browser} {self.size}")[:512]
 
 
+class ProcessingQueueTest(Test):
+    """Same DB table as Test — a proxy for a dedicated, read-only admin section
+    showing rows still waiting for or undergoing async image-diff processing.
+    """
+
+    class Meta:
+        proxy = True
+        verbose_name = "Processing queue"
+        verbose_name_plural = "Processing queue"
+
+
 class Baseline(models.Model):
     suite = models.ForeignKey(Suite, on_delete=models.CASCADE, related_name="baselines")
     test = models.ForeignKey(

@@ -1,8 +1,9 @@
 from django import forms
 from django.contrib import admin
 from django.db import models as db_models
+from django.utils import timezone
 
-from core.models import Baseline, Project, Run, Suite, Test
+from core.models import Baseline, ProcessingQueueTest, Project, Run, Suite, Test
 
 
 class RenameWarningMixin:
@@ -132,6 +133,44 @@ class TestAdmin(admin.ModelAdmin):
     @admin.display(description="Run")
     def run_label(self, obj):
         return f"{obj.run.suite.project.name} / {obj.run.suite.name} #{obj.run.sequential_id}"
+
+
+@admin.register(ProcessingQueueTest)
+class ProcessingQueueAdmin(admin.ModelAdmin):
+    list_display = ("name", "browser", "size", "status", "run_label", "waiting_since", "created_at")
+    list_filter = ("status", "browser", "run__suite__project")
+    search_fields = ("name", "run__suite__name", "run__suite__project__name")
+    ordering = ("created_at",)  # oldest first — front of the queue
+    list_select_related = ("run__suite__project", "run__suite")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.filter(status__in=[Test.STATUS_PENDING, Test.STATUS_PROCESSING])
+
+    @admin.display(description="Run")
+    def run_label(self, obj):
+        return f"{obj.run.suite.project.name} / {obj.run.suite.name} #{obj.run.sequential_id}"
+
+    @admin.display(description="Waiting")
+    def waiting_since(self, obj):
+        delta = timezone.now() - obj.created_at
+        total_seconds = int(delta.total_seconds())
+        if total_seconds < 60:
+            return f"{total_seconds}s"
+        minutes, seconds = divmod(total_seconds, 60)
+        if minutes < 60:
+            return f"{minutes}m"
+        hours, minutes = divmod(minutes, 60)
+        return f"{hours}h {minutes}m"
 
 
 @admin.register(Baseline)
