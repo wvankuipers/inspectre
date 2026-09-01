@@ -129,10 +129,7 @@ def build_run_counts(run_ids, baselined_keys):
         counts[row["run_id"]]["passing"] = row["passing"]
         counts[row["run_id"]]["failing"] = row["failing"]
     for row in (
-        Test.objects.filter(run_id__in=run_ids)
-        .exclude(key__in=baselined_keys)
-        .values("run_id")
-        .annotate(n=Count("id"))
+        Test.objects.filter(run_id__in=run_ids).exclude(key__in=baselined_keys).values("run_id").annotate(n=Count("id"))
     ):
         counts[row["run_id"]]["unbaselined"] = row["n"]
     return counts

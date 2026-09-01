@@ -117,6 +117,12 @@ class TestProjectsList:
         fix, RunSummarySerializer.get_unbaselined issued one extra Baseline query per suite
         because ProjectSerializer.get_suites never passed `baselined_keys` via context. With
         the fix, that query is issued once per project regardless of suite count.
+
+        Also pins the newer `build_run_counts` batching: ProjectSerializer.get_suites now
+        computes passing/failing/unbaselined counts for every suite's latest run via two
+        GROUP BY queries total (see `expected_queries` below), instead of up to 3 raw
+        `.count()` queries per suite, so total query count stays constant per project
+        regardless of suite count.
         """
         project = project_factory(name="Acme")
         num_suites = 3
@@ -149,11 +155,22 @@ class TestProjectsList:
         test_factory,
         django_assert_num_queries,
     ):
-        """Regression test: when a project's suites collectively have zero baselines,
-        `self.context.get("baselined_keys")` returns an empty set. Using `or` to check
-        for that (instead of `is None`) treats the empty set as falsy and falls through
-        to the per-suite fallback query, silently reintroducing the N+1 in exactly this
-        state. Asserts the fixed query count holds here too.
+        """Regression test: the endpoint's total query count must stay constant per
+        project even when a project has zero baselines anywhere.
+
+        `ProjectSerializer.get_suites` now computes `unbaselined` for every suite's latest
+        run via `build_run_counts`, which is passed to `RunSummarySerializer` as
+        `run_counts` context and checked before `baselined_keys`. This test proves that
+        path (rather than any per-suite fallback) is what actually runs when there are no
+        baselines, so the query count doesn't scale with suite count in this state either.
+
+        Note: this test no longer exercises the `baselined_keys is None` vs truthiness
+        distinction at the endpoint level — `run_counts` always covers every run at this
+        call site now, so `get_unbaselined` returns before ever reaching the
+        `baselined_keys` branch. That guard is re-armed directly in
+        `test_run_summary_unbaselined_reads_empty_baselined_keys_set_from_context_without_extra_query`
+        in `test_serializers.py`, which exercises `RunSummarySerializer` standalone with no
+        `run_counts` in context.
         """
         project = project_factory(name="Acme")
         num_suites = 3

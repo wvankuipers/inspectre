@@ -415,9 +415,7 @@ def test_build_run_counts_returns_passing_failing_unbaselined_per_run(suite_fact
     run_b = run_factory(suite=suite)
 
     # Create tests for run_a: 2 passed (one baselined, one not), 1 failed
-    t1_passed_baselined = Test.objects.create(
-        run=run_a, name="home", browser="Chrome", size="1024", passed=True
-    )
+    t1_passed_baselined = Test.objects.create(run=run_a, name="home", browser="Chrome", size="1024", passed=True)
     Test.objects.create(run=run_a, name="about", browser="Chrome", size="1024", passed=True)
     Test.objects.create(run=run_a, name="contact", browser="Chrome", size="1024", passed=False)
 
@@ -465,14 +463,43 @@ def test_run_summary_uses_run_counts_context_without_extra_queries(
     # Now serialize with fake counts in context
     with django_assert_num_queries(0):
         body = RunSummarySerializer(
-            run,
-            context={"run_counts": {run.id: {"passing": 11, "failing": 22, "unbaselined": 33}}}
+            run, context={"run_counts": {run.id: {"passing": 11, "failing": 22, "unbaselined": 33}}}
         ).data
 
     # Verify it reads from context, not the database
     assert body["passing"] == 11
     assert body["failing"] == 22
     assert body["unbaselined"] == 33
+
+
+def test_run_summary_unbaselined_reads_empty_baselined_keys_set_from_context_without_extra_query(
+    run_factory, test_factory, django_assert_num_queries
+):
+    """Re-arms the `baselined_keys is None` vs truthiness regression guard.
+
+    With `run_counts` now checked first in `get_unbaselined` and always covering every run
+    at both production call sites, the `baselined_keys` branch is never reached there
+    anymore — the endpoint-level query-count tests can no longer catch a regression where
+    `if baselined_keys is None` gets rewritten as `if baselined_keys:`. This test exercises
+    that branch directly, with no `run_counts` in context so `get_passing`/`get_failing`/
+    `get_unbaselined` all fall through to their own per-run queries (2 for passing/failing,
+    1 for unbaselined's `.exclude(...).count()`) — 3 queries total.
+
+    The key assertion is the *query count*, not just the value: a legitimately empty
+    `baselined_keys` set (a suite with zero baselines) must be read as-is from context. If
+    `is None` were weakened to a truthiness check, the empty set would look falsy and
+    trigger an extra `Baseline.objects.filter(...)` lookup before re-doing the exclude
+    count — 4 queries instead of 3 — which this test would catch.
+    """
+    run = run_factory()
+    test_factory(run=run, passed=True)
+    test_factory(run=run, passed=True)
+    test_factory(run=run, passed=False)
+
+    with django_assert_num_queries(3):
+        body = RunSummarySerializer(run, context={"baselined_keys": set()}).data
+
+    assert body["unbaselined"] == 3
 
 
 # ---- TestHistoryEntrySerializer / serialize_test_history ------------------
