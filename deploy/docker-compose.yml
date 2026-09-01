@@ -56,6 +56,15 @@ services:
       dockerfile: frontend/Dockerfile
     ports:
       - "4200:8080"
+    # /healthz is answered directly by nginx (not proxied to api), so this
+    # only confirms the SPA container itself is alive. No curl in the
+    # nginx-unprivileged alpine base image; use the bundled busybox wget.
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   # Node-based image for `make lint` and `make test-frontend`. Uses node:24 directly
   # (the production spa image is nginx-only). Bind-mounts the source so lint --fix
