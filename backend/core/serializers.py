@@ -409,7 +409,10 @@ class ProjectSerializer(serializers.ModelSerializer):
         baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
         # Batch passing/failing/unbaselined counts for every suite's latest run into two
         # GROUP BY queries total, instead of 3 raw .count() queries per suite.
-        latest_by_suite = {suite.id: (suite.runs.all()[0] if suite.runs.all() else None) for suite in suites}
+        latest_by_suite = {}
+        for suite in suites:
+            suite_runs = list(suite.runs.all())
+            latest_by_suite[suite.id] = suite_runs[0] if suite_runs else None
         run_counts = build_run_counts([run.id for run in latest_by_suite.values() if run is not None], baselined_keys)
         result = []
         for suite in suites:
