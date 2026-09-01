@@ -12,6 +12,14 @@ server {
     # frontend/Dockerfile and docs/deployment-and-config.md.
     resolver ${RESOLVER_ADDRESS} valid=10s ipv6=off;
 
+    # ---- Container liveness probe — answered by nginx, never proxied --
+    # Dependency-free: must return 200 even if the api container is down.
+    location ~ ^/healthz/?$ {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
     # ---- Backend routes — proxied to the api container -----------------
     # Order matters: specific patterns before the SPA fallback.
     location /admin/ {
