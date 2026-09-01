@@ -181,6 +181,47 @@ describe('ProjectsListComponent sorting', () => {
 
     expect(renderedProjectNames()).toEqual(['Alpha', 'Beta', 'Delta', 'Gamma']);
   });
+
+  it('restores a saved ascending sort on reload without flipping it to descending', async () => {
+    // Regression test: the template's [matSortActive]/[matSortDirection]
+    // bindings already set MatSort.active/direction from the saved state
+    // before the @ViewChild setter runs. If the setter also imperatively
+    // calls sort.sort({ id: saved.active, ... }), MatSort sees active is
+    // already equal to the id and takes its "toggle to next direction"
+    // branch instead of applying saved.direction — silently flipping a
+    // saved ascending sort to descending on every reload.
+    getSpy.mockReturnValue({ active: 'project', direction: 'asc' });
+
+    await TestBed.resetTestingModule()
+      .configureTestingModule({
+        imports: [ProjectsListComponent],
+        providers: [
+          provideNoopAnimations(),
+          provideRouter([]),
+          { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS).pipe(delay(0)) } },
+          { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
+        ],
+      })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges(); // first view check — table not rendered yet, data still pending
+    await new Promise((resolve) => setTimeout(resolve, 10)); // async data arrives
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const renderedProjectNames = (): string[] =>
+      Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          'tr.mat-mdc-row td.mat-column-project, tr.mat-row td.mat-column-project',
+        ),
+      ).map((cell) => cell.textContent?.trim() ?? '');
+
+    // Saved sort is { active: 'project', direction: 'asc' }, so rows must
+    // render alphabetically ascending by project name, NOT descending.
+    expect(renderedProjectNames()).toEqual(['Alpha', 'Beta', 'Delta', 'Gamma']);
+  });
 });
 
 describe('ProjectsListComponent search', () => {

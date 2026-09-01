@@ -57,14 +57,6 @@ export class ProjectsListComponent {
     if (!sort) return;
     this._sort = sort;
     this.dataSource.sort = sort;
-    const saved = this.sortState();
-    if (saved.active) {
-      sort.sort({
-        id: saved.active,
-        start: saved.direction as 'asc' | 'desc',
-        disableClear: false,
-      });
-    }
     sort.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s: Sort) => {
       this.sortState.set(s);
       this.sortService.save('projects', s);
