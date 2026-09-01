@@ -127,10 +127,10 @@ class TestProjectsList:
 
         # 3 fixed queries: select projects, prefetch suites, prefetch runs.
         # + 1 query for baselined_keys (once per project, not once per suite).
-        # + 3 queries per suite's latest run for get_passing/get_failing/get_unbaselined's
-        #   .count() calls (those raw count queries are out of scope for this fix — see
-        #   task brief — only the extra per-suite Baseline *lookup* query is eliminated).
-        expected_queries = 3 + 1 + (3 * num_suites)
+        # + 2 build_run_counts aggregate queries (passing/failing GROUP BY, unbaselined
+        #   GROUP BY) covering every suite's latest run in one shot each — constant per
+        #   project, never scaling with num_suites.
+        expected_queries = 3 + 1 + 2
         with django_assert_num_queries(expected_queries):
             response = api.get("/api/projects/")
 
@@ -163,7 +163,7 @@ class TestProjectsList:
             test_factory(run=run, key=f"acme-suite-{i}-key", passed=True)
         # No baselines created anywhere for this project.
 
-        expected_queries = 3 + 1 + (3 * num_suites)
+        expected_queries = 3 + 1 + 2
         with django_assert_num_queries(expected_queries):
             response = api.get("/api/projects/")
 
@@ -172,6 +172,43 @@ class TestProjectsList:
         assert len(body[0]["suites"]) == num_suites
         for suite_payload in body[0]["suites"]:
             assert suite_payload["latest_run"]["unbaselined"] == 1
+
+    def test_query_count_does_not_scale_with_total_suites_across_projects(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        baseline_factory,
+        django_assert_num_queries,
+    ):
+        """The two tests above only prove constant-per-suite cost within a single
+        project. This test proves the fix holds across multiple projects too: total
+        query count scales with project count P, never with total suite count S.
+        """
+        num_projects = 2
+        num_suites_per_project = 3
+        for p in range(num_projects):
+            project = project_factory(name=f"Project {p}")
+            for i in range(num_suites_per_project):
+                suite = suite_factory(project=project, name=f"Suite {p}-{i}")
+                run_factory(suite=suite)
+                baseline_factory(suite=suite, key=f"project-{p}-suite-{i}-key")
+
+        # 3 fixed queries total (select projects, prefetch suites, prefetch runs)
+        # + P * (1 baselined_keys query + 2 build_run_counts queries) — one set per
+        # project, independent of total suite count across all projects.
+        expected_queries = 3 + num_projects * (1 + 2)
+        with django_assert_num_queries(expected_queries):
+            response = api.get("/api/projects/")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == num_projects
+        for project_payload in body:
+            assert len(project_payload["suites"]) == num_suites_per_project
+            for suite_payload in project_payload["suites"]:
+                assert suite_payload["latest_run"]["unbaselined"] == 0
 
 
 # =============================================================================

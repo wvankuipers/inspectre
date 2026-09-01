@@ -405,16 +405,21 @@ class ProjectSerializer(serializers.ModelSerializer):
         # SuiteDetailSerializer.get_latest_runs / RunDetailSerializer.get_tests).
         suite_ids = [suite.id for suite in suites]
         baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
+        # Batch passing/failing/unbaselined counts for every suite's latest run into two
+        # GROUP BY queries total, instead of 3 raw .count() queries per suite.
+        latest_by_suite = {suite.id: (suite.runs.all()[0] if suite.runs.all() else None) for suite in suites}
+        run_counts = build_run_counts([run.id for run in latest_by_suite.values() if run is not None], baselined_keys)
         result = []
         for suite in suites:
-            runs = suite.runs.all()  # hits prefetch cache, no extra query
-            latest = runs[0] if runs else None
+            latest = latest_by_suite[suite.id]
             result.append(
                 {
                     "id": suite.id,
                     "name": suite.name,
                     "slug": suite.slug,
-                    "latest_run": RunSummarySerializer(latest, context={"baselined_keys": baselined_keys}).data
+                    "latest_run": RunSummarySerializer(
+                        latest, context={"baselined_keys": baselined_keys, "run_counts": run_counts}
+                    ).data
                     if latest
                     else None,
                 }
