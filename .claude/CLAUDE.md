@@ -6,11 +6,19 @@
 
 2. **Always use the subagent approach to implement changes** — never implement directly in the main session. Use `superpowers:subagent-driven-development` to dispatch a fresh subagent per task with spec and code quality review gates.
 
-3. **Always test changes** — all code changes must be covered by tests. Run the relevant test suite after every change. Never mark a task done with failing tests.
+3. **Always test changes, test-first for bug fixes** — for bug fixes, write a failing test that reproduces the bug before writing the fix. All code changes must be covered by tests. Run the relevant test suite after every change. Never mark a task done with failing tests.
 
 4. **Always verify in browser using Chrome MCP** — after rebuilding the SPA container, use the Chrome DevTools MCP to navigate to `http://localhost:4200` and take a screenshot to confirm the UI looks correct before reporting the task complete.
 
 5. Never load assets, for example fonts or icons, via the Google CDN. Always use inline/self hosted assets.
+
+6. **`make test` and `make lint` must pass locally before finishing a branch or opening a PR.** Do not hand off or open a PR with either failing.
+
+7. **Never commit or push directly to `main`.** All changes go through a feature branch and a PR.
+
+8. **Run `make lint-fix` (or the equivalent formatter/linter) before marking any task complete.** No task is done with outstanding lint or formatting violations.
+
+9. **Update relevant documentation when finishing a task.** If a change alters architecture, API surface, routes, models, or workflow, update `CLAUDE.md` and/or `docs/` in the same task — don't leave docs stale.
 
 ---
 
