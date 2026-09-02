@@ -44,6 +44,21 @@ def process_test(self, test_id: int, staging_key: str, claimed_processing: int) 
     superseded this delivery and we exit without touching `status`,
     `process_attempts`, or the staged file.
 
+    Neither of the above catches a THIRD case: the SAME message (identical
+    `test_id`/`staging_key`/`claimed_processing`) redelivered by the broker
+    after the original delivery has already run to full completion. This can
+    happen with `CELERY_TASK_ACKS_LATE=True` on a Redis broker independent of
+    any crash (Redis's visibility-timeout mechanism can re-queue a message
+    that's taking "too long" even though the original consumer is still
+    running or has just finished) — a known Celery+Redis footgun. Since
+    `processing_claim` never changed, the fencing check above would report a
+    match and let the duplicate proceed, re-running the pipeline against a
+    now-deleted staged file and overwriting a good `STATUS_DONE` result with
+    `STATUS_FAILED`. We guard against this by checking whether the row has
+    already reached a terminal status (`STATUS_DONE`/`STATUS_FAILED`) for
+    this exact claim; if so, this is a duplicate delivery of an
+    already-finished attempt and we bail out immediately.
+
     Assumes a direct Postgres connection per session (no transaction-pooling
     proxy like PgBouncer transaction-mode or RDS Proxy without pinning); this
     project doesn't use one today, but do not introduce one without revisiting
@@ -74,6 +89,20 @@ def process_test(self, test_id: int, staging_key: str, claimed_processing: int) 
                     "test_id": test_id,
                     "claimed_processing": claimed_processing,
                     "current_processing_claim": test.processing_claim,
+                },
+            )
+            return
+
+        if test.status in (Test.STATUS_DONE, Test.STATUS_FAILED):
+            logger.warning(
+                "process_test: test %s (claim %s) already reached terminal status %s, skipping duplicate delivery",
+                test_id,
+                claimed_processing,
+                test.status,
+                extra={
+                    "test_id": test_id,
+                    "claimed_processing": claimed_processing,
+                    "status": test.status,
                 },
             )
             return

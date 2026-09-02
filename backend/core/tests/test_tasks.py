@@ -373,6 +373,88 @@ class TestProcessTestTask:
             cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
             assert cursor.fetchone()[0] is False
 
+    def test_duplicate_delivery_of_done_claim_is_rejected_without_touching_anything(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory(status=Test.STATUS_DONE, process_attempts=1, processing_claim=0)
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file") as mock_delete,
+        ):
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", 0)
+
+            mock_cls.assert_not_called()
+            mock_download.assert_not_called()
+            mock_delete.assert_not_called()
+
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_DONE
+        assert test.process_attempts == 1
+
+    def test_duplicate_delivery_of_failed_claim_is_rejected_without_touching_anything(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory(status=Test.STATUS_FAILED, process_attempts=1, processing_claim=0)
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file") as mock_delete,
+        ):
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", 0)
+
+            mock_cls.assert_not_called()
+            mock_download.assert_not_called()
+            mock_delete.assert_not_called()
+
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_FAILED
+        assert test.process_attempts == 1
+
+    def test_releases_lock_on_terminal_status_duplicate_delivery_bail(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory(status=Test.STATUS_DONE, process_attempts=1, processing_claim=0)
+
+        with (
+            patch("core.tasks.ScreenshotComparison"),
+            patch("core.tasks._download_staged_file"),
+            patch("core.tasks._delete_staged_file"),
+        ):
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", 0)
+
+        # See test_releases_lock_after_successful_run for why pg_advisory_unlock
+        # (returning False) is the correct check here, not pg_try_advisory_lock.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+            assert cursor.fetchone()[0] is False
+
+    def test_crash_retry_from_processing_status_still_proceeds_normally(self, test_factory, settings):
+        # Sanity check: a genuine crash-retry redelivery leaves status at
+        # STATUS_PROCESSING (committed before the risky pipeline work, per the
+        # comment above), never STATUS_DONE/STATUS_FAILED. The new terminal-status
+        # check must only block DONE/FAILED, not PROCESSING (or PENDING).
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory(status=Test.STATUS_PROCESSING, process_attempts=1, processing_claim=0)
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file"),
+        ):
+            mock_download.side_effect = lambda key, dest: dest.write_bytes(b"fakepng")
+            mock_instance = MagicMock()
+            mock_instance.run.return_value = False
+            mock_cls.return_value = mock_instance
+
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", 0)
+
+            mock_cls.assert_called_once()
+            mock_download.assert_called_once()
+
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_DONE
+        assert test.process_attempts == 2
+
 
 class TestDeleteTestFileKeysTask:
     def test_noop_for_empty_keys(self, settings):
