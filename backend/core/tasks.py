@@ -5,6 +5,7 @@ from pathlib import Path
 from botocore.exceptions import BotoCoreError, ClientError
 from django.conf import settings as django_settings
 from django.core.files import File
+from django.db import connection
 
 from core.models import Test
 from core.services.s3 import get_s3_client
@@ -16,32 +17,56 @@ logger = logging.getLogger(__name__)
 
 @app.task(bind=True, max_retries=0)
 def process_test(self, test_id: int, staging_key: str) -> None:
-    """Download a staged upload from S3, run the diff pipeline, and update test status."""
-    test = Test.objects.select_related("run__suite__project").get(pk=test_id)
-    test.status = Test.STATUS_PROCESSING
-    test.save(update_fields=["status"])
+    """Download a staged upload from S3, run the diff pipeline, and update test status.
+
+    Guarded by a Postgres session advisory lock keyed on `test_id`: if this
+    exact test is already being processed by another invocation (e.g. a
+    worker-crash redelivery racing a manual admin restart), this invocation
+    backs off immediately instead of racing it on the shared staging key and
+    Test row fields.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_lock(%s)", [test_id])
+        acquired = cursor.fetchone()[0]
+
+    if not acquired:
+        logger.warning(
+            "process_test: test %s is already being processed by another invocation, skipping",
+            test_id,
+            extra={"test_id": test_id},
+        )
+        return
 
     try:
-        with tempfile.TemporaryDirectory(prefix="inspectre-") as temp_dir:
-            local_path = Path(temp_dir) / "upload.png"
-            _download_staged_file(staging_key, local_path)
-
-            with local_path.open("rb") as fh:
-                uploaded_file = File(fh, name="upload.png")
-                is_new_baseline = ScreenshotComparison(test, uploaded_file).run()
-
-        test.refresh_from_db()
-        test.is_new_baseline = is_new_baseline
-        test.status = Test.STATUS_DONE
-        test.save(update_fields=["status", "is_new_baseline"])
-
-    except Exception:
-        logger.exception("process_test failed", extra={"test_id": test_id})
-        test.status = Test.STATUS_FAILED
+        test = Test.objects.select_related("run__suite__project").get(pk=test_id)
+        test.status = Test.STATUS_PROCESSING
         test.save(update_fields=["status"])
 
+        try:
+            with tempfile.TemporaryDirectory(prefix="inspectre-") as temp_dir:
+                local_path = Path(temp_dir) / "upload.png"
+                _download_staged_file(staging_key, local_path)
+
+                with local_path.open("rb") as fh:
+                    uploaded_file = File(fh, name="upload.png")
+                    is_new_baseline = ScreenshotComparison(test, uploaded_file).run()
+
+            test.refresh_from_db()
+            test.is_new_baseline = is_new_baseline
+            test.status = Test.STATUS_DONE
+            test.save(update_fields=["status", "is_new_baseline"])
+
+        except Exception:
+            logger.exception("process_test failed", extra={"test_id": test_id})
+            test.status = Test.STATUS_FAILED
+            test.save(update_fields=["status"])
+
+        finally:
+            _delete_staged_file(staging_key)
+
     finally:
-        _delete_staged_file(staging_key)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s)", [test_id])
 
 
 @app.task(bind=True, max_retries=0)

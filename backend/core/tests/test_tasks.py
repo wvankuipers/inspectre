@@ -1,8 +1,10 @@
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 from django.conf import settings as django_settings
+from django.db import connection
 
 from core.models import Test
 from core.tasks import delete_test_file_keys, process_test
@@ -92,6 +94,104 @@ class TestProcessTestTask:
             process_test.delay(test.id, "screenshots/staging/1/upload.png")
 
         assert Test.STATUS_PROCESSING in statuses_seen
+
+    def test_releases_lock_after_successful_run(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file"),
+        ):
+            mock_download.side_effect = lambda key, dest: dest.write_bytes(b"fakepng")
+            mock_instance = MagicMock()
+            mock_instance.run.return_value = False
+            mock_cls.return_value = mock_instance
+
+            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_try_advisory_lock(%s)", [test.id])
+            assert cursor.fetchone()[0] is True
+            cursor.execute("SELECT pg_advisory_unlock(%s)", [test.id])
+
+    def test_held_lock_blocks_concurrent_invocation(self, test_factory, settings):
+        # Postgres session-level advisory locks are re-entrant within the SAME
+        # session, and CELERY_TASK_ALWAYS_EAGER runs process_test synchronously
+        # on this test's own DB connection/session. So acquiring the lock via
+        # `connection.cursor()` here (as the brief's literal snippet does) and
+        # then calling process_test.delay(...) would just re-acquire the lock
+        # from the same session and succeed, not reproduce the "another
+        # invocation is already processing this test_id" scenario.
+        #
+        # To genuinely simulate a concurrent invocation (a different worker /
+        # DB session), hold the lock from a separate thread with its own
+        # connection, matching how two real Celery workers would race.
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+        original_status = test.status
+
+        lock_acquired = threading.Event()
+        release_lock = threading.Event()
+
+        def hold_lock_in_other_session():
+            from django.db import connection as thread_connection
+
+            with thread_connection.cursor() as cursor:
+                cursor.execute("SELECT pg_try_advisory_lock(%s)", [test.id])
+                assert cursor.fetchone()[0] is True
+            lock_acquired.set()
+            release_lock.wait(timeout=5)
+            with thread_connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(%s)", [test.id])
+            thread_connection.close()
+
+        holder = threading.Thread(target=hold_lock_in_other_session)
+        holder.start()
+        assert lock_acquired.wait(timeout=5)
+
+        try:
+            with (
+                patch("core.tasks.ScreenshotComparison") as mock_cls,
+                patch("core.tasks._download_staged_file") as mock_download,
+                patch("core.tasks._delete_staged_file"),
+            ):
+                process_test.delay(test.id, "screenshots/staging/1/upload.png")
+
+                mock_cls.assert_not_called()
+                mock_download.assert_not_called()
+
+            test.refresh_from_db()
+            assert test.status == original_status
+        finally:
+            release_lock.set()
+            holder.join(timeout=5)
+
+    def test_releases_lock_after_failed_run(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        settings.CELERY_TASK_EAGER_PROPAGATES = False
+        test = test_factory()
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file"),
+        ):
+            mock_download.side_effect = lambda key, dest: dest.write_bytes(b"fakepng")
+            mock_instance = MagicMock()
+            mock_instance.run.side_effect = RuntimeError("imagemagick died")
+            mock_cls.return_value = mock_instance
+
+            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_FAILED
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_try_advisory_lock(%s)", [test.id])
+            assert cursor.fetchone()[0] is True
+            cursor.execute("SELECT pg_advisory_unlock(%s)", [test.id])
 
 
 class TestDeleteTestFileKeysTask:
