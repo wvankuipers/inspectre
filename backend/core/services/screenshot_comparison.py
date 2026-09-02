@@ -162,7 +162,7 @@ class ScreenshotComparison:
             with thumb_path.open("rb") as fh:
                 self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
             uploaded_fields.append(self.test.screenshot_thumb)
-            self.test.save()
+            self.test.save(update_fields=["diff", "passed", "original_passed", "screenshot", "screenshot_thumb"])
         except Exception:
             for field in uploaded_fields:
                 try:
@@ -255,4 +255,6 @@ class ScreenshotComparison:
             self.test.screenshot_baseline.save("baseline.png", File(fh), save=False)
         with paths["diff"].open("rb") as fh:
             self.test.screenshot_diff.save("diff.png", File(fh), save=False)
-        self.test.save()
+        self.test.save(
+            update_fields=["diff", "passed", "original_passed", "screenshot", "screenshot_baseline", "screenshot_diff"]
+        )

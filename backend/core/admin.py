@@ -165,10 +165,11 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
     def restart_processing(self, request, queryset):
         """Manually re-enqueue stuck pending/processing rows (e.g. after a
         worker crash left the queue stuck). Safe because `process_test` only
-        deletes the staged upload in its `finally` block once it actually runs
-        to completion (success or failure) — a row stuck here in pending/processing
-        never got that far, so its staged upload is still sitting in S3, unless
-        its status changed between page load and running this action.
+        deletes the staged upload once the pipeline has finished AND its
+        processing claim is revalidated as still current — a row stuck here
+        in pending/processing never got that far, so its staged upload is
+        still sitting in S3, unless its status changed between page load and
+        running this action.
         """
         restarted = 0
         missing = 0

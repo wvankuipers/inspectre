@@ -23,8 +23,8 @@ _PROCESS_TEST_LOCK_NAMESPACE = 1
 # Bounds on the requeue-on-lock-contention behavior below: how many times we'll
 # re-enqueue ourselves while another invocation holds the lock, and how long to
 # wait between attempts.
-_MAX_LOCK_WAIT_REQUEUES = 5
-_LOCK_WAIT_COUNTDOWN_SECONDS = 5
+_MAX_LOCK_WAIT_REQUEUES = 20
+_LOCK_WAIT_COUNTDOWN_SECONDS = 15
 
 
 @app.task(bind=True, max_retries=0)
@@ -34,8 +34,9 @@ def process_test(self, test_id: int, staging_key: str, claimed_processing: int, 
     Guarded by a Postgres session advisory lock keyed on `test_id`: if this
     exact test is already being processed by another invocation (e.g. a
     worker-crash redelivery racing a manual admin restart), this invocation
-    backs off immediately instead of racing it on the shared staging key and
-    Test row fields.
+    requeues itself instead of racing it on the shared staging key and Test
+    row fields (see the requeue paragraph below for the retry/give-up
+    mechanics).
 
     That advisory lock only prevents CONCURRENT invocations from racing each
     other — it does nothing to stop a stale invocation from running to
@@ -82,15 +83,18 @@ def process_test(self, test_id: int, staging_key: str, claimed_processing: int, 
     `_MAX_LOCK_WAIT_REQUEUES`, so a losing invocation gets another chance
     instead of vanishing forever the instant Celery acks its message.
 
-    Known residual limitation: `ScreenshotComparison(test, uploaded_file).run()`
-    writes its own `screenshot`/`screenshot_baseline`/`screenshot_diff`/thumbnail
-    FileFields to S3 and saves them to the DB from inside its own `run()` call,
-    before this function gets a chance to revalidate the claim afterward — so a
-    mid-flight-superseded invocation's diff pipeline can still leave those file
-    fields overwritten with stale data even though this fix correctly guards
-    `status`/`is_new_baseline` and the staged-upload deletion. Fully closing
-    that would require making `ScreenshotComparison` itself claim-aware, which
-    is out of scope here.
+    `ScreenshotComparison(test, uploaded_file).run()` writes its own
+    `screenshot`/`screenshot_baseline`/`screenshot_diff`/thumbnail FileFields
+    to S3 and saves them to the DB from inside its own `run()` call, before
+    this function gets a chance to revalidate the claim afterward. Those
+    internal saves (in `ScreenshotComparison` and `attach_test_thumbnails`)
+    are scoped with an explicit `update_fields` list that never includes
+    `processing_claim`, `status`, or `process_attempts` — so they can never
+    clobber those columns back to this invocation's own stale in-memory
+    values, no matter when a concurrent restart's claim bump lands relative
+    to them. That's what makes the mid-flight revalidation above trustworthy
+    rather than merely best-effort: nothing between the initial claim check
+    and the final one can silently undo it.
 
     Assumes a direct Postgres connection per session (no transaction-pooling
     proxy like PgBouncer transaction-mode or RDS Proxy without pinning); this

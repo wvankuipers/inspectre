@@ -8,7 +8,13 @@ from django.db import connection
 from django.db.models import F
 
 from core.models import Test
-from core.tasks import _MAX_LOCK_WAIT_REQUEUES, _PROCESS_TEST_LOCK_NAMESPACE, delete_test_file_keys, process_test
+from core.tasks import (
+    _LOCK_WAIT_COUNTDOWN_SECONDS,
+    _MAX_LOCK_WAIT_REQUEUES,
+    _PROCESS_TEST_LOCK_NAMESPACE,
+    delete_test_file_keys,
+    process_test,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -206,7 +212,7 @@ class TestProcessTestTask:
             cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
             assert cursor.fetchone()[0] is False
 
-    def test_held_lock_blocks_concurrent_invocation(self, test_factory, settings):
+    def test_held_lock_blocks_concurrent_invocation_and_requeues(self, test_factory, settings):
         # Postgres session-level advisory locks are re-entrant within the SAME
         # session, and CELERY_TASK_ALWAYS_EAGER runs process_test synchronously
         # on this test's own DB connection/session. So acquiring the lock via
@@ -218,7 +224,13 @@ class TestProcessTestTask:
         # To genuinely simulate a concurrent invocation (a different worker /
         # DB session), hold the lock from a separate thread with its own
         # connection, matching how two real Celery workers would race.
-        settings.CELERY_TASK_ALWAYS_EAGER = True
+        #
+        # `process_test.apply_async` is mocked below so the lock-busy path's
+        # requeue call is observable instead of actually recursing. This
+        # test's job is to verify a SINGLE contended invocation's behavior
+        # (it never touches the row and requeues itself exactly once with
+        # the expected args), not the full requeue-and-give-up loop (see
+        # test_lock_contention_gives_up_after_cap for that).
         test = test_factory()
         original_status = test.status
 
@@ -255,11 +267,19 @@ class TestProcessTestTask:
                 patch("core.tasks.ScreenshotComparison") as mock_cls,
                 patch("core.tasks._download_staged_file") as mock_download,
                 patch("core.tasks._delete_staged_file"),
+                patch("core.tasks.process_test.apply_async") as mock_apply_async,
             ):
-                process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
+                # See the comment in test_lock_contention_requeues_instead_of_dropping_message
+                # for why this calls the task directly instead of .delay()/.apply_async()
+                # now that apply_async is mocked.
+                process_test(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
                 mock_cls.assert_not_called()
                 mock_download.assert_not_called()
+                mock_apply_async.assert_called_once_with(
+                    args=[test.id, "screenshots/staging/1/upload.png", test.processing_claim, 1],
+                    countdown=_LOCK_WAIT_COUNTDOWN_SECONDS,
+                )
 
             test.refresh_from_db()
             assert test.status == original_status
@@ -459,7 +479,6 @@ class TestProcessTestTask:
     def test_lock_contention_requeues_instead_of_dropping_message(self, test_factory, settings):
         # Same "hold the lock from a separate thread/session" pattern as
         # test_held_lock_blocks_concurrent_invocation above.
-        settings.CELERY_TASK_ALWAYS_EAGER = True
         test = test_factory()
 
         lock_acquired = threading.Event()
@@ -508,7 +527,7 @@ class TestProcessTestTask:
                 mock_download.assert_not_called()
                 mock_apply_async.assert_called_once_with(
                     args=[test.id, "screenshots/staging/1/upload.png", test.processing_claim, 1],
-                    countdown=5,
+                    countdown=_LOCK_WAIT_COUNTDOWN_SECONDS,
                 )
         finally:
             release_lock.set()
@@ -519,7 +538,6 @@ class TestProcessTestTask:
             raise holder_errors[0]
 
     def test_lock_contention_gives_up_after_cap(self, test_factory, settings):
-        settings.CELERY_TASK_ALWAYS_EAGER = True
         test = test_factory()
 
         lock_acquired = threading.Event()
@@ -573,11 +591,90 @@ class TestProcessTestTask:
         if holder_errors:
             raise holder_errors[0]
 
+    def test_requeued_invocation_eventually_completes_after_lock_clears(self, test_factory, settings):
+        # Proves the other half of the requeue fix: a contended invocation
+        # isn't just retried with the right args (already covered by
+        # test_lock_contention_requeues_instead_of_dropping_message above) —
+        # once the lock it was waiting on actually clears, the requeued
+        # invocation goes on to complete the pipeline and reach STATUS_DONE,
+        # i.e. the restart is not permanently lost.
+        test = test_factory()
+        staging_key = "screenshots/staging/1/upload.png"
+
+        lock_acquired = threading.Event()
+        release_lock = threading.Event()
+        lock_released = threading.Event()
+        holder_errors: list[BaseException] = []
+
+        def hold_lock_in_other_session():
+            try:
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_try_advisory_lock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+                        assert cursor.fetchone()[0] is True
+                    lock_acquired.set()
+                    release_lock.wait(timeout=5)
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+                    lock_released.set()
+                except BaseException as exc:  # noqa: BLE001 - surfaced to main thread below
+                    holder_errors.append(exc)
+            finally:
+                connection.close()
+
+        holder = threading.Thread(target=hold_lock_in_other_session)
+        holder.start()
+
+        try:
+            assert lock_acquired.wait(timeout=5)
+
+            with (
+                patch("core.tasks.ScreenshotComparison") as mock_cls,
+                patch("core.tasks._download_staged_file") as mock_download,
+                patch("core.tasks._delete_staged_file"),
+                patch("core.tasks.process_test.apply_async") as mock_apply_async,
+            ):
+                mock_download.side_effect = lambda key, dest: dest.write_bytes(b"fakepng")
+                mock_instance = MagicMock()
+                mock_instance.run.return_value = False
+                mock_cls.return_value = mock_instance
+
+                def requeue_after_lock_clears(*, args, countdown):
+                    # Release the held lock and wait for the holder to
+                    # actually relinquish it (not just signal it to) before
+                    # re-invoking — otherwise this would race the holder's
+                    # own unlock instead of genuinely waiting for the lock
+                    # to clear.
+                    release_lock.set()
+                    assert lock_released.wait(timeout=5)
+                    process_test(*args)
+
+                mock_apply_async.side_effect = requeue_after_lock_clears
+
+                # See the comment in test_lock_contention_requeues_instead_of_dropping_message
+                # for why this calls the task directly instead of .delay()/.apply_async().
+                process_test(test.id, staging_key, test.processing_claim, 0)
+
+                mock_apply_async.assert_called_once_with(
+                    args=[test.id, staging_key, test.processing_claim, 1],
+                    countdown=_LOCK_WAIT_COUNTDOWN_SECONDS,
+                )
+        finally:
+            holder.join(timeout=5)
+            assert not holder.is_alive()
+
+        if holder_errors:
+            raise holder_errors[0]
+
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_DONE
+
     @pytest.mark.django_db(transaction=True)
     def test_mid_flight_supersede_discards_stale_result_without_writing_or_deleting(self, test_factory, settings):
         # transaction=True: the pipeline thread below runs process_test on its OWN
-        # DB connection/session (same reasoning as test_held_lock_blocks_concurrent_invocation),
-        # so the Test row created here must be actually committed, not left inside
+        # DB connection/session (same reasoning as
+        # test_held_lock_blocks_concurrent_invocation_and_requeues), so the Test
+        # row created here must be actually committed, not left inside
         # the default per-test SAVEPOINT, or that thread's session won't see it.
         #
         # The core regression this task fixes: invocation A acquires the lock and
@@ -653,9 +750,15 @@ class TestProcessTestTask:
         assert test.status != Test.STATUS_DONE
         assert test.processing_claim == 1
 
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
-            assert cursor.fetchone()[0] is False
+        # No lock-release check here: the lock was acquired by the WORKER
+        # thread's own DB session (via process_test.delay(...) running under
+        # CELERY_TASK_ALWAYS_EAGER on that thread's connection), and Postgres
+        # session advisory locks cannot be released from a different session
+        # by definition — asserting via this (main-thread) connection would
+        # unconditionally return False regardless of whether process_test's
+        # own unlock ran correctly, proving nothing. The ordinary release path
+        # is already covered by test_releases_lock_after_successful_run et al;
+        # this test's job is the claim/status/file-deletion guard above.
 
 
 class TestDeleteTestFileKeysTask:

@@ -152,7 +152,7 @@ class TestTestsCreate:
         body = response.json()
 
         assert Test.objects.filter(pk=body["id"]).exists()
-        mock_task.delay.assert_called_once_with(body["id"], "screenshots/staging/99/upload.png")
+        mock_task.delay.assert_called_once_with(body["id"], "screenshots/staging/99/upload.png", 0)
 
     def test_invalid_run_id_returns_404(self, api):
         response = api.post(
@@ -451,7 +451,7 @@ class TestTestsCreateAsync:
             )
 
         body = response.json()
-        mock_task.delay.assert_called_once_with(body["id"], "screenshots/staging/99/upload.png")
+        mock_task.delay.assert_called_once_with(body["id"], "screenshots/staging/99/upload.png", 0)
 
     def test_response_includes_is_new_baseline_as_none_when_pending(self, api, run_factory, settings):
         settings.CELERY_TASK_ALWAYS_EAGER = False
