@@ -546,3 +546,71 @@ class TestRestartProcessingAction:
             self._run_action(admin_client, test)
 
         mock_delay.assert_called_once()
+
+
+class TestDiscardFromQueueAction:
+    """`discard_from_queue` permanently removes stuck rows and their staged
+    S3 upload, behind a two-step confirmation like Django's built-in "Delete
+    selected" action.
+    """
+
+    @pytest.fixture
+    def admin_client(self, client):
+        User.objects.create_user(
+            username="admin",
+            password="secret",
+            is_staff=True,
+            is_superuser=True,
+        )
+        client.login(username="admin", password="secret")
+        return client
+
+    def _run_action(self, admin_client, *tests, confirm=False):
+        data = {
+            "action": "discard_from_queue",
+            "_selected_action": [str(test.pk) for test in tests],
+            "index": 0,
+        }
+        if confirm:
+            data["post"] = "yes"
+        return admin_client.post("/admin/core/processingqueuetest/", data=data, follow=True)
+
+    def test_unconfirmed_request_shows_confirmation_page_and_deletes_nothing(self, admin_client, test_factory):
+        test = test_factory(status=Test.STATUS_PENDING)
+
+        response = self._run_action(admin_client, test, confirm=False)
+
+        assert response.status_code == 200
+        assert str(test).encode() in response.content
+        assert Test.objects.filter(pk=test.pk).exists()
+
+    def test_confirmed_request_deletes_row_and_cleans_up_s3(self, admin_client, test_factory):
+        test = test_factory(status=Test.STATUS_PROCESSING)
+        staging_key = staging_key_for_test(test.id)
+
+        with patch("core.admin.get_s3_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, test, confirm=True)
+
+        assert response.status_code == 200
+        assert not Test.objects.filter(pk=test.pk).exists()
+        mock_client.delete_object.assert_called_once_with(
+            Bucket=django_settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key
+        )
+        assert b"Discarded 1 test(s)" in response.content
+
+    def test_confirmed_request_on_multiple_rows_discards_all(self, admin_client, test_factory):
+        pending = test_factory(status=Test.STATUS_PENDING)
+        processing = test_factory(status=Test.STATUS_PROCESSING)
+
+        with patch("core.admin.get_s3_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, pending, processing, confirm=True)
+
+        assert response.status_code == 200
+        assert not Test.objects.filter(pk__in=[pending.pk, processing.pk]).exists()
+        assert mock_client.delete_object.call_count == 2

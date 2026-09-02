@@ -1,0 +1,24 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<p>
+  Are you sure you want to permanently discard the following test(s) from the
+  processing queue? This deletes the row and its staged upload in S3, and
+  cannot be undone.
+</p>
+<ul>
+  {% for test in queryset %}
+    <li>{{ test }}</li>
+  {% endfor %}
+</ul>
+<form method="post">
+  {% csrf_token %}
+  {% for test in queryset %}
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ test.pk }}">
+  {% endfor %}
+  <input type="hidden" name="action" value="discard_from_queue">
+  <input type="hidden" name="post" value="yes">
+  <input type="submit" value="Yes, discard">
+</form>
+{% endblock %}

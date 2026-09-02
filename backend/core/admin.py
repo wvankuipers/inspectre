@@ -2,7 +2,9 @@ from botocore.exceptions import ClientError
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
+from django.contrib.admin import helpers
 from django.db import models as db_models
+from django.template.response import TemplateResponse
 from django.utils import timezone
 
 from core.models import Baseline, ProcessingQueueTest, Project, Run, Suite, Test
@@ -146,7 +148,7 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
     search_fields = ("name", "run__suite__name", "run__suite__project__name")
     ordering = ("created_at",)  # oldest first — front of the queue
     list_select_related = ("run__suite__project", "run__suite")
-    actions = ["restart_processing"]
+    actions = ["restart_processing", "discard_from_queue"]
 
     @admin.action(description="Restart processing")
     def restart_processing(self, request, queryset):
@@ -183,6 +185,40 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
                 "could not be restarted; re-run them from CI.",
                 level=messages.WARNING,
             )
+
+    @admin.action(description="Discard from queue")
+    def discard_from_queue(self, request, queryset):
+        """Permanently remove selected rows and their orphaned staged S3 upload.
+
+        Two-step confirm, like Django's built-in "Delete selected" — but skips
+        `get_deleted_objects`'s cascade/permission check, since that would
+        evaluate `has_delete_permission` against this deliberately locked-down
+        ModelAdmin and always report "no permission". Safe to skip: `Test` has
+        no meaningful cascade (`Baseline.test` is SET_NULL).
+        """
+        if request.POST.get("post") == "yes":
+            s3_client = get_s3_client()
+            for test in queryset:
+                try:
+                    s3_client.delete_object(
+                        Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+                        Key=staging_key_for_test(test.id),
+                    )
+                except ClientError:
+                    pass  # already gone, or a transient error — the row is discarded regardless
+            count = queryset.count()
+            queryset.delete()
+            self.message_user(request, f"Discarded {count} test(s) from the queue.")
+            return None
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Discard from queue?",
+            "queryset": queryset,
+            "opts": self.model._meta,
+            "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
+        }
+        return TemplateResponse(request, "admin/core/discard_from_queue_confirmation.html", context)
 
     def has_add_permission(self, request):
         return False
