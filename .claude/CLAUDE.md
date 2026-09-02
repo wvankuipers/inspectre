@@ -30,7 +30,7 @@ Visual regression testing SaaS. CI pipelines upload screenshots directly via the
 
 ## Backend
 
-**Language / Framework:** Python 3.13+, Django 5.1, Django REST Framework
+**Language / Framework:** Python 3.13+, Django 6.1, Django REST Framework
 
 **Single app:** `core` — all models, views, serializers, and services live here.
 
@@ -41,8 +41,9 @@ Visual regression testing SaaS. CI pipelines upload screenshots directly via the
 | `Project`  | Top-level container; name auto-slugified                                             |
 | `Suite`    | Groups runs; tracks `next_run_seq` for atomic sequencing                             |
 | `Run`      | One CI test run; `sequential_id` assigned atomically in `save()`                     |
-| `Test`     | Individual screenshot result; key derived from (project, suite, name, browser, size); `original_passed` is a tamper-proof snapshot of the initial pass/fail |
-| `Baseline` | Approved reference screenshot; linked to Test and Suite by key                       |
+| `Test`     | Individual screenshot result; key derived from (project, suite, name, browser, size); `original_passed` is a tamper-proof snapshot of the initial pass/fail. Also carries the async processing state machine — `status`, `process_attempts`, `processing_claim` (fencing token), `is_new_baseline`, `fuzz_level`, `highlight_colour`, `crop_area` — and six screenshot `FileField`s (original/baseline/diff + their thumbnails) |
+| `Baseline` | Approved reference screenshot; FK'd to `Suite`, and to `Test` via a `SET_NULL` FK kept for informational purposes only; has its own `screenshot`/`thumbnail` `FileField`s (not just a key reference) |
+| `ProcessingQueueTest` | Proxy model over `Test` used only to give the Django admin a read-only view of tests still processing |
 
 ### API surfaces
 
@@ -63,7 +64,7 @@ Two URL surfaces, both unauthenticated (`AllowAny`):
 - `POST /runs` — create run (find-or-create project + suite)
 - `POST /tests` — create test, enqueue diff via Celery, return `status=pending`
 - `GET /tests/<id>/status` — poll for async result (`status=done|failed`)
-- `PATCH /tests/<id>` — update test (set baseline)
+- `PATCH /tests/<id>` — update test (set baseline); `PUT` is also accepted
 - `GET /baselines/<key>.png` / `GET /baselines/<key>.json`
 
 **Infrastructure** (neither SPA nor legacy Client API surface):
@@ -72,11 +73,15 @@ Two URL surfaces, both unauthenticated (`AllowAny`):
 
 ### Image pipeline (async, Celery)
 
-`POST /tests` stages the uploaded screenshot to S3, enqueues a `process_test` Celery task, and returns immediately with `status=pending`. The worker picks up the task and runs the full diff: crop → compare against baseline via ImageMagick (`compare`) → generate diff overlay and JPEG thumbnails → persist results to S3 → update the Test record.
+`POST /tests` stages the uploaded screenshot to S3 under a staging key, enqueues a `process_test` Celery task, and returns immediately with `status=pending`. The worker downloads the staged upload and runs the diff: crop (only if `crop_area` is set) → compare against baseline via ImageMagick (`compare`) → generate diff overlay and JPEG thumbnails → persist results to S3 → update the Test record → delete the staging object. If no baseline exists yet, this is a distinct "first upload" path that stores the screenshot and thumbnail without comparing/diffing. `process_test` also has correctness machinery for concurrent/duplicate delivery: a Postgres advisory lock, a `processing_claim` fencing token, and a `PROCESS_TEST_MAX_ATTEMPTS` retry cap with requeue-on-lock-contention.
 
 ### Storage
 
-All images in S3-compatible storage (MinIO in dev, AWS S3 in prod). Bucket: `inspectre-screenshots`. Path pattern: `screenshots/{test_id}/{original|baseline|diff|thumb-300}.{png|jpg}`.
+All images in S3-compatible storage (MinIO in dev, AWS S3 in prod). Bucket: `inspectre-screenshots`. Path patterns:
+
+- `screenshots/{test_id}/{original|baseline|diff}.png`, `screenshots/{test_id}/{thumb-300|thumb-300-baseline|thumb-300-diff}.jpg`
+- `baselines/{key}/{screenshot.png|thumb-300.jpg}` — the `Baseline` model's own copies
+- `screenshots/staging/{test_id}/upload.png` — transient staging object, deleted after processing
 
 ### Key settings (`backend/inspectre/settings.py`)
 
@@ -85,9 +90,11 @@ All images in S3-compatible storage (MinIO in dev, AWS S3 in prod). Bucket: `ins
 | `IMAGE_DIFF_THRESHOLD`        | `0.1`   | Pass/fail cutoff                 |
 | `RUN_RETENTION_PER_SUITE`     | `5`     | Max runs to keep per suite       |
 | `DEFAULT_FUZZ_LEVEL`          | `"30%"` | ImageMagick fuzz                 |
+| `DEFAULT_HIGHLIGHT_COLOUR`    | `"ff0000"` | Diff overlay highlight colour  |
 | `THUMBNAIL_WIDTH`             | `300`   | Thumbnail width (px)             |
 | `THUMBNAIL_JPEG_QUALITY`      | `90`    | Thumbnail JPEG quality           |
 | `IMAGEMAGICK_TIMEOUT_SECONDS` | `60`    | Timeout for ImageMagick commands |
+| `PROCESS_TEST_MAX_ATTEMPTS`   | `3`     | Retry cap for `process_test` before giving up |
 
 ### Auth
 
@@ -97,8 +104,9 @@ No API auth. Django admin (`/admin/`) uses session auth with a shared staff user
 
 Run with: `cd backend && pytest` (or `make test-fast` / `make test-slow`)
 
-- **Fast** (~1 s): serializers, SPA API, admin, models — no real ImageMagick
-- **Slow** (~5 s): legacy API, screenshot comparison, seed — real `convert`/`compare` shell-outs
+- **Fast** (`make test-fast`, ~1 s): serializers, SPA API, admin, models, health, settings, Celery task fencing/retry logic — no real ImageMagick
+- **Slow** (`make test-slow`, ~5 s): legacy API, screenshot comparison, baseline upsert, seed — real `convert`/`compare` shell-outs
+- `make test-fast`/`make test-slow` run curated packs (see `Makefile`), not the full suite — bare `pytest` also picks up S3/IAM-auth test files (`test_s3*.py`, `test_iam_*.py`) that neither make target runs
 - Framework: pytest + pytest-django + factory-boy; parallel via `pytest -n auto`
 - Lint: `ruff check` (rules E, F, I, B, UP, DJ; line length 120)
 
@@ -114,22 +122,27 @@ Run tests: `cd frontend && npm test`
 
 ### Routes
 
-| Route                                     | Component                                              |
-| ----------------------------------------- | ------------------------------------------------------ |
-| `/projects`                               | `ProjectsListComponent` — flattened project+suite rows |
-| `/projects/:proj/suites/:suite`           | `SuiteDetailComponent` — latest 5 runs + baselines     |
-| `/projects/:proj/suites/:suite/runs/:seq` | `RunDetailComponent` — test table with thumbnails      |
-| `/projects/:proj/suites/:suite/tests/:key` | `TestDetailComponent` — cross-run pass/fail history for one test |
+All routes nest under a root `AppShellComponent` (toolbar/breadcrumb/loading indicator) with a `** → /projects` catch-all redirect.
+
+| Route                                                    | Component                                              |
+| --------------------------------------------------------- | ------------------------------------------------------ |
+| `/projects`                                                | `ProjectsListComponent` — flattened project+suite rows |
+| `/projects/:projectSlug/suites/:suiteSlug`                 | `SuiteDetailComponent` — latest 5 runs + baselines     |
+| `/projects/:projectSlug/suites/:suiteSlug/runs/:seqId`     | `RunDetailComponent` — test table with thumbnails      |
+| `/projects/:projectSlug/suites/:suiteSlug/tests/:key`      | `TestDetailComponent` — cross-run pass/fail history for one test |
 
 ### Key files
 
-| Path                                                      | Purpose                                                          |
-| --------------------------------------------------------- | ---------------------------------------------------------------- |
-| `frontend/src/app/core/services/spectre-api.service.ts`   | HTTP client for all API calls                                    |
-| `frontend/src/app/core/services/sort-state.service.ts`    | Persists table sort to `localStorage` (keys: `inspectre.sort.*`) |
-| `frontend/src/app/core/interceptors/error.interceptor.ts` | Shows snackbar on HTTP errors                                    |
-| `frontend/src/app/core/models/api.ts`                     | TypeScript types mirroring DRF serializers                       |
-| `frontend/src/styles.scss`                                | Global styles: Material theme, `.inspectre-card`, chip classes   |
+| Path                                                        | Purpose                                                          |
+| ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `frontend/src/app/core/api/inspectre-api.service.ts`         | `InspectreApiService` — HTTP client for all API calls             |
+| `frontend/src/app/core/services/sort-state.service.ts`      | Persists table sort to `localStorage` (keys: `inspectre.sort.*`) |
+| `frontend/src/app/core/interceptors/error.interceptor.ts`   | Shows snackbar on HTTP errors                                    |
+| `frontend/src/app/core/interceptors/loading.interceptor.ts` | Drives `loading.service.ts` counter for the global loading indicator |
+| `frontend/src/app/core/models/api.ts`                       | TypeScript types mirroring DRF serializers                       |
+| `frontend/src/styles.scss`                                  | Global styles: Material theme, `.inspectre-card`, chip classes   |
+
+Shared UI components live under `frontend/src/app/core/components/` — `app-shell`, `app-toolbar`, `breadcrumb`, `image-viewer`, `page-footer`, `run-stats-chips`, `search-field`. Reuse these rather than adding new ad-hoc UI.
 
 ### Visual conventions
 
@@ -137,7 +150,7 @@ Run tests: `cd frontend && npm test`
 - Toolbar: `#0f172a` (navy)
 - Accent: `#38bdf8` (sky-400, Angular Material cyan palette)
 - Cards: `.inspectre-card` class (white, 10 px radius, subtle shadow)
-- Status chips: `<span class="chip chip-pass|chip-fail|chip-new|chip-none">`
+- Status chips: `<span class="chip chip-pass|chip-fail|chip-new|chip-none">`. `chip-new-baseline` also exists but is defined locally in `run-detail.component.scss`, not in the global stylesheet.
 
 ---
 
@@ -150,6 +163,8 @@ Run tests: `cd frontend && npm test`
 | `api`        | Django / gunicorn                                      | 8000                 |
 | `spa`        | nginx serving Angular bundle + reverse-proxy           | 4200                 |
 | `db`         | PostgreSQL                                             | —                    |
+| `valkey`     | Redis-protocol broker for Celery                       | —                    |
+| `worker`     | Celery worker (`celery -A inspectre worker`) — runs the image diff pipeline | — |
 | `minio`      | S3-compatible image storage (dev)                      | 9000, 9001 (console) |
 | `minio-init` | Creates `inspectre-screenshots` bucket on first boot   | —                    |
 | `api-dev`    | api + dev tools, bind-mounted source (`--profile dev`) | —                    |
@@ -165,6 +180,9 @@ docker compose build spa && docker compose up -d spa
 
 ```
 make up             # start all services
+make down           # stop and remove all containers (preserves volumes)
+make logs           # tail the api service's logs
+make shell-api      # open a Django shell inside the api container
 make test           # all tests (backend fast+slow + frontend)
 make test-fast      # backend only, no ImageMagick
 make test-slow      # backend including image diff tests
@@ -172,4 +190,6 @@ make test-frontend  # Angular Vitest
 make lint           # ruff + angular-eslint
 make lint-fix       # auto-fix both
 make migrate        # run Django migrations
+make seed           # load demo data (wipes existing demo data first)
+make clean          # stop containers and remove volumes — DESTROYS local data
 ```
