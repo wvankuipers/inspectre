@@ -68,6 +68,14 @@ def get_presign_s3_client():
     return boto3.client("s3", **kwargs)
 
 
+def staging_key_for_test(test_id: int) -> str:
+    """Return the S3 key for staging a test's uploaded screenshot.
+
+    Used by the upload flow to stage raw screenshots before async processing.
+    """
+    return f"screenshots/staging/{test_id}/upload.png"
+
+
 def generate_presigned_url(key, expires_in=60 * 60 * 24):
     """Return a presigned GET URL for an S3 object key, or None if key is falsy.
 

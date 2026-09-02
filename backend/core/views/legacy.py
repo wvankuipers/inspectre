@@ -134,8 +134,8 @@ def _stage_upload_to_s3(test_id: int, uploaded_file) -> str:
     """Upload the raw screenshot to a staging key in S3, returning the key."""
     from django.conf import settings as django_settings
 
-    from core.services.s3 import get_s3_client
+    from core.services.s3 import get_s3_client, staging_key_for_test
 
-    staging_key = f"screenshots/staging/{test_id}/upload.png"
+    staging_key = staging_key_for_test(test_id)
     get_s3_client().upload_fileobj(uploaded_file, django_settings.AWS_STORAGE_BUCKET_NAME, staging_key)
     return staging_key
