@@ -138,6 +138,13 @@ class Test(models.Model):
             "established a new baseline; False = baseline already existed."
         ),
     )
+    process_attempts = models.IntegerField(
+        default=0,
+        help_text="Incremented each time process_test starts running this test. "
+        "Used to cap redelivery attempts after a worker-crash requeue, so a "
+        "screenshot that reliably crashes the worker fails permanently instead "
+        "of looping forever.",
+    )
 
     diff = models.FloatField(default=0)
     passed = models.BooleanField(default=False)

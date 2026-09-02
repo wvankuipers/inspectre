@@ -50,8 +50,22 @@ def process_test(self, test_id: int, staging_key: str) -> None:
 
     try:
         test = Test.objects.select_related("run__suite__project").get(pk=test_id)
+        test.process_attempts += 1
+
+        if test.process_attempts > django_settings.PROCESS_TEST_MAX_ATTEMPTS:
+            logger.error(
+                "process_test: test %s exceeded max attempts (%s), marking failed without reprocessing",
+                test_id,
+                django_settings.PROCESS_TEST_MAX_ATTEMPTS,
+                extra={"test_id": test_id, "process_attempts": test.process_attempts},
+            )
+            test.status = Test.STATUS_FAILED
+            test.save(update_fields=["process_attempts", "status"])
+            _delete_staged_file(staging_key)
+            return
+
         test.status = Test.STATUS_PROCESSING
-        test.save(update_fields=["status"])
+        test.save(update_fields=["process_attempts", "status"])
 
         try:
             with tempfile.TemporaryDirectory(prefix="inspectre-") as temp_dir:

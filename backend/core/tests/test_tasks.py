@@ -31,6 +31,67 @@ class TestProcessTestTask:
 
         test.refresh_from_db()
         assert test.status == Test.STATUS_DONE
+        assert test.process_attempts == 1
+
+    def test_attempt_at_cap_still_processes_normally(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory(process_attempts=settings.PROCESS_TEST_MAX_ATTEMPTS - 1)
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file"),
+        ):
+            mock_download.side_effect = lambda key, dest: dest.write_bytes(b"fakepng")
+            mock_instance = MagicMock()
+            mock_instance.run.return_value = False
+            mock_cls.return_value = mock_instance
+
+            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+
+            mock_cls.assert_called_once()
+            mock_download.assert_called_once()
+
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_DONE
+        assert test.process_attempts == settings.PROCESS_TEST_MAX_ATTEMPTS
+
+    def test_attempt_over_cap_bails_to_failed_without_reprocessing(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        starting_attempts = settings.PROCESS_TEST_MAX_ATTEMPTS
+        test = test_factory(process_attempts=starting_attempts)
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file") as mock_delete,
+        ):
+            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+
+            mock_cls.assert_not_called()
+            mock_download.assert_not_called()
+            mock_delete.assert_called_once()
+
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_FAILED
+        assert test.process_attempts == starting_attempts + 1
+
+    def test_releases_lock_when_bailing_over_cap(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory(process_attempts=settings.PROCESS_TEST_MAX_ATTEMPTS)
+
+        with (
+            patch("core.tasks.ScreenshotComparison"),
+            patch("core.tasks._download_staged_file"),
+            patch("core.tasks._delete_staged_file"),
+        ):
+            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+
+        # See test_releases_lock_after_successful_run for why pg_advisory_unlock
+        # (returning False) is the correct check here, not pg_try_advisory_lock.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+            assert cursor.fetchone()[0] is False
 
     def test_sets_is_new_baseline_from_comparison_result(self, test_factory, settings):
         settings.CELERY_TASK_ALWAYS_EAGER = True
