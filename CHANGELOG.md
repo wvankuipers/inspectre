@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.4.1](https://github.com/wvankuipers/inspectre/compare/1.4.0...1.4.1) - 2026-09-02
+
+- Fix/worker queue recovery by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/105
+
 ## [1.4.0](https://github.com/wvankuipers/inspectre/compare/1.3.2...1.4.0) - 2026-09-01
 
 - fix: allow 4-letter month abbreviations in page-footer timestamp test by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/100
