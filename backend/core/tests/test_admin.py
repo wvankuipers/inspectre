@@ -545,6 +545,26 @@ class TestRestartProcessingAction:
 
         mock_delay.assert_called_once()
 
+    def test_no_queued_tests_shows_no_op_warning(self, admin_client, test_factory):
+        """If the selected row already left pending/processing by the time the
+        action runs (e.g. it finished between page load and clicking "Go"),
+        `get_queryset` filters it out and the action's queryset ends up empty —
+        both `restarted` and `missing` stay 0. The admin should still see
+        feedback instead of a silent no-op reload.
+        """
+        test = test_factory(status=Test.STATUS_DONE)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_get_client.return_value = MagicMock()
+            response = self._run_action(admin_client, test)
+
+        assert response.status_code == 200
+        mock_delay.assert_not_called()
+        assert b"No queued tests to restart." in response.content
+
 
 class TestDiscardFromQueueAction:
     """`discard_from_queue` permanently removes stuck rows and their staged
@@ -581,6 +601,18 @@ class TestDiscardFromQueueAction:
         assert response.status_code == 200
         assert str(test).encode() in response.content
         assert Test.objects.filter(pk=test.pk).exists()
+
+    def test_unconfirmed_request_shows_cancel_link(self, admin_client, test_factory):
+        """The confirmation page must offer a way back besides the browser's
+        back button, matching Django's own delete-confirmation template.
+        """
+        test = test_factory(status=Test.STATUS_PENDING)
+
+        response = self._run_action(admin_client, test, confirm=False)
+
+        assert response.status_code == 200
+        assert b"No, take me back" in response.content
+        assert b"cancel-link" in response.content
 
     def test_confirmed_request_deletes_row_and_cleans_up_s3(self, admin_client, test_factory):
         test = test_factory(status=Test.STATUS_PROCESSING)

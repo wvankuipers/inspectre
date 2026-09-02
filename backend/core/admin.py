@@ -153,10 +153,11 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
     @admin.action(description="Restart processing")
     def restart_processing(self, request, queryset):
         """Manually re-enqueue stuck pending/processing rows (e.g. after a
-        worker crash left the queue stuck). Safe because the staged upload
-        in S3 is only deleted once `process_test` actually completes — a row
-        stuck here still has its staged upload sitting in S3, unless its
-        status changed between page load and running this action.
+        worker crash left the queue stuck). Safe because `process_test` only
+        deletes the staged upload in its `finally` block once it actually runs
+        to completion (success or failure) — a row stuck here in pending/processing
+        never got that far, so its staged upload is still sitting in S3, unless
+        its status changed between page load and running this action.
         """
         restarted = 0
         missing = 0
@@ -184,6 +185,8 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
                 f"{missing} test(s) had no staged upload left in S3 and could not be restarted; re-run them from CI.",
                 level=messages.WARNING,
             )
+        if not restarted and not missing:
+            self.message_user(request, "No queued tests to restart.", level=messages.WARNING)
 
     @admin.action(description="Discard from queue")
     def discard_from_queue(self, request, queryset):
@@ -194,6 +197,11 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
         evaluate `has_delete_permission` against this deliberately locked-down
         ModelAdmin and always report "no permission". Safe to skip: `Test` has
         no meaningful cascade (`Baseline.test` is SET_NULL).
+
+        A missing staged upload (S3 404) is not an error — nothing to clean up,
+        so the row is still discarded. Any other S3 error aborts the whole
+        action before any row is deleted, rather than discarding a row without
+        actually cleaning up its upload.
         """
         if request.POST.get("post") == "yes":
             s3_client = get_s3_client()
