@@ -14,7 +14,7 @@ The user opted for **"parity + flag obvious improvements"**. Below: parity choic
 | 2 | Pass threshold                                      | **Keep 0.1% as default (parity)**, env-overridable via `IMAGE_DIFF_THRESHOLD`.                     |
 | 3 | First-time baselining                               | **Manual approval + UI badge (superseded auto-baseline).** First run for a new key has nothing to compare against and does not pass automatically; a human must approve it via "Set as baseline" before it counts as passing or becomes the baseline. Originally decided as auto-self-baseline for frictionless CI ingest; reversed because nothing should become a trusted reference image without a human looking at it first. |
 | 4 | Slug behaviour on rename                            | **Auto-update slug on rename.** Old deep-links break; old baselines get severed because the `key` changes. Document this clearly to admins. |
-| 5 | S3 access mode                                      | **Public bucket.** URLs are stable, CDN-friendly. Matches "no auth" model.                          |
+| 5 | S3 access mode                                      | **Private bucket, presigned URLs.** The bucket is private; every screenshot/baseline/diff/thumbnail URL returned by the API is signed on the fly via `generate_presigned_url()` in `core/services/s3.py`, expiring after 24h (`expires_in=60*60*24`). Signing goes through the endpoint configured by `AWS_S3_PRESIGN_ENDPOINT_URL` (derived from `AWS_S3_ENDPOINT_URL` or the storage URL), so URLs work whether talking to MinIO in dev or AWS S3 in prod. This means URLs are neither stable nor CDN-friendly — they change per request and expire — trading cacheability for not exposing a public bucket under the "no auth" model. |
 | 6 | Admin UI                                            | **Django Admin + single shared `is_staff` user.** Public API stays no-auth; only `/admin/` requires the shared login. |
 | 7 | API versioning                                      | **Keep legacy URLs.** `POST /runs`, `POST /tests`, `PATCH /tests/:id`, `GET /baselines/:key` un-prefixed for CI client compatibility. SPA-internal routes can live under `/api/`. |
 | 8 | Data migration                                      | **No migration.** Rebuild starts empty. Old install runs in parallel until decommissioned.          |
@@ -35,7 +35,10 @@ Each of these is hardcoded in the Ruby code today. The rebuild exposes them as D
 | Default highlight colour| `ff0000` in `Test#default_values`              | `DEFAULT_HIGHLIGHT_COLOUR`  | `ff0000`|
 | Thumbnail width         | `300` in `Thumbnail#create_thumbnail`          | `THUMBNAIL_WIDTH`           | `300`   |
 | Thumbnail JPEG quality  | `90` in `Thumbnail#create_thumbnail`           | `THUMBNAIL_JPEG_QUALITY`    | `90`    |
-| Canvas background       | `white` in `Canvas`                            | `CANVAS_BACKGROUND`         | `white` |
+| ImageMagick command timeout | n/a (legacy has no timeout)                | `IMAGEMAGICK_TIMEOUT_SECONDS` | `60`  |
+| Celery `process_test` max attempts | n/a (legacy has no retry)           | `PROCESS_TEST_MAX_ATTEMPTS` | `3`     |
+
+**Not implemented / hardcoded:** a canvas background colour of `"white"` is hardcoded directly in `core/services/screenshot_comparison.py` (the `convert ... -background white ...` padding step). There is no `CANVAS_BACKGROUND` Django setting — it is not env-var-overridable.
 
 ---
 
@@ -76,7 +79,7 @@ Legacy thumbnails are keyed by `<key>_test_<id>_screenshot`. If the underlying s
 
 Legacy has `secret "5fc2f8d1..."` literal in `config/initializers/dragonfly.rb`.
 
-**Rebuild fix**: not reproduced. S3 URLs are either public (decision #5) or signed via the SDK using `S3_SECRET_ACCESS_KEY` from the environment.
+**Rebuild fix**: not reproduced. S3 URLs are always presigned via the SDK (decision #5) using credentials from the environment; no secret is ever hardcoded in source.
 
 ### `/tests/new` creates DB rows on every render
 

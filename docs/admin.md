@@ -52,11 +52,13 @@ Inferred from gaps in the public UI:
 
 ### `core/admin.py`
 
-Five `ModelAdmin` classes plus a small mixin that surfaces the rename-severs-baselines warning ([decisions.md](decisions.md) #4) on the `Project` and `Suite` change-form pages.
+Six `ModelAdmin` classes — `ProjectAdmin`, `SuiteAdmin`, `RunAdmin`, `TestAdmin`, `ProcessingQueueAdmin`, `BaselineAdmin` — plus a small mixin that surfaces the rename-severs-baselines warning ([decisions.md](decisions.md) #4) on the `Project` and `Suite` change-form pages.
 
 ```python
 # core/admin.py
+from django import forms
 from django.contrib import admin
+from django.db import models
 from django.utils.html import format_html
 
 from core.models import Baseline, Project, Run, Suite, Test
@@ -115,8 +117,18 @@ class RunAdmin(admin.ModelAdmin):
     test_count.short_description = 'Tests'
 
 
+class _URLFieldHttps(forms.URLField):
+    # Opt into Django 6 URLField behaviour: assume https when no scheme given.
+    # Silences RemovedInDjango60Warning without relying on undocumented
+    # formfield_overrides kwarg-forwarding behaviour.
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('assume_scheme', 'https')
+        super().__init__(*args, **kwargs)
+
+
 @admin.register(Test)
 class TestAdmin(admin.ModelAdmin):
+    formfield_overrides = {models.URLField: {'form_class': _URLFieldHttps}}
     list_display    = ('name', 'browser', 'size', 'passed', 'diff_pct', 'run_label', 'created_at')
     list_filter     = ('passed', 'browser', 'run__suite__project')
     search_fields   = ('name', 'key', 'run__suite__name', 'run__suite__project__name')
@@ -171,11 +183,51 @@ class BaselineAdmin(admin.ModelAdmin):
     has_screenshot.short_description = 'File present'
 ```
 
+### `ProcessingQueueAdmin` — the "stuck jobs" view
+
+`ProcessingQueueTest` (`core/models.py:216-224`) is a read-only proxy over `Test`, scoped to rows still waiting on or inside the diff pipeline. `ProcessingQueueAdmin` registers that proxy so an operator can see (and unstick) the queue without a database shell.
+
+```python
+@admin.register(ProcessingQueueTest)
+class ProcessingQueueAdmin(admin.ModelAdmin):
+    list_display    = (
+        'name', 'browser', 'size', 'status', 'process_attempts',
+        'processing_claim', 'run_label', 'waiting_since', 'created_at',
+    )
+    list_filter     = ('status', 'browser', 'run__suite__project')
+    search_fields   = ('name', 'run__suite__name', 'run__suite__project__name')
+    ordering        = ('created_at',)  # oldest first — front of the queue
+    actions         = ['restart_processing', 'discard_from_queue']
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.filter(status__in=[Test.STATUS_PENDING, Test.STATUS_PROCESSING])
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+```
+
+A few things worth calling out:
+
+- **List/action-only, by design.** `has_add_permission`, `has_change_permission`, and `has_delete_permission` all hard-return `False`. There's nothing to add or hand-edit on a queue row, and deletion only happens through the `discard_from_queue` action below (which also has to clean up the row's staged S3 upload — plain "Delete selected" wouldn't do that). This isn't a general-purpose Test editor; it's a dashboard for the queue plus two operator actions.
+- **`get_queryset` is the actual queue filter** — it restricts to `status__in=[STATUS_PENDING, STATUS_PROCESSING]`. Everything else (`list_display`, `search_fields`, oldest-first `ordering`) is there to make triaging that filtered list fast.
+- **`list_display` surfaces the fields an operator needs to decide whether a row is actually stuck**: `status` (pending vs. processing), `process_attempts` (how many times the pipeline has already tried), `processing_claim` (the optimistic-lock token — see [decisions.md](decisions.md) for how it prevents a restarted task from racing a still-running one), and `waiting_since` (a computed "how long has this been sitting here" column, formatted as `Ns` / `Nm` / `Nh Nm`).
+- **Two custom actions, no built-in bulk delete:**
+  - **`restart_processing`** — for rows stuck in `pending`/`processing` after a worker crash. For each selected test it checks the staged upload still exists in S3 (skipping — and warning about — any that don't, since those need a fresh CI run instead), bumps `processing_claim` so any zombie in-flight task can't clobber the restart, resets `process_attempts` to `0` and `status` to `pending`, then re-enqueues `process_test.delay(test.id, staging_key, test.processing_claim)`.
+  - **`discard_from_queue`** — permanently abandons selected rows: deletes their staged S3 upload (a 404 there is fine, just means nothing to clean up) and then the row itself. Uses a Django-style two-step confirmation page rather than acting immediately, rendered by `core/templates/admin/core/discard_from_queue_confirmation.html`. It deliberately skips Django's built-in `get_deleted_objects` cascade/permission check — that helper would evaluate `has_delete_permission` against this ModelAdmin and always report "no permission" — which is safe here because `Test` has no meaningful cascade (`Baseline.test` is `SET_NULL`).
+
 A few choices worth flagging:
 
 - **`slug`, `next_run_seq`, `key`, `diff`, `passed`, and every `FileField` are `readonly_fields`** — these are all computed, either by `Model.save()` overrides or by the diff pipeline. Letting a human edit them produces inconsistent state with no benefit.
 - **`Test`'s fieldsets group the editable diff parameters together** with a description that makes clear: editing them does *not* re-run the diff. This is the most common admin foot-gun ("I bumped fuzz_level, why is the test still failing?") — call it out at the form level, don't make the operator infer it.
 - **`has_screenshot` boolean column on `BaselineAdmin`** — surfaces orphan-UID rows where the FK is intact but the S3 object is gone. Same drift the comparison service logs about; making it visible in the admin lets an operator spot it without grepping logs.
+- **`TestAdmin.formfield_overrides` swaps in `_URLFieldHttps` for every `URLField`** — a thin `forms.URLField` subclass that defaults `assume_scheme` to `"https"`. Purely there to silence Django 6's `RemovedInDjango60Warning` on `source_url`; no behavioural change for admins filling in the form.
 
 `passed` is on the model (not `pass`) because `pass` is a Python keyword. The DRF serializer maps `passed` back to `"pass"` on the wire for CI client compatibility — see [data-model.md](data-model.md) and [api.md](api.md).
 
@@ -314,7 +366,7 @@ LOGIN_URL = '/admin/login/'
 
 - List / search / filter Projects, Suites, Runs, Tests, Baselines.
 - Create / edit / delete each.
-- Bulk delete (Django Admin has this built-in via the actions dropdown).
+- Bulk delete on the standard model admins (Django Admin's built-in "Delete selected" action, via the actions dropdown). The `ProcessingQueueTest` proxy view is the exception: it's list/action-only (no add/change/delete permissions) and instead exposes two purpose-built actions, `restart_processing` and `discard_from_queue` — see `ProcessingQueueAdmin` above.
 - Cascade delete (Project → Suites → Runs → Tests; Suite → Baselines) — handled by `on_delete=CASCADE` on the model FKs, not the admin.
 - Export to CSV/JSON if needed → add `django-import-export`. Defer until asked.
 

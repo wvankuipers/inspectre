@@ -11,6 +11,7 @@ The SPA is an **Angular** application served by nginx at port 4200 in the Docker
 | Accent | `#38bdf8` (sky-400) | Links, active states, Angular Material cyan palette |
 | Cards | `.inspectre-card` class | white, 10 px radius, subtle shadow |
 | Status chips | `.chip .chip-pass` / `.chip-fail` / `.chip-new` / `.chip-none` | Test result pills |
+| New baseline chip | `.chip-new-baseline` (component-scoped, `run-detail.component.scss`, not global) | Red/bold "New baseline" pill shown in `RunDetailComponent` when a test has no baseline yet |
 | Font | Roboto (bundled via Angular Material, not loaded from CDN) | All text |
 | Image skeleton | `#1e293b` with cyan shimmer sweep | Placeholder while images load |
 
@@ -26,6 +27,7 @@ Routes mirror the legacy URL structure. Standalone components are lazy-loaded.
 | `/projects` | `ProjectsListComponent` | Flattened table of projects + suites |
 | `/projects/:projectSlug/suites/:suiteSlug` | `SuiteDetailComponent` | Latest 5 runs + all baselines |
 | `/projects/:projectSlug/suites/:suiteSlug/runs/:seqId` | `RunDetailComponent` | Test table with thumbnails |
+| `/projects/:projectSlug/suites/:suiteSlug/tests/:key` | `TestDetailComponent` | Cross-run pass/fail history for one test |
 | `**` | — | Catch-all redirect → `/projects` |
 
 The `/admin/*` path is never handled by the Angular router — nginx routes those requests directly to the Django API container before they reach the SPA.
@@ -61,10 +63,10 @@ Route: `/projects/:projectSlug/suites/:suiteSlug/runs/:seqId`
 
 Loads via `GET /api/projects/:proj/suites/:suite/runs/:seq/`. Renders a test table with columns:
 
-- **Test** — name, browser, size; links to `source_url` if present
-- **Baseline** — 240×160 thumbnail
-- **Comparison** — 240×160 thumbnail
-- **Diff** — 240×160 thumbnail
+- **Test** — name, browser, size; test name links to the test-detail route (`/projects/:proj/suites/:suite/tests/:key`); a "New baseline" chip (`.chip-new-baseline`) is shown when `!t.has_baseline`
+- **Baseline** — 240×240 thumbnail
+- **Comparison** — 240×240 thumbnail
+- **Diff** — 240×240 thumbnail
 - **Result** — `X% difference` + pass/fail/new chip + "Set as baseline" button
 
 Thumbnails are lazy-loaded (`loading="lazy"`) with shimmer skeleton placeholders while loading. Clicking any thumbnail opens the `ImageViewerComponent` modal on that slot. Missing thumbnails show a `—` dash.
@@ -72,6 +74,12 @@ Thumbnails are lazy-loaded (`loading="lazy"`) with shimmer skeleton placeholders
 Filtering: a `SearchFieldComponent` filters by test name (debounced). A status chip filter (All / Pass / Fail / New) toggles inline. Both filters compose.
 
 "Set as baseline" calls `POST /api/tests/:id/set-baseline/`. On success the chip flips from fail to pass optimistically and the button disappears.
+
+### `TestDetailComponent`
+
+Route: `/projects/:projectSlug/suites/:suiteSlug/tests/:key`
+
+Loads via `GET /api/projects/:proj/suites/:suite/tests/:key/`, linked from the test name column in `RunDetailComponent`. Renders the cross-run pass/fail history for a single test as a table (columns: run, date, thumbnail, status), so a reviewer can see how one test has trended across runs without paging through each run individually.
 
 ## Core components
 
@@ -85,12 +93,7 @@ Top navigation bar (slate-900 background). Contains the Inspectre logo/wordmark 
 
 ### `BreadcrumbComponent`
 
-Renders a `>` separated breadcrumb trail computed from the current route params:
-- `/projects` → *(no breadcrumb)*
-- `/projects/:p/suites/:s` → `Projects > <project_name>`
-- `/projects/:p/suites/:s/runs/:seq` → `Projects > <project_name> > <suite_name>`
-
-Project and suite names are resolved from the API response of the current route.
+Dumb presentational component with a single `segments = input<BreadcrumbSegment[]>([])` input — it does not compute anything or resolve names itself. Callers (route components) build the `BreadcrumbSegment[]` array from the current route params and API response and pass it in. Renders the segments separated by `›`.
 
 ### `PageFooterComponent`
 
@@ -137,6 +140,8 @@ Located at `frontend/src/app/core/api/inspectre-api.service.ts`. All HTTP calls 
 | `projects()` | GET | `/api/projects/` |
 | `suite(proj, suite)` | GET | `/api/projects/:proj/suites/:suite/` |
 | `run(proj, suite, seq)` | GET | `/api/projects/:proj/suites/:suite/runs/:seq/` |
+| `testHistory(proj, suite, key)` | GET | `/api/projects/:proj/suites/:suite/tests/:key/` |
+| `testsBulk(ids)` | POST | `/api/tests/bulk/` |
 | `baseline(key)` | GET | `/api/baselines/:key/` |
 | `setBaseline(testId)` | POST | `/api/tests/:id/set-baseline/` |
 
@@ -156,6 +161,10 @@ Wraps every `HttpClient` request. On a non-2xx response it opens a `MatSnackBar`
 duration: 5000 ms
 panelClass: 'error-snack'
 ```
+
+### `LoadingInterceptor`
+
+Wraps every `HttpClient` request. Calls `LoadingService.increment()` before the request and `LoadingService.decrement()` (via `finalize`) when it completes, errors, or is cancelled. `LoadingService` exposes a `loading: Signal<boolean>` (`count() > 0`) that components can use to show a global loading indicator. Wired alongside `ErrorInterceptor` in `app.config.ts`.
 
 ## Image loading skeletons
 
@@ -193,6 +202,7 @@ export interface SuiteDetail {
   id: number;
   name: string;
   slug: string;
+  project_name: string;
   latest_runs: RunSummary[];
   baselines: Baseline[];
 }
@@ -203,13 +213,14 @@ export interface RunSummary {
   created_at: string;   // ISO-8601
   passing: number;
   failing: number;
-  new_baselines: number;
+  unbaselined: number;
 }
 
 export interface RunDetail {
   id: number;
   sequential_id: number;
   created_at: string;
+  project_name: string;
   tests: TestRow[];
 }
 
@@ -218,14 +229,16 @@ export interface TestRow {
   name: string;
   browser: string;
   size: string;
-  source_url: string | null;
+  source_url: string;   // empty string when not set, never null
+  status: string;
   diff: number;
   passed: boolean;
-  is_new_baseline: boolean;
   key: string;
+  is_baseline_source: boolean; // this test is the producer of the current Baseline for its key
+  has_baseline: boolean;       // drives the "New baseline" chip
   fuzz_level: string;
   highlight_colour: string;
-  crop_area: string | null;
+  crop_area: string;    // empty string when not set, never null
   screenshot_url: string | null;
   baseline_url: string | null;
   diff_url: string | null;
@@ -233,6 +246,27 @@ export interface TestRow {
   baseline_thumb_url: string | null;
   diff_thumb_url: string | null;
   created_at: string;
+}
+
+export interface TestHistoryEntry {
+  id: number;
+  run_id: number;
+  run_sequential_id: number;
+  run_created_at: string;
+  original_passed: boolean | null;
+  is_new_baseline: boolean | null;
+  status: string;
+  screenshot_thumb_url: string | null;
+}
+
+export interface TestHistory {
+  key: string;
+  name: string;
+  browser: string;
+  size: string;
+  project_name: string;
+  suite_slug: string;
+  runs: TestHistoryEntry[];
 }
 
 export interface Baseline {
@@ -252,12 +286,10 @@ export interface Baseline {
 ```typescript
 export const appConfig: ApplicationConfig = {
   providers: [
+    provideBrowserGlobalErrorListeners(),
     provideZonelessChangeDetection(),
     provideRouter(routes),
-    provideHttpClient(
-      withFetch(),
-      withInterceptors([errorInterceptor]),
-    ),
+    provideHttpClient(withFetch(), withInterceptors([errorInterceptor, loadingInterceptor])),
     provideAnimationsAsync(),
   ],
 };

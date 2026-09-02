@@ -81,15 +81,28 @@ All runtime config is passed via `.env` (dev) or environment variables (prod).
 | `S3_PUBLIC_BASE_URL`         | no       | —                                 | Browser-reachable origin used to derive the presigning endpoint (e.g. `http://localhost:9000/inspectre-screenshots` in dev, so presigned URLs are signed against `http://localhost:9000` instead of the container-internal MinIO endpoint; omit in prod where the real S3 endpoint is already browser-reachable). SigV4 signs the request's `Host` header (`X-Amz-SignedHeaders=host`), so setting this to a CDN origin does not by itself make presigned URLs work through that CDN — the CDN must forward requests to S3 preserving the exact viewer host and query string, or you need CloudFront signed URLs/cookies instead of S3 presigning |
 | `ADMIN_USERNAME`             | no       | `admin`                           | Django admin username                                                                         |
 | `ADMIN_PASSWORD`             | no       | —                                 | Django admin password; if unset, `ensure_admin_user` skips bootstrap (no admin account created) |
+| `AWS_REGION`                 | no       | `us-east-1`                       | AWS region used for RDS IAM token signing (`core/db_backends/iam_postgres/base.py`) and ElastiCache SigV4 signing (`core/cache_backends/iam_credential_provider.py`) when `AWS_IAM_AUTH_ENABLED=1`. Must be set to the region the RDS/ElastiCache resources actually live in, or IAM auth token generation will fail |
 | `IMAGE_DIFF_THRESHOLD`       | no       | `0.1`                             | % diff to count as failure                                                                    |
 | `RUN_RETENTION_PER_SUITE`    | no       | `5`                               | Max runs kept per suite (older pruned)                                                        |
 | `DEFAULT_FUZZ_LEVEL`         | no       | `30%`                             | ImageMagick fuzz level                                                                        |
+| `DEFAULT_HIGHLIGHT_COLOUR`   | no       | `ff0000`                          | Hex colour used to highlight diffs                                                             |
+| `PROCESS_TEST_MAX_ATTEMPTS`  | no       | `3`                               | Max retry attempts for the async `process_test` Celery task before it's marked failed         |
 | `IMAGEMAGICK_TIMEOUT_SECONDS`| no       | `60`                              | Per-command timeout for ImageMagick subprocesses                                              |
-| `GUNICORN_WORKERS`           | no       | `3`                               | Number of gunicorn worker processes                                                           |
-| `REDIS_URL`                  | no       | `redis://localhost:6379/0`        | Valkey/Redis broker URL; use `redis://valkey:6379/0` in Docker Compose                       |
+| `GUNICORN_WORKERS`\*         | no       | `3`                               | Number of gunicorn worker processes                                                           |
+| `REDIS_URL`                  | no       | `redis://localhost:6379/0`        | Valkey/Redis broker URL. **Not set in `deploy/.env.example`** and not overridden by `deploy/docker-compose.yml` (the `api`/`worker` services only set `env_file: ../.env`) — following this doc's own setup steps leaves it at the `redis://localhost:6379/0` default, which is unreachable from inside a container. Add `REDIS_URL=redis://valkey:6379/0` to `.env` manually for Docker Compose to work                       |
 | `CELERY_WORKER_CONCURRENCY`  | no       | `2`                               | Parallel ImageMagick pipelines per worker container                                           |
+| `CELERY_TASK_ALWAYS_EAGER`   | no       | `False`                           | Celery/test tuning knob — runs tasks synchronously without a broker when `True` (used in tests) |
+| `CELERY_TASK_EAGER_PROPAGATES`| no      | `False`                           | Celery/test tuning knob — re-raises task exceptions synchronously when eager                  |
+| `CELERY_TASK_ACKS_LATE`      | no       | `True`                            | Celery tuning knob — ack tasks after execution rather than before                              |
+| `CELERY_WORKER_PREFETCH_MULTIPLIER`| no | `1`                               | Celery tuning knob — number of tasks a worker prefetches per poll                              |
+| `CELERY_TASK_REJECT_ON_WORKER_LOST`| no | `True`                           | Celery tuning knob — requeue a task if its worker process dies mid-execution                   |
 | `API_UPSTREAM`               | no       | `http://api:8000`                 | SPA nginx's backend proxy target. Override when `spa` is the only publicly reachable container (e.g. Kubernetes) and `api` lives at a different address — see "Deploying with a separate public/private split" below. Read only by the `spa` container's nginx entrypoint — **not** part of the `.env`-driven config above; the `spa` service in `deploy/docker-compose.yml` has no `env_file`/`environment` block, so this must be set directly as a container env var on `spa` (e.g. via a docker-compose override's `environment:`) or as a pod env var in Kubernetes |
 | `RESOLVER_ADDRESS`           | no       | `127.0.0.11`                      | DNS resolver nginx uses to re-resolve `API_UPSTREAM`'s hostname at request time. `127.0.0.11` is Docker Compose's embedded DNS; override to match the target platform's DNS server. Same caveat as `API_UPSTREAM`: set as a container/pod env var on `spa` specifically, not via `.env` |
+
+\* `GUNICORN_WORKERS` is not a Django setting — it's read directly by the shell
+entrypoint (`backend/scripts/start.sh`, `--workers "${GUNICORN_WORKERS:-3}"`)
+rather than via `env.int()` in `settings.py` like the other variables in this
+table.
 
 When `AWS_IAM_AUTH_ENABLED=1`, Postgres, S3 and the broker are reached through IAM
 rather than the credentials above, and a separate set of variables applies

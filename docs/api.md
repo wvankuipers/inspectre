@@ -4,21 +4,43 @@ There is **no authentication** on any endpoint. CSRF protection is not required 
 
 ## Route table
 
-| Method  | Path                                                  | Controller#action     | Auth | CSRF | Notes |
-| ------- | ----------------------------------------------------- | --------------------- | ---- | ---- | ----- |
-| GET     | `/`                                                   | redirect → `/projects`| —    | —    |       |
-| GET     | `/projects`                                           | `projects#index`      | none | n/a  | HTML only |
-| GET     | `/projects/:project_slug/suites/:slug`                | `suites#show`         | none | n/a  | HTML only |
-| GET     | `/projects/:project_slug/suites/:suite_slug/runs/:sequential_id` | `runs#show` | none | exempt | HTML or JSON |
-| GET     | `/runs/new`                                           | `runs#new`            | none | exempt | Tiny HTML form |
-| POST    | `/runs`                                               | `runs#create`         | none | exempt | JSON only |
-| GET     | `/tests/new`                                          | `tests#new`           | none | exempt | Tiny HTML form (auto-creates a "Test Project / Test Suite / run") |
-| POST    | `/tests`                                              | `tests#create`        | none | exempt | JSON only |
-| PATCH/PUT | `/tests/:id`                                        | `tests#update`        | none | exempt | "Set as baseline" — HTML redirect or AJAX |
-| GET     | `/baselines/:key`                                     | `baselines#show`      | none | n/a  | PNG (default) or JSON |
-| any     | `/admin/*`                                            | Django admin          | none | n/a  | Full CRUD UI |
-| any     | `/media/:job/:name`                                   | Dragonfly middleware  | none | n/a  | Image fetch (signed Dragonfly URLs); only used when datastore is local files |
-| GET     | `/healthz/`                                           | `health#healthz`      | none | n/a  | Dependency-free health check for Kubernetes probes; not part of either the SPA or legacy Client API surface |
+This is the current Django/DRF backend. All routes are unauthenticated (`AllowAny`); there is no session/CSRF layer on any of them.
+
+> **Historical note:** an earlier Rails-era (and, in places, purely aspirational) version of this doc described HTML routes — `GET /`, `GET /projects`, `GET /projects/:project_slug/suites/:slug`, `GET /projects/:project_slug/suites/:suite_slug/runs/:sequential_id` (HTML), `GET /runs/new`, `GET /tests/new` — and a Dragonfly-backed `/media/:job/:name` image route. None of these exist in the current backend. The SPA is served as a static Angular bundle by nginx and talks to the API purely over JSON under `/api/*`; there are no server-rendered HTML pages. Screenshots are served from S3/MinIO via presigned URLs, not a Dragonfly middleware route.
+
+### Legacy (Client API) routes — frozen, un-prefixed
+
+Defined in `backend/core/urls/legacy.py`. These exist to keep existing CI clients working unchanged; see [decisions.md](decisions.md) #7.
+
+| Method    | Path                  | View                | Notes |
+| --------- | --------------------- | ------------------- | ----- |
+| POST      | `/runs`                | `runs_create`       | JSON body in response; form-encoded/multipart request |
+| POST      | `/tests`               | `tests_create`      | multipart/form-data; enqueues async diff |
+| GET       | `/tests/:id/status`    | `tests_detail`      | Poll for async completion |
+| PATCH/PUT | `/tests/:id`           | `tests_update`      | "Set as baseline"; form-encoded |
+| GET       | `/baselines/:key.png`  | `baseline_png`      | Streams the PNG binary |
+| GET       | `/baselines/:key.json` | `baseline_json`     | Baseline record as JSON |
+
+### SPA endpoints — `/api/*`, free to evolve
+
+Defined in `backend/core/urls/spa.py`. Consumed only by the Angular frontend; not part of the frozen Client API contract.
+
+| Method | Path                                                                       | View            | Notes |
+| ------ | --------------------------------------------------------------------------- | --------------- | ----- |
+| GET    | `/api/projects/`                                                            | `projects_list` | Flattened project+suite rows |
+| GET    | `/api/projects/<slug>/suites/<slug>/`                                       | `suite_detail`  | Latest 5 runs + baselines |
+| GET    | `/api/projects/<slug>/suites/<slug>/runs/<seq>/`                            | `run_detail`    | Run + test table |
+| GET    | `/api/projects/<slug>/suites/<slug>/tests/<key>/`                          | `test_history`  | Cross-run pass/fail history for one test key |
+| POST   | `/api/tests/bulk/`                                                          | `tests_bulk`    | Fetch fresh `TestRow` data for a set of ids (polling) |
+| POST   | `/api/tests/<id>/set-baseline/`                                             | `set_baseline`  | JSON, empty body |
+| GET    | `/api/baselines/<key>/`                                                     | `baseline_detail` | Baseline JSON metadata |
+
+### Infrastructure and admin
+
+| Method | Path        | View            | Notes |
+| ------ | ----------- | --------------- | ----- |
+| any    | `/admin/*`  | Django admin    | Full CRUD UI; session-authenticated |
+| GET    | `/healthz/` | `health.healthz` | Dependency-free health check for Kubernetes probes; not part of either the SPA or legacy Client API surface |
 
 ## Endpoints in detail
 
@@ -26,7 +48,7 @@ There is **no authentication** on any endpoint. CSRF protection is not required 
 
 Creates (or reuses) a project + suite, then creates a fresh run.
 
-Request (form-encoded or JSON; `wrap_parameters` is on for JSON):
+Request (form-encoded or multipart; the view only declares `FormParser`/`MultiPartParser`, no JSON parser):
 
 ```http
 POST /runs
@@ -35,7 +57,9 @@ Content-Type: application/x-www-form-urlencoded
 project=Acme%20Site&suite=Desktop
 ```
 
-Behaviour: `Project.find_or_create_by(name:)` then `suite.find_or_create_by(name:)` then `suite.runs.create`. Note this is `find_or_create_by`, so submitting "Acme Site " (trailing space) creates a different project. There is no slug-based lookup at ingest.
+Behaviour: `Project.objects.get_or_create(name=...)` then `Suite.objects.get_or_create(project=..., name=...)` then `Run.objects.create(suite=...)`. The view strips leading/trailing whitespace from `project` and `suite` before the lookup (`project_name = (request.data.get("project") or "").strip()`), so submitting `"Acme Site "` (trailing space) resolves to the same project as `"Acme Site"` — it does **not** create a different project. There is no slug-based lookup at ingest.
+
+If `project` or `suite` is missing (or blank after stripping), the view returns `400` with a field-keyed error body, e.g. `{"project": "is required"}` and/or `{"suite": "is required"}`.
 
 Response (200 OK, application/json):
 
@@ -113,8 +137,13 @@ Response (200 OK — pending, image fields null):
 Once the worker completes, `GET /tests/:id/status` returns the same shape with all fields populated and `status: "done"`.
 
 Errors:
-- Missing/invalid `run_id` → 404.
+- Missing `run_id` (or missing `name`/`browser`/`size`) → 400, via `validate_test_params` (`backend/core/services/validation.py`).
+- `run_id` present but no matching `Run` → 404.
 - Missing `screenshot` → 400.
+- Malformed `fuzz_level`, `highlight_colour`, or `crop_area` → 400. Each is validated against a strict, fully-anchored regex before it can reach the ImageMagick command line — this is shell-injection protection, since the legacy app used to interpolate these values directly into a shell command (`backend/core/services/validation.py`):
+  - `fuzz_level` must match `\d+(\.\d+)?%` and be `<= 100%` (default `"30%"`).
+  - `highlight_colour` must match `[0-9a-fA-F]{6}` (default `"ff0000"`, no leading `#`).
+  - `crop_area` must match `\d+x\d+\+\d+\+\d+` when non-empty.
 - Worker pipeline failure → `status` set to `"failed"` (visible via poll endpoint).
 
 ### `GET /tests/:id/status`
@@ -159,7 +188,7 @@ test[baseline]=true
 ```
 
 Behaviour:
-- If `test[baseline] == 'true'`, promotes the test: sets `passed = True`, saves, and upserts the Baseline row with this test's screenshot.
+- If `request.data.get("test[baseline]") == "true"`, promotes the test: sets `passed = True`, saves, and upserts the Baseline row with this test's screenshot.
 - Any other value is a no-op; the test record is returned unchanged.
 
 Note: the view only acts on `test[baseline]=true`. The SPA uses `POST /api/tests/<id>/set-baseline/` instead (same underlying logic).
@@ -173,37 +202,49 @@ Public read of a baseline by its key. The extension selects the response format:
 
 404 if no Baseline matches the key.
 
-### `GET /projects/:project_slug/suites/:suite_slug/runs/:sequential_id`
-
-The Run page. Supports HTML (default) and JSON.
-
-JSON response includes the run plus its tests:
-
-```json
-{
-  "id": 42,
-  "suite_id": 7,
-  "sequential_id": 12,
-  "created_at": "...",
-  "updated_at": "...",
-  "url": "/projects/acme-site/suites/desktop/runs/12",
-  "tests": [ { /* full test record */ }, ... ]
-}
-```
-
-HTML response respects query-string filters: `?name=…`, `?browser=…`, `?size=…`, `?status=pass|fail`. See [`TestFilters`](data-model.md#in-memory--non-persisted-classes).
-
-### `GET /runs/new` and `GET /tests/new`
-
-Tiny built-in forms for hand-testing. **`/tests/new` has a side-effect**: every render of the page calls `Project.find_or_create_by(name: 'Test Project')`, `suite.find_or_create_by(name: 'Test Suite')`, and `suite.runs.create`. So just opening the form creates a new run. (Worth dropping in the rebuild.)
+> **Historical note:** an earlier version of this doc described `GET /projects/:project_slug/suites/:suite_slug/runs/:sequential_id` as an HTML-or-JSON Rails route, plus `GET /runs/new` / `GET /tests/new` hand-testing forms and a Dragonfly-backed `/media/:job/:name` image route. None of these exist in the current Django backend — there are no server-rendered HTML pages, and screenshots are served from S3/MinIO. The current equivalent of the run page is the SPA endpoint `GET /api/projects/<slug>/suites/<slug>/runs/<seq>/` (below), which returns JSON only.
 
 ### `/admin/*`
 
 Full CRUD over Project / Suite / Run / Test / Baseline. See [admin.md](admin.md).
 
-### Dragonfly `/media/:job/:name`
+### SPA endpoints (`/api/*`)
 
-When the datastore is local files, screenshots are served via Dragonfly's middleware at `/media/<signed_job>/<filename>`. URLs are generated by `screenshot.url` calls. With the S3 datastore, screenshot URLs point directly at S3.
+These back the Angular frontend and are free to evolve — see the [route table](#spa-endpoints--api-free-to-evolve) above for the full list. Two are otherwise undocumented:
+
+- **`GET /api/projects/<slug>/suites/<slug>/tests/<key>/`** (`test_history`) — returns the cross-run pass/fail history for a single test key within a suite, newest run first. 404 if no `Test` rows match. Response shape (via `serialize_test_history`):
+
+  ```json
+  {
+    "key": "acme-site-desktop-homepage-chrome-1024",
+    "name": "Homepage",
+    "browser": "Chrome",
+    "size": "1024",
+    "project_name": "Acme Site",
+    "suite_slug": "desktop",
+    "runs": [
+      {
+        "id": 1234,
+        "run_id": 42,
+        "run_sequential_id": 12,
+        "run_created_at": "...",
+        "original_passed": false,
+        "is_new_baseline": true,
+        "status": "done",
+        "screenshot_thumb_url": "https://..."
+      }
+    ]
+  }
+  ```
+
+  Each entry in `runs` is a `TestHistoryEntrySerializer` row. It deliberately serializes `original_passed` — the tamper-proof snapshot of the test's first-ever pass/fail result — rather than the mutable `passed` field, since baseline promotion can flip `passed` after the fact and the history view is meant to show what actually happened at each run.
+
+- **`POST /api/tests/bulk/`** (`tests_bulk`) — fetches fresh `TestRow` data for a set of ids in one request, used by the SPA's polling loop while tests are still `pending`/`processing`. Request body: `{"ids": [1234, 1235, ...]}`. Behaviour (`backend/core/views/api.py`):
+  - Non-list `ids`, or a missing key, is treated as `[]`.
+  - Non-integer entries (including booleans, since `bool` is a subclass of `int` in Python) are silently dropped rather than causing a 400.
+  - Duplicate ids are collapsed.
+  - The (deduplicated) id list is truncated to `MAX_BULK_TEST_IDS = 1000` — a large or malicious id list is silently capped, not rejected.
+  - Response is a list of `TestRowSerializer` rows (via `serialize_tests_bulk`) for whichever ids matched an existing `Test`; unknown ids are simply absent from the response, not reported as errors.
 
 ## What clients are expected to do
 
@@ -258,6 +299,8 @@ urlpatterns = [
     path('projects/',                                          v.projects_list),
     path('projects/<slug:project>/suites/<slug:suite>/',       v.suite_detail),
     path('projects/<slug:project>/suites/<slug:suite>/runs/<int:seq>/', v.run_detail),
+    path('projects/<slug:project>/suites/<slug:suite>/tests/<str:key>/', v.test_history),  # GET, cross-run history
+    path('tests/bulk/',                                        v.tests_bulk),  # POST, JSON
     path('tests/<int:pk>/set-baseline/',                       v.set_baseline),  # POST, JSON
     path('baselines/<str:key>/',                               v.baseline_detail),  # JSON
 ]
@@ -271,6 +314,7 @@ from core.views import legacy as v
 urlpatterns = [
     path('runs',                  v.runs_create),         # POST
     path('tests',                 v.tests_create),        # POST
+    path('tests/<int:pk>/status', v.tests_detail),        # GET — poll for async status
     path('tests/<int:pk>',        v.tests_update),        # PATCH/PUT, form-encoded
     re_path(r'^baselines/(?P<key>[a-z0-9-]+)\.png$', v.baseline_png),
     re_path(r'^baselines/(?P<key>[a-z0-9-]+)\.json$', v.baseline_json),
@@ -351,7 +395,7 @@ def tests_detail(request, pk):
 def tests_update(request, pk):
     """PATCH /tests/:id with test[baseline]=true — 'set as baseline' from the UI."""
     test = get_object_or_404(Test, pk=pk)
-    if request.data.get('baseline') == 'true':
+    if request.data.get('test[baseline]') == 'true':
         _set_as_baseline(test)
     return Response(LegacyTestSerializer(test).data)
 
@@ -495,7 +539,7 @@ class LegacyTestSerializer(serializers.ModelSerializer):
             'id', 'name', 'browser', 'size', 'run_id',
             'diff', 'screenshot_uid', 'screenshot_baseline_uid', 'screenshot_diff_uid',
             'key', 'pass_field', 'source_url', 'fuzz_level', 'highlight_colour', 'crop_area',
-            'created_at', 'updated_at', 'url',
+            'created_at', 'updated_at', 'url', 'status',
         ]
 
     def to_representation(self, instance):
@@ -548,8 +592,18 @@ class _ThumbField(serializers.SerializerMethodField):
 
 
 class TestRowSerializer(serializers.ModelSerializer):
-    """One row in the run-detail table: status, three thumbnails, three full-size URLs."""
+    """One row in the run-detail table: status, three thumbnails, three full-size URLs.
+
+    `is_baseline_source` is True when this test is the producer of the current
+    Baseline for its key. `has_baseline` means "does any Baseline exist for this
+    key at all" — it drives the SPA's "New baseline" chip and stays true even
+    after supersession by a newer baseline. Both are resolved via context
+    populated by the caller (`RunDetailSerializer`, `serialize_tests_bulk`) to
+    avoid N+1 queries.
+    """
     passed = serializers.BooleanField()
+    is_baseline_source    = serializers.SerializerMethodField()
+    has_baseline           = serializers.SerializerMethodField()
     screenshot_url        = _ThumbField('screenshot')
     baseline_url          = _ThumbField('screenshot_baseline')
     diff_url              = _ThumbField('screenshot_diff')
@@ -561,31 +615,33 @@ class TestRowSerializer(serializers.ModelSerializer):
         model = Test
         fields = [
             'id', 'name', 'browser', 'size', 'source_url',
-            'diff', 'passed', 'key',
+            'diff', 'passed', 'key', 'is_baseline_source', 'has_baseline',
             'fuzz_level', 'highlight_colour', 'crop_area',
             'screenshot_url', 'baseline_url', 'diff_url',
             'screenshot_thumb_url', 'baseline_thumb_url', 'diff_thumb_url',
-            'created_at',
+            'created_at', 'status',
         ]
 
 
 class RunSummarySerializer(serializers.ModelSerializer):
     """One row in the suite page's `Latest runs` table — counts only, no test list."""
-    passing = serializers.IntegerField(read_only=True)
-    failing = serializers.IntegerField(read_only=True)
+    passing     = serializers.IntegerField(read_only=True)
+    failing     = serializers.IntegerField(read_only=True)
+    unbaselined = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Run
-        fields = ['id', 'sequential_id', 'created_at', 'passing', 'failing']
+        fields = ['id', 'sequential_id', 'created_at', 'passing', 'failing', 'unbaselined']
 
 
 class RunDetailSerializer(serializers.ModelSerializer):
     """Run page payload: everything needed to render the test table."""
+    project_name = serializers.SerializerMethodField()
     tests = TestRowSerializer(many=True, read_only=True)
 
     class Meta:
         model = Run
-        fields = ['id', 'sequential_id', 'created_at', 'tests']
+        fields = ['id', 'sequential_id', 'created_at', 'project_name', 'tests']
 
 
 class BaselineSerializer(serializers.ModelSerializer):
@@ -600,17 +656,72 @@ class BaselineSerializer(serializers.ModelSerializer):
 
 class SuiteDetailSerializer(serializers.ModelSerializer):
     """Suite page payload: latest 5 runs (summaries) + all baselines."""
+    project_name = serializers.SerializerMethodField()
     latest_runs = serializers.SerializerMethodField()
     baselines   = BaselineSerializer(many=True, read_only=True)
 
     class Meta:
         model = Suite
-        fields = ['id', 'name', 'slug', 'latest_runs', 'baselines']
+        fields = ['id', 'name', 'slug', 'project_name', 'latest_runs', 'baselines']
+
+    def get_project_name(self, obj):
+        return obj.project.name
 
     def get_latest_runs(self, obj):
         # Hardcoded 5 to match the run-retention default; the SPA never sees more.
         runs = obj.runs.all()[:5]
         return RunSummarySerializer(runs, many=True).data
+
+
+class TestHistoryEntrySerializer(serializers.ModelSerializer):
+    """One row in a test's cross-run history: the immutable `original_passed`
+    result, not the mutable `passed` field (which baseline promotion can flip).
+    """
+    run_sequential_id   = serializers.SerializerMethodField()
+    run_created_at       = serializers.SerializerMethodField()
+    screenshot_thumb_url = _ThumbField('screenshot_thumb')
+
+    class Meta:
+        model = Test
+        fields = [
+            'id', 'run_id', 'run_sequential_id', 'run_created_at',
+            'original_passed', 'is_new_baseline', 'status', 'screenshot_thumb_url',
+        ]
+
+
+def serialize_test_history(tests, key):
+    """Serialize one test key's ordered history of Test rows (newest run first).
+
+    Backs `GET /api/projects/<slug>/suites/<slug>/tests/<key>/`.
+    """
+    first = tests[0]
+    return {
+        'key': key,
+        'name': first.name,
+        'browser': first.browser,
+        'size': first.size,
+        'project_name': first.run.suite.project.name,
+        'suite_slug': first.run.suite.slug,
+        'runs': TestHistoryEntrySerializer(tests, many=True).data,
+    }
+
+
+def serialize_tests_bulk(tests):
+    """Serialize an arbitrary set of Test rows (may span multiple suites/runs).
+
+    Backs `POST /api/tests/bulk/`. Mirrors `RunDetailSerializer`'s baseline-source
+    resolution, but grouped per suite since the input isn't guaranteed to be one suite.
+    """
+    tests = list(tests)
+    suite_ids = {t.run.suite_id for t in tests}
+    baseline_source_ids = {
+        b.test_id for b in Baseline.objects.filter(suite_id__in=suite_ids, test_id__isnull=False)
+    }
+    baselined_keys = {b.key for b in Baseline.objects.filter(suite_id__in=suite_ids)}
+    return TestRowSerializer(
+        tests, many=True,
+        context={'baseline_source_ids': baseline_source_ids, 'baselined_keys': baselined_keys},
+    ).data
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -647,7 +758,7 @@ Three pieces:
 2. **DRF field is `pass_field` with `source='passed'`** so it reads from the model.
 3. **`to_representation` renames `pass_field` → `"pass"`** on the way out, so clients see the legacy key.
 
-Inbound traffic doesn't need the reverse mapping: legacy CI clients don't post `"pass"` (they only post crop/fuzz/colour parameters), and "set as baseline" reads `request.data.get('baseline')`, not `"pass"`. The mapping is one-way: model → wire.
+Inbound traffic doesn't need the reverse mapping: legacy CI clients don't post `"pass"` (they only post crop/fuzz/colour parameters), and "set as baseline" reads `request.data.get('test[baseline]')`, not `"pass"`. The mapping is one-way: model → wire.
 
 ### Test surface
 
@@ -669,5 +780,5 @@ Not in scope for the rebuild docs themselves; flagged here so it doesn't get los
 
 ## CSRF, CORS, and content-types
 
-- Today: CSRF is per-form, the API endpoints opt out, JSON wrap_parameters is on. No CORS config (browser-side AJAX is same-origin).
+- Today: there is no session authentication on any endpoint, so DRF never enforces CSRF here. The legacy views only declare `FormParser`/`MultiPartParser` (no JSON parser) — clients must post form-encoded or multipart bodies, not `application/json`. No CORS config (browser-side AJAX is same-origin, since the SPA is served by the same nginx that proxies to the API).
 - Rebuild: with a separate Angular frontend on a different origin/port, CORS becomes mandatory. Configure `django-cors-headers` to allow the SPA origin.

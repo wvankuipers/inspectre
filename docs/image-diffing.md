@@ -130,6 +130,13 @@ Keep the algorithm identical. The diff pipeline lives in three small modules in 
 - `canvas.py` — computes the shared canvas size for two geometries.
 - `screenshot_comparison.py` — orchestrates crop → baseline lookup → pad → compare → persist.
 
+### Settings used by this pipeline
+
+- `IMAGEMAGICK_TIMEOUT_SECONDS` (default `60`) — passed as `timeout=` to every `subprocess.run()` call in `_crop_in_place` and `_compare`; a `subprocess.TimeoutExpired` is converted to an `ImageDiffError`. Set via `backend/inspectre/settings.py:144`.
+- `PROCESS_TEST_MAX_ATTEMPTS` (default `3`) — the cap `process_test` (`backend/core/tasks.py`) checks `test.process_attempts` against before running the pipeline; exceeding it marks the test `STATUS_FAILED` without reprocessing. Set via `backend/inspectre/settings.py:129`.
+
+**Note:** `DEFAULT_FUZZ_LEVEL` and `DEFAULT_HIGHLIGHT_COLOUR` also exist as settings (`backend/inspectre/settings.py:125-126`, defaulting to `"30%"` / `"ff0000"`) but nothing in the codebase currently reads them — they are dead configuration. The actual defaults used at runtime come from two separate, unrelated places: the `Test.fuzz_level`/`Test.highlight_colour` model field defaults (`backend/core/models.py:118-119`) and the fallback literals inside `validate_test_params` (`backend/core/services/validation.py:38-39`). Don't assume changing the settings has any effect.
+
 ### `core/services/image_geometry.py`
 
 ```python
@@ -192,39 +199,71 @@ class Canvas:
 
 ```python
 import re
+
 from rest_framework.exceptions import ValidationError
 
-# Anchored — and remember to .fullmatch(), not .match() — so a payload like
-# "30%; rm -rf /" can't slip past the prefix check.
-_FUZZ_RE      = re.compile(r'\d+(\.\d+)?%')
-_COLOUR_RE    = re.compile(r'[0-9a-fA-F]{6}')
-_CROP_RE      = re.compile(r'\d+x\d+\+\d+\+\d+')
+# Anchored — `.fullmatch()`, not `.match()` — so payloads like "30%; rm -rf /"
+# cannot slip past a prefix check.
+_FUZZ_RE = re.compile(r"\d+(\.\d+)?%")
+_COLOUR_RE = re.compile(r"[0-9a-fA-F]{6}")
+_CROP_RE = re.compile(r"\d+x\d+\+\d+\+\d+")
 
 
 def validate_test_params(data):
-    """Sanitize POST /tests params before they reach the shell. Raises 400 on bad input."""
-    fuzz   = data.get('fuzz_level')      or '30%'
-    colour = data.get('highlight_colour') or 'ff0000'
-    crop   = data.get('crop_area')
+    """Return a sanitized dict; raise DRF ValidationError → 400 on bad input."""
+    errors: dict[str, str] = {}
 
-    if not _FUZZ_RE.fullmatch(fuzz):
-        raise ValidationError({'fuzz_level': 'must match /^\\d+(\\.\\d+)?%$/'})
-    if not _COLOUR_RE.fullmatch(colour):
-        raise ValidationError({'highlight_colour': 'must be a 6-char hex string, no leading #'})
-    if crop and not _CROP_RE.fullmatch(crop):
-        raise ValidationError({'crop_area': 'must match /^\\d+x\\d+\\+\\d+\\+\\d+$/'})
+    run_id = data.get("run_id")
+    name = data.get("name")
+    browser = data.get("browser")
+    size = data.get("size")
+
+    if not run_id:
+        errors["run_id"] = "is required"
+    if not name:
+        errors["name"] = "is required"
+    if not browser:
+        errors["browser"] = "is required"
+    if not size:
+        errors["size"] = "is required"
+
+    fuzz = data.get("fuzz_level") or "30%"
+    colour = data.get("highlight_colour") or "ff0000"
+    crop = data.get("crop_area") or ""
+
+    if not isinstance(fuzz, str):
+        errors["fuzz_level"] = "must be a string"
+    elif not _FUZZ_RE.fullmatch(fuzz):
+        errors["fuzz_level"] = r"must match /^\d+(\.\d+)?%$/"
+    elif float(fuzz[:-1]) > 100:
+        errors["fuzz_level"] = "must be between 0 and 100%"
+
+    if not isinstance(colour, str):
+        errors["highlight_colour"] = "must be a string"
+    elif not _COLOUR_RE.fullmatch(colour):
+        errors["highlight_colour"] = "must be a 6-char hex string, no leading #"
+
+    if not isinstance(crop, str):
+        errors["crop_area"] = "must be a string"
+    elif crop and not _CROP_RE.fullmatch(crop):
+        errors["crop_area"] = r"must match /^\d+x\d+\+\d+\+\d+$/"
+
+    if errors:
+        raise ValidationError(errors)
 
     return {
-        'run_id':           data['run_id'],
-        'name':             data['name'],
-        'browser':          data['browser'],
-        'size':             data['size'],
-        'source_url':       data.get('source_url'),
-        'fuzz_level':       fuzz,
-        'highlight_colour': colour,
-        'crop_area':        crop,
+        "run_id": run_id,
+        "name": name,
+        "browser": browser,
+        "size": size,
+        "source_url": data.get("source_url") or "",
+        "fuzz_level": fuzz,
+        "highlight_colour": colour,
+        "crop_area": crop,
     }
 ```
+
+Fields default `fuzz_level`/`highlight_colour` to hardcoded literals (`30%` / `ff0000`) when absent, and `crop_area` to `""` (not `None`) so the shell-quoting/regex code downstream never has to special-case a missing crop. `run_id`, `name`, `browser`, and `size` are required and rejected with a 400 if missing; `fuzz_level` is additionally capped at 100% after the regex match succeeds; and `fuzz_level`/`highlight_colour`/`crop_area` are all type-checked as strings before being matched against their regexes (a non-string would otherwise raise a `TypeError` instead of a clean 400).
 
 ### `core/services/screenshot_comparison.py`
 
@@ -379,12 +418,23 @@ class ScreenshotComparison:
 
         self.test.diff = 0
         self.test.passed = False
-        with screenshot_in.open("rb") as fh:
-            self.test.screenshot.save("original.png", File(fh), save=False)
-        with thumb_path.open("rb") as fh:
-            self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
-
-        self.test.save()
+        self.test.original_passed = False
+        uploaded_fields = []
+        try:
+            with screenshot_in.open("rb") as fh:
+                self.test.screenshot.save("original.png", File(fh), save=False)
+            uploaded_fields.append(self.test.screenshot)
+            with thumb_path.open("rb") as fh:
+                self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
+            uploaded_fields.append(self.test.screenshot_thumb)
+            self.test.save(update_fields=["diff", "passed", "original_passed", "screenshot", "screenshot_thumb"])
+        except Exception:
+            for field in uploaded_fields:
+                try:
+                    field.delete(save=False)
+                except Exception:
+                    logger.warning("failed to clean up orphaned first-upload file: %s", field.name)
+            raise
 
     def _compare(
         self,
@@ -460,6 +510,7 @@ class ScreenshotComparison:
         diff_percentage = (diff_pixels / total_pixels) * 100 if total_pixels else 0
         self.test.diff = round(diff_percentage, 2)
         self.test.passed = diff_percentage < settings.IMAGE_DIFF_THRESHOLD
+        self.test.original_passed = self.test.passed
 
     def _persist_files(self, paths: dict[str, Path]) -> None:
         """Attach the three padded result files to the Test's FileFields and save."""
@@ -469,23 +520,35 @@ class ScreenshotComparison:
             self.test.screenshot_baseline.save("baseline.png", File(fh), save=False)
         with paths["diff"].open("rb") as fh:
             self.test.screenshot_diff.save("diff.png", File(fh), save=False)
-        self.test.save()
+        self.test.save(
+            update_fields=["diff", "passed", "original_passed", "screenshot", "screenshot_baseline", "screenshot_diff"]
+        )
 ```
 
-### Wiring it up — the `POST /tests` view
+`_record_first_upload` wraps its two S3 saves in a `try`/`except`: if the `Test.save()` call itself raises (e.g. a DB error after the files are already uploaded), the `except` block deletes whichever of the just-uploaded `screenshot`/`screenshot_thumb` files did get written, so a failed save never leaves an orphaned object behind in S3 — then re-raises.
+
+### Wiring it up — the `POST /tests` view and the Celery task
 
 `POST /tests` is asynchronous. The view creates the Test row, stages the upload to S3, enqueues a Celery task, and returns immediately with `status=pending`:
 
 ```python
 test = Test.objects.create(...)   # row exists so the upload-path callable can use instance.id
-staging_key = _stage_upload_to_s3(test.id, request.FILES['screenshot'])
-process_test.delay(test.id, staging_key)
+staging_key = _stage_upload_to_s3(test.id, screenshot)
+process_test.delay(test.id, staging_key, test.processing_claim)
 body = LegacyTestSerializer(test).data
 body['is_new_baseline'] = None   # not known yet; worker sets it when done
 return Response(body)
 ```
 
-The Celery worker calls `ScreenshotComparison(test, uploaded_file).run()` and updates `test.status` to `"done"` (or `"failed"`) when complete. Clients poll `GET /tests/:id/status` until the status resolves.
+`process_test` (`backend/core/tasks.py`) is not just "download, run the pipeline, save status" — it's built to survive worker crashes, duplicate broker delivery, and racing admin restarts without corrupting a Test row. Its signature is `process_test(self, test_id, staging_key, claimed_processing, lock_wait_attempts=0)`.
+
+- **Postgres advisory lock.** On entry it takes a session-level `pg_try_advisory_lock(namespace, test_id)`. This stops two concurrent invocations for the *same* `test_id` (e.g. a worker-crash redelivery racing a manual admin restart) from racing each other over the shared staging key and Test row.
+- **Lock-contention requeue.** If the lock is already held, the task doesn't just drop the message — it requeues itself via `apply_async` with `lock_wait_attempts` incremented and a 15-second countdown, so a losing invocation gets another chance. This is capped at 20 attempts (`_MAX_LOCK_WAIT_REQUEUES`); past that it logs an error and gives up.
+- **`processing_claim` fencing token.** After acquiring the lock, the task compares `claimed_processing` (the token that was current when this delivery was enqueued) against the Test row's *current* `processing_claim`. A mismatch means a newer claim has since superseded this delivery (e.g. a double-clicked admin restart), so the task exits without touching `status`, `process_attempts`, or the staged file. The same check runs again **after** the diff pipeline finishes (and after `refresh_from_db()`), gating both the terminal-status write and the staged-file deletion — this catches a running invocation getting superseded mid-flight.
+- **Terminal-status short-circuit.** If the row has already reached `STATUS_DONE`/`STATUS_FAILED` under this exact claim, the task exits immediately. This guards against the same broker message being redelivered (a known Celery+Redis footgun under `CELERY_TASK_ACKS_LATE=True`) after the original delivery already completed — without it, a duplicate would re-run the pipeline against an already-deleted staged file and could overwrite a good `STATUS_DONE` result with `STATUS_FAILED`.
+- **`process_attempts` retry cap.** Each attempt increments `test.process_attempts` and persists it (along with `status=STATUS_PROCESSING`) *before* the risky pipeline work (ImageMagick, S3 I/O) runs — so a worker crash mid-pipeline still leaves the incremented count committed for the next attempt to see. If the incremented count exceeds `settings.PROCESS_TEST_MAX_ATTEMPTS`, the task marks the test `STATUS_FAILED` without reprocessing and deletes the staged file.
+
+The worker calls `ScreenshotComparison(test, uploaded_file).run()` and, once the fencing checks above confirm the claim still holds, updates `test.status` to `"done"` (or `"failed"`) and deletes the staged upload. Clients poll `GET /tests/:id/status` until the status resolves.
 
 ### Things this implementation deliberately does not do
 
