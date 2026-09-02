@@ -54,8 +54,9 @@ def process_test(self, test_id: int, staging_key: str) -> None:
 
         if test.process_attempts > django_settings.PROCESS_TEST_MAX_ATTEMPTS:
             logger.error(
-                "process_test: test %s exceeded max attempts (%s), marking failed without reprocessing",
+                "process_test: test %s attempt %s exceeded max attempts (%s), marking failed without reprocessing",
                 test_id,
+                test.process_attempts,
                 django_settings.PROCESS_TEST_MAX_ATTEMPTS,
                 extra={"test_id": test_id, "process_attempts": test.process_attempts},
             )
@@ -64,6 +65,11 @@ def process_test(self, test_id: int, staging_key: str) -> None:
             _delete_staged_file(staging_key)
             return
 
+        # The incremented attempt counter must be persisted BEFORE the risky pipeline
+        # work below runs, not after. This is what makes the cap effective across a
+        # worker-crash redelivery: if the process dies mid-pipeline, the count is
+        # already committed, so the retry sees the incremented value. Moving this
+        # save to after the pipeline would silently defeat the whole mechanism.
         test.status = Test.STATUS_PROCESSING
         test.save(update_fields=["process_attempts", "status"])
 

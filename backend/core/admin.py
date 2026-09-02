@@ -143,7 +143,7 @@ class TestAdmin(admin.ModelAdmin):
 
 @admin.register(ProcessingQueueTest)
 class ProcessingQueueAdmin(admin.ModelAdmin):
-    list_display = ("name", "browser", "size", "status", "run_label", "waiting_since", "created_at")
+    list_display = ("name", "browser", "size", "status", "process_attempts", "run_label", "waiting_since", "created_at")
     list_filter = ("status", "browser", "run__suite__project")
     search_fields = ("name", "run__suite__name", "run__suite__project__name")
     ordering = ("created_at",)  # oldest first — front of the queue
@@ -173,7 +173,8 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
                 raise
 
             test.status = Test.STATUS_PENDING
-            test.save(update_fields=["status"])
+            test.process_attempts = 0
+            test.save(update_fields=["status", "process_attempts"])
             process_test.delay(test.id, staging_key)
             restarted += 1
 

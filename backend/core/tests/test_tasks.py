@@ -35,6 +35,7 @@ class TestProcessTestTask:
 
     def test_attempt_at_cap_still_processes_normally(self, test_factory, settings):
         settings.CELERY_TASK_ALWAYS_EAGER = True
+        settings.PROCESS_TEST_MAX_ATTEMPTS = 3
         test = test_factory(process_attempts=settings.PROCESS_TEST_MAX_ATTEMPTS - 1)
 
         with (
@@ -58,6 +59,7 @@ class TestProcessTestTask:
 
     def test_attempt_over_cap_bails_to_failed_without_reprocessing(self, test_factory, settings):
         settings.CELERY_TASK_ALWAYS_EAGER = True
+        settings.PROCESS_TEST_MAX_ATTEMPTS = 3
         starting_attempts = settings.PROCESS_TEST_MAX_ATTEMPTS
         test = test_factory(process_attempts=starting_attempts)
 
@@ -78,6 +80,7 @@ class TestProcessTestTask:
 
     def test_releases_lock_when_bailing_over_cap(self, test_factory, settings):
         settings.CELERY_TASK_ALWAYS_EAGER = True
+        settings.PROCESS_TEST_MAX_ATTEMPTS = 3
         test = test_factory(process_attempts=settings.PROCESS_TEST_MAX_ATTEMPTS)
 
         with (
@@ -131,6 +134,27 @@ class TestProcessTestTask:
 
         test.refresh_from_db()
         assert test.status == Test.STATUS_FAILED
+
+    def test_attempt_counter_survives_normal_pipeline_failure(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        settings.CELERY_TASK_EAGER_PROPAGATES = False
+        test = test_factory()
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file"),
+        ):
+            mock_download.side_effect = lambda key, dest: dest.write_bytes(b"fakepng")
+            mock_instance = MagicMock()
+            mock_instance.run.side_effect = RuntimeError("imagemagick died")
+            mock_cls.return_value = mock_instance
+
+            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_FAILED
+        assert test.process_attempts == 1
 
     def test_transitions_through_processing_before_done(self, test_factory, settings):
         settings.CELERY_TASK_ALWAYS_EAGER = True
