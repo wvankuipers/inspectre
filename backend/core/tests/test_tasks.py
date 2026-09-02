@@ -27,7 +27,7 @@ class TestProcessTestTask:
             mock_instance.run.return_value = False
             mock_cls.return_value = mock_instance
 
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
         test.refresh_from_db()
         assert test.status == Test.STATUS_DONE
@@ -48,7 +48,7 @@ class TestProcessTestTask:
             mock_instance.run.return_value = False
             mock_cls.return_value = mock_instance
 
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
             mock_cls.assert_called_once()
             mock_download.assert_called_once()
@@ -68,7 +68,7 @@ class TestProcessTestTask:
             patch("core.tasks._download_staged_file") as mock_download,
             patch("core.tasks._delete_staged_file") as mock_delete,
         ):
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
             mock_cls.assert_not_called()
             mock_download.assert_not_called()
@@ -88,7 +88,7 @@ class TestProcessTestTask:
             patch("core.tasks._download_staged_file"),
             patch("core.tasks._delete_staged_file"),
         ):
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
         # See test_releases_lock_after_successful_run for why pg_advisory_unlock
         # (returning False) is the correct check here, not pg_try_advisory_lock.
@@ -110,7 +110,7 @@ class TestProcessTestTask:
             mock_instance.run.return_value = True  # is_new_baseline = True
             mock_cls.return_value = mock_instance
 
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
         test.refresh_from_db()
         assert test.is_new_baseline is True
@@ -130,7 +130,7 @@ class TestProcessTestTask:
             mock_instance.run.side_effect = RuntimeError("imagemagick died")
             mock_cls.return_value = mock_instance
 
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
         test.refresh_from_db()
         assert test.status == Test.STATUS_FAILED
@@ -150,7 +150,7 @@ class TestProcessTestTask:
             mock_instance.run.side_effect = RuntimeError("imagemagick died")
             mock_cls.return_value = mock_instance
 
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
         test.refresh_from_db()
         assert test.status == Test.STATUS_FAILED
@@ -176,7 +176,7 @@ class TestProcessTestTask:
             mock_instance.run.side_effect = fake_run
             mock_cls.return_value = mock_instance
 
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
         assert Test.STATUS_PROCESSING in statuses_seen
 
@@ -194,7 +194,7 @@ class TestProcessTestTask:
             mock_instance.run.return_value = False
             mock_cls.return_value = mock_instance
 
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
         # pg_advisory_unlock returns False when the calling session holds no such
         # lock. Calling it directly (with no preceding pg_try_advisory_lock) lets us
@@ -255,7 +255,7 @@ class TestProcessTestTask:
                 patch("core.tasks._download_staged_file") as mock_download,
                 patch("core.tasks._delete_staged_file"),
             ):
-                process_test.delay(test.id, "screenshots/staging/1/upload.png")
+                process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
                 mock_cls.assert_not_called()
                 mock_download.assert_not_called()
@@ -285,7 +285,7 @@ class TestProcessTestTask:
             mock_instance.run.side_effect = RuntimeError("imagemagick died")
             mock_cls.return_value = mock_instance
 
-            process_test.delay(test.id, "screenshots/staging/1/upload.png")
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
 
         test.refresh_from_db()
         assert test.status == Test.STATUS_FAILED
@@ -302,10 +302,75 @@ class TestProcessTestTask:
         bogus_id = 999_999_999
 
         with pytest.raises(Test.DoesNotExist):
-            process_test.delay(bogus_id, "screenshots/staging/1/upload.png")
+            process_test.delay(bogus_id, "screenshots/staging/1/upload.png", 0)
 
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, bogus_id])
+            assert cursor.fetchone()[0] is False
+
+    def test_stale_claim_is_rejected_without_touching_anything(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+        original_status = test.status
+
+        # Simulate a newer claim having since superseded this delivery: the row's
+        # CURRENT processing_claim is now 5, but this delivery still carries the
+        # OLD token (1) it was enqueued with.
+        test.processing_claim = 5
+        test.save(update_fields=["processing_claim"])
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file") as mock_delete,
+        ):
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", 1)
+
+            mock_cls.assert_not_called()
+            mock_download.assert_not_called()
+            mock_delete.assert_not_called()
+
+        test.refresh_from_db()
+        assert test.status == original_status
+        assert test.process_attempts == 0
+
+    def test_matching_claim_proceeds_normally(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+
+        with (
+            patch("core.tasks.ScreenshotComparison") as mock_cls,
+            patch("core.tasks._download_staged_file") as mock_download,
+            patch("core.tasks._delete_staged_file"),
+        ):
+            mock_download.side_effect = lambda key, dest: dest.write_bytes(b"fakepng")
+            mock_instance = MagicMock()
+            mock_instance.run.return_value = False
+            mock_cls.return_value = mock_instance
+
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", 0)
+
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_DONE
+        assert test.process_attempts == 1
+
+    def test_releases_lock_on_stale_claim_bail(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+        test.processing_claim = 5
+        test.save(update_fields=["processing_claim"])
+
+        with (
+            patch("core.tasks.ScreenshotComparison"),
+            patch("core.tasks._download_staged_file"),
+            patch("core.tasks._delete_staged_file"),
+        ):
+            process_test.delay(test.id, "screenshots/staging/1/upload.png", 1)
+
+        # See test_releases_lock_after_successful_run for why pg_advisory_unlock
+        # (returning False) is the correct check here, not pg_try_advisory_lock.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
             assert cursor.fetchone()[0] is False
 
 

@@ -471,10 +471,30 @@ class TestRestartProcessingAction:
 
         assert response.status_code == 200
         mock_client.head_object.assert_called_once_with(Bucket=django_settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key)
-        mock_delay.assert_called_once_with(test.id, staging_key)
+        mock_delay.assert_called_once_with(test.id, staging_key, 1)
         test.refresh_from_db()
         assert test.status == Test.STATUS_PENDING
         assert b"Restarted 1 test" in response.content
+
+    def test_restart_bumps_processing_claim(self, admin_client, test_factory):
+        """The restart is a NEW logical attempt, so it must bump the fencing
+        token — that's what lets process_test reject a stale/superseded
+        delivery from a prior click or an old crash-redelivery instead of
+        potentially clobbering this restart's result.
+        """
+        test = test_factory(status=Test.STATUS_PROCESSING, processing_claim=0)
+        staging_key = staging_key_for_test(test.id)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_get_client.return_value = MagicMock()
+            self._run_action(admin_client, test)
+
+        test.refresh_from_db()
+        assert test.processing_claim == 1
+        mock_delay.assert_called_once_with(test.id, staging_key, 1)
 
     def test_missing_staged_upload_is_reported_and_not_restarted(self, admin_client, test_factory):
         test = test_factory(status=Test.STATUS_PROCESSING)

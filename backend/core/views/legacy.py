@@ -66,7 +66,7 @@ def tests_create(request):
     )
 
     staging_key = _stage_upload_to_s3(test.id, screenshot)
-    process_test.delay(test.id, staging_key)
+    process_test.delay(test.id, staging_key, test.processing_claim)
 
     body = LegacyTestSerializer(test).data
     body["is_new_baseline"] = None

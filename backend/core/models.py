@@ -145,6 +145,15 @@ class Test(models.Model):
         "screenshot that reliably crashes the worker fails permanently instead "
         "of looping forever.",
     )
+    processing_claim = models.IntegerField(
+        default=0,
+        help_text="Fencing token bumped each time a NEW process_test invocation is "
+        "deliberately enqueued (initial creation, or a manual admin restart) — NOT "
+        "on an automatic worker-crash redelivery of the same message, which carries "
+        "the same token. process_test rejects a delivery whose token doesn't match "
+        "the row's current value, so a stale/superseded attempt can't clobber a "
+        "result produced by a newer one.",
+    )
 
     diff = models.FloatField(default=0)
     passed = models.BooleanField(default=False)

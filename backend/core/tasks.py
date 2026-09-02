@@ -22,7 +22,7 @@ _PROCESS_TEST_LOCK_NAMESPACE = 1
 
 
 @app.task(bind=True, max_retries=0)
-def process_test(self, test_id: int, staging_key: str) -> None:
+def process_test(self, test_id: int, staging_key: str, claimed_processing: int) -> None:
     """Download a staged upload from S3, run the diff pipeline, and update test status.
 
     Guarded by a Postgres session advisory lock keyed on `test_id`: if this
@@ -30,6 +30,19 @@ def process_test(self, test_id: int, staging_key: str) -> None:
     worker-crash redelivery racing a manual admin restart), this invocation
     backs off immediately instead of racing it on the shared staging key and
     Test row fields.
+
+    That advisory lock only prevents CONCURRENT invocations from racing each
+    other — it does nothing to stop a stale invocation from running to
+    completion SEQUENTIALLY after a newer attempt has already superseded it
+    (e.g. a double-clicked admin restart, or a worker-crash redelivery of an
+    old attempt arriving after a newer manual restart already completed).
+    `claimed_processing` guards against that: it's the `processing_claim`
+    fencing token that was current on the Test row at the moment this
+    invocation was enqueued. Immediately after acquiring the lock and
+    fetching the row, we compare it against the row's CURRENT
+    `processing_claim`; if they don't match, a newer claim has since
+    superseded this delivery and we exit without touching `status`,
+    `process_attempts`, or the staged file.
 
     Assumes a direct Postgres connection per session (no transaction-pooling
     proxy like PgBouncer transaction-mode or RDS Proxy without pinning); this
@@ -50,6 +63,21 @@ def process_test(self, test_id: int, staging_key: str) -> None:
 
     try:
         test = Test.objects.select_related("run__suite__project").get(pk=test_id)
+
+        if test.processing_claim != claimed_processing:
+            logger.warning(
+                "process_test: stale/duplicate delivery for test %s (claimed token %s, current %s), skipping",
+                test_id,
+                claimed_processing,
+                test.processing_claim,
+                extra={
+                    "test_id": test_id,
+                    "claimed_processing": claimed_processing,
+                    "current_processing_claim": test.processing_claim,
+                },
+            )
+            return
+
         test.process_attempts += 1
 
         if test.process_attempts > django_settings.PROCESS_TEST_MAX_ATTEMPTS:

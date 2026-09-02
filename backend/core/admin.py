@@ -174,8 +174,9 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
 
             test.status = Test.STATUS_PENDING
             test.process_attempts = 0
-            test.save(update_fields=["status", "process_attempts"])
-            process_test.delay(test.id, staging_key)
+            test.processing_claim += 1
+            test.save(update_fields=["status", "process_attempts", "processing_claim"])
+            process_test.delay(test.id, staging_key, test.processing_claim)
             restarted += 1
 
         if restarted:
