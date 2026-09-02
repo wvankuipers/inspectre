@@ -470,9 +470,7 @@ class TestRestartProcessingAction:
             response = self._run_action(admin_client, test)
 
         assert response.status_code == 200
-        mock_client.head_object.assert_called_once_with(
-            Bucket=django_settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key
-        )
+        mock_client.head_object.assert_called_once_with(Bucket=django_settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key)
         mock_delay.assert_called_once_with(test.id, staging_key)
         test.refresh_from_db()
         assert test.status == Test.STATUS_PENDING

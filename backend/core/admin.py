@@ -181,8 +181,7 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
         if missing:
             self.message_user(
                 request,
-                f"{missing} test(s) had no staged upload left in S3 and "
-                "could not be restarted; re-run them from CI.",
+                f"{missing} test(s) had no staged upload left in S3 and could not be restarted; re-run them from CI.",
                 level=messages.WARNING,
             )
 
