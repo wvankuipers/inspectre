@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin import helpers
 from django.db import models as db_models
+from django.db.models import F
 from django.template.response import TemplateResponse
 from django.utils import timezone
 
@@ -143,7 +144,17 @@ class TestAdmin(admin.ModelAdmin):
 
 @admin.register(ProcessingQueueTest)
 class ProcessingQueueAdmin(admin.ModelAdmin):
-    list_display = ("name", "browser", "size", "status", "process_attempts", "run_label", "waiting_since", "created_at")
+    list_display = (
+        "name",
+        "browser",
+        "size",
+        "status",
+        "process_attempts",
+        "processing_claim",
+        "run_label",
+        "waiting_since",
+        "created_at",
+    )
     list_filter = ("status", "browser", "run__suite__project")
     search_fields = ("name", "run__suite__name", "run__suite__project__name")
     ordering = ("created_at",)  # oldest first — front of the queue
@@ -172,10 +183,12 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
                     continue
                 raise
 
-            test.status = Test.STATUS_PENDING
-            test.process_attempts = 0
-            test.processing_claim += 1
-            test.save(update_fields=["status", "process_attempts", "processing_claim"])
+            Test.objects.filter(pk=test.id).update(
+                status=Test.STATUS_PENDING,
+                process_attempts=0,
+                processing_claim=F("processing_claim") + 1,
+            )
+            test.refresh_from_db(fields=["processing_claim"])
             process_test.delay(test.id, staging_key, test.processing_claim)
             restarted += 1
 
