@@ -1,9 +1,13 @@
+from botocore.exceptions import ClientError
 from django import forms
-from django.contrib import admin
+from django.conf import settings
+from django.contrib import admin, messages
 from django.db import models as db_models
 from django.utils import timezone
 
 from core.models import Baseline, ProcessingQueueTest, Project, Run, Suite, Test
+from core.services.s3 import get_s3_client, staging_key_for_test
+from core.tasks import process_test
 
 
 class RenameWarningMixin:
@@ -142,6 +146,41 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
     search_fields = ("name", "run__suite__name", "run__suite__project__name")
     ordering = ("created_at",)  # oldest first — front of the queue
     list_select_related = ("run__suite__project", "run__suite")
+    actions = ["restart_processing"]
+
+    @admin.action(description="Restart processing")
+    def restart_processing(self, request, queryset):
+        """Manually re-enqueue stuck pending/processing rows (e.g. after a
+        worker crash left the queue stuck). Safe because the staged upload
+        in S3 is only deleted once `process_test` actually completes — a row
+        stuck here still has its staged upload sitting in S3, unless its
+        status changed between page load and running this action.
+        """
+        restarted = 0
+        missing = 0
+        s3_client = get_s3_client()
+        for test in queryset:
+            staging_key = staging_key_for_test(test.id)
+            try:
+                s3_client.head_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key)
+            except ClientError:
+                missing += 1
+                continue
+
+            test.status = Test.STATUS_PENDING
+            test.save(update_fields=["status"])
+            process_test.delay(test.id, staging_key)
+            restarted += 1
+
+        if restarted:
+            self.message_user(request, f"Restarted {restarted} test(s).")
+        if missing:
+            self.message_user(
+                request,
+                f"{missing} test(s) had no staged upload left in S3 and "
+                "could not be restarted; re-run them from CI.",
+                level=messages.WARNING,
+            )
 
     def has_add_permission(self, request):
         return False

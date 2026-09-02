@@ -1,10 +1,15 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
+from botocore.exceptions import ClientError
+from django.conf import settings as django_settings
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from core.models import Test
+from core.services.s3 import staging_key_for_test
 
 pytestmark = pytest.mark.django_db
 
@@ -411,3 +416,103 @@ class TestProcessingQueueAdmin:
             f"query count grew with row count ({small_count} -> {large_count}); "
             "list_select_related isn't preventing the N+1 on run_label"
         )
+
+
+# =============================================================================
+# ProcessingQueueAdmin.restart_processing — manual recovery action
+# =============================================================================
+
+
+class TestRestartProcessingAction:
+    """`restart_processing` re-enqueues stuck pending/processing rows by hand.
+
+    Exercised end-to-end through the admin changelist action endpoint (not by
+    calling the method directly) so these tests also prove the action runs
+    despite `has_change_permission` returning False on this ModelAdmin —
+    Django gates actions by their own `allowed_permissions`, not
+    `has_change_permission`, but that's worth confirming empirically rather
+    than assuming it.
+    """
+
+    @pytest.fixture
+    def admin_client(self, client):
+        User.objects.create_user(
+            username="admin",
+            password="secret",
+            is_staff=True,
+            is_superuser=True,
+        )
+        client.login(username="admin", password="secret")
+        return client
+
+    def _run_action(self, admin_client, *tests):
+        return admin_client.post(
+            "/admin/core/processingqueuetest/",
+            data={
+                "action": "restart_processing",
+                "_selected_action": [str(test.pk) for test in tests],
+                "index": 0,
+            },
+            follow=True,
+        )
+
+    def test_restarts_test_when_staged_upload_present(self, admin_client, test_factory):
+        test = test_factory(status=Test.STATUS_PENDING)
+        staging_key = staging_key_for_test(test.id)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, test)
+
+        assert response.status_code == 200
+        mock_client.head_object.assert_called_once_with(
+            Bucket=django_settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key
+        )
+        mock_delay.assert_called_once_with(test.id, staging_key)
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_PENDING
+        assert b"Restarted 1 test" in response.content
+
+    def test_missing_staged_upload_is_reported_and_not_restarted(self, admin_client, test_factory):
+        test = test_factory(status=Test.STATUS_PROCESSING)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_client = MagicMock()
+            mock_client.head_object.side_effect = ClientError(
+                {"Error": {"Code": "404", "Message": "Not Found"}}, "HeadObject"
+            )
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, test)
+
+        assert response.status_code == 200
+        mock_delay.assert_not_called()
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_PROCESSING
+        assert b"had no staged upload left in S3" in response.content
+
+    def test_action_runs_despite_has_change_permission_false(self, admin_client, test_factory):
+        """Regression guard for the read-only overrides on this ModelAdmin:
+        `has_change_permission` returns False here, but that must not block
+        this action from actually running end-to-end through the admin UI.
+        """
+        test = test_factory(status=Test.STATUS_PENDING)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_get_client.return_value = MagicMock()
+            self._run_action(admin_client, test)
+
+        mock_delay.assert_called_once()
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_PENDING
