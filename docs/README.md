@@ -1,6 +1,6 @@
 # Inspectre Documentation
 
-This folder describes the **Inspectre** application — a Django + Angular visual regression testing service. The legacy Rails codebase is in `legacy/` for reference only; the active codebase is the Django backend in `backend/` and the Angular frontend in `frontend/`.
+This folder describes the **Inspectre** application — a Django + Angular visual regression testing service. The active codebase is the Django backend in `backend/` and the Angular frontend in `frontend/`.
 
 ## Reading order
 

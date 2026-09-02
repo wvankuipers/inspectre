@@ -73,6 +73,8 @@ User decision: drop the local-filesystem datastore. Everything goes to object st
 Suggested S3 key structure (don't replicate Dragonfly's flat UID format — it's hostile to debugging):
 
 ```text
+screenshots/staging/<test_id>/upload.png
+
 screenshots/<test_id>/original.png
 screenshots/<test_id>/baseline.png
 screenshots/<test_id>/diff.png
@@ -83,6 +85,8 @@ screenshots/<test_id>/thumb-300-diff.jpg
 baselines/<key>/screenshot.png
 baselines/<key>/thumb-300.jpg
 ```
+
+`screenshots/staging/<test_id>/upload.png` (`staging_key_for_test` in `core/services/s3.py`) is where `POST /tests` stages the raw upload before the async worker picks it up — see "Async pipeline" below. It's also the key the admin queue-recovery actions re-enqueue from when replaying a stuck test.
 
 This makes admin debugging via the S3 console doable.
 
@@ -120,15 +124,16 @@ S3 bucket is private, and URLs are presigned. Every screenshot/baseline/diff/thu
 
 The bucket must deny anonymous/public `s3:GetObject`; access is only via presigned URLs or the IAM/static credentials configured in `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (used for `PutObject`/`DeleteObject` and for generating presigned URLs).
 
+**Dev exception:** the MinIO setup in `deploy/docker-compose.yml` runs `mc anonymous set download local/inspectre-screenshots` on the `minio-init` service, which grants public anonymous `GetObject` on the whole bucket in local dev. This is a deliberate simplification for local development (lets you open an S3 URL directly in a browser without presigning) — it does not reflect the intended prod (AWS S3) bucket policy, which should keep denying anonymous access as described above.
+
 ### Thumbnails in the rebuild
 
-**Render thumbnails synchronously after diff and upload them alongside originals.** No on-the-fly resizing, no local cache. The legacy app's per-instance thumbnail cache (`<sha1>` JPGs on local disk) is gone — every thumbnail lives in S3 next to its original.
+**Render thumbnails as part of the async Celery diff pipeline and upload them alongside originals.** No on-the-fly resizing, no local cache. The legacy app's per-instance thumbnail cache (`<sha1>` JPGs on local disk) is gone — every thumbnail lives in S3 next to its original.
 
 #### `core/services/thumbnails.py`
 
 ```python
 import logging
-import shlex
 import subprocess
 from pathlib import Path
 
@@ -145,16 +150,29 @@ def render_thumbnail(src: Path, dest: Path) -> None:
 
     Width is `THUMBNAIL_WIDTH` (default 300), JPEG quality is `THUMBNAIL_JPEG_QUALITY`
     (default 90). Both are env-overridable (decisions.md, "Configuration knobs").
+    Runs under `IMAGEMAGICK_TIMEOUT_SECONDS` (default 60) — a hang raises
+    ImageDiffError rather than blocking the worker indefinitely.
     """
-    cmd = (
-        f"convert {shlex.quote(str(src))} "
-        f"-resize {settings.THUMBNAIL_WIDTH}x "
-        f"-quality {settings.THUMBNAIL_JPEG_QUALITY} "
-        f"{shlex.quote(str(dest))}"
-    )
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=False)
+    try:
+        result = subprocess.run(
+            [
+                "convert",
+                str(src),
+                "-resize",
+                f"{settings.THUMBNAIL_WIDTH}x",
+                "-quality",
+                str(settings.THUMBNAIL_JPEG_QUALITY),
+                str(dest),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=settings.IMAGEMAGICK_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ImageDiffError("ImageMagick timed out") from exc
     if result.returncode != 0:
-        logger.exception("thumbnail render failed", extra={
+        logger.error("thumbnail render failed", extra={
             'src': str(src), 'dest': str(dest),
             'returncode': result.returncode, 'stderr': result.stderr.strip(),
         })
@@ -189,7 +207,9 @@ def attach_baseline_thumbnail(baseline, screenshot_path: Path, tmp: Path) -> Non
     baseline.save()
 ```
 
-The two attach helpers are deliberately separate. `attach_test_thumbnails` lays down the three test-row thumbnails (one per cell in the run page table). `attach_baseline_thumbnail` is the smaller path used when a Baseline is upserted on the suite page.
+The two attach helpers are deliberately separate. `attach_test_thumbnails` lays down the three test-row thumbnails (one per cell in the run page table); `attach_baseline_thumbnail` renders the single thumbnail attached to a Baseline row. Both are invoked from a single shared baseline-upsert wrapper, `upsert_baseline_from_test` (`core/services/baseline_upsert.py`) — used both by the automatic diff pipeline (`ScreenshotComparison.run()`, when the submission passes) and by the manual "Set as baseline" action. There is no separate `self._upsert_baseline` method and no second, independent code path for the manual case — see "Wiring into `screenshot_comparison.py`" below.
+
+`attach_test_thumbnails` also has failure-cleanup logic: if rendering or uploading one of the three thumbnails fails partway through, it deletes any thumbnail fields already saved in that call before re-raising, so a Test never ends up with a stale/orphaned thumbnail left over from a partially-failed attach.
 
 #### Model fields the thumbnails attach to
 
@@ -231,11 +251,12 @@ The SPA's API responses serialize `field.url` for each thumbnail, so the SPA nev
 
 #### Wiring into `screenshot_comparison.py`
 
-The `ScreenshotComparison.run()` method in [image-diffing.md](image-diffing.md) calls these helpers before `_upsert_baseline`:
+`ScreenshotComparison.run()` (`core/services/screenshot_comparison.py`) calls `attach_test_thumbnails` after persisting the diff result, then calls the shared `upsert_baseline_from_test` wrapper when the submission passes — that wrapper is what internally renders and attaches the baseline thumbnail:
 
 ```python
-# Inside ScreenshotComparison.run(), after _persist_files(paths):
-from .thumbnails import attach_test_thumbnails, attach_baseline_thumbnail
+# Inside ScreenshotComparison.run(), after self._persist_files(paths):
+from .baseline_upsert import upsert_baseline_from_test
+from .thumbnails import attach_test_thumbnails
 
 attach_test_thumbnails(
     self.test,
@@ -246,27 +267,30 @@ attach_test_thumbnails(
 )
 
 if self.test.passed:
-    self._upsert_baseline(paths['screenshot'])
-    attach_baseline_thumbnail(self.test.baseline, paths['screenshot'], tmp)
+    upsert_baseline_from_test(self.test)
 ```
 
-This adds ~50ms per test to the synchronous `POST /tests` request — acceptable for v1. If `convert -resize` ever becomes the slowest step, batch the three test thumbnails into a single `convert ( a b c ) -resize 300x ... -write a.jpg -write b.jpg -write c.jpg` invocation, but profile first.
+`upsert_baseline_from_test` (`core/services/baseline_upsert.py`) does the row upsert and then calls `attach_baseline_thumbnail` internally. This is the same function the manual "Set as baseline" action calls — there is no separate inline `self._upsert_baseline` method and no second implementation of the baseline-thumbnail logic.
 
 #### Failure mode
 
-If a `convert -resize` shell-out fails after the diff already succeeded, the test row will have screenshots but no thumbnails — the SPA's `<img onerror>` falls back to the legacy `image_not_found.jpg` ([ui.md](ui.md), "Error and loading states"). The `logger.exception` call surfaces the failure to the operator without breaking the request. We deliberately don't roll back the Test record: the diff result is still useful even if a thumbnail glitched.
+If a `convert -resize` shell-out fails after the diff already succeeded, the test row will have screenshots but no thumbnails — the SPA's `<img onerror>` falls back to the legacy `image_not_found.jpg` ([ui.md](ui.md), "Error and loading states"). `attach_test_thumbnails` logs the failure via `logger.error` and rolls back (deletes) any thumbnails it already saved earlier in that same call before re-raising, so the Test record isn't left with a mismatched partial set. We deliberately don't roll back the Test's screenshot/baseline/diff images themselves: the diff result is still useful even if a thumbnail glitched.
 
-### Image processing temp files
+### Async pipeline and temp files
 
-Each `POST /tests` needs to:
-1. Receive the upload (in `request.FILES['test[screenshot]']`).
-2. Optionally crop in-place (overwrite the temp).
-3. Download the previous baseline from S3 to a temp file.
-4. Pad both, run `compare`.
-5. Upload the three result files (original, baseline-snapshot, diff) **plus three thumbnails** to S3.
-6. Delete temp files.
+`POST /tests` does **not** run the diff pipeline inline. It creates the `Test` row, stages the raw upload to S3 at `screenshots/staging/<test_id>/upload.png` (`_stage_upload_to_s3`, `core/views/legacy.py`), enqueues `process_test.delay(test.id, staging_key, test.processing_claim)`, and returns immediately with `status=pending` (`backend/core/views/legacy.py:47-73`). Clients poll `GET /tests/<id>/status` until it flips to `done` or `failed`.
 
-Use `tempfile.TemporaryDirectory()` in a `with` block so cleanup is automatic on errors. Don't use the request handler's tempfile path directly; copy first.
+The Celery worker's `process_test` task (`core/tasks.py`) downloads the staged upload from S3, guards against concurrent/stale redelivery via a Postgres advisory lock plus a `processing_claim` fencing token, and then runs the actual diff pipeline via `ScreenshotComparison(test, uploaded_file).run()`. That `run()` method is where the steps below happen — in the worker process, not the request handler:
+
+1. Stage the downloaded upload to a local temp file, optionally crop in-place.
+2. Stage the previous baseline (if any) from S3 to a temp file.
+3. Pad both to a shared canvas, run `compare`.
+4. Upload the three result files (original, baseline-snapshot, diff) **plus three thumbnails** to S3.
+5. Delete temp files.
+
+`ScreenshotComparison.run()` uses `tempfile.TemporaryDirectory()` in a `with` block so cleanup is automatic on errors.
+
+**First-upload branch:** if there is no usable Baseline for the test's key (a true first-ever submission, or an orphaned Baseline whose file is missing from storage), `run()` takes an early branch — `_record_first_upload()` — instead of the steps above. It renders and stores only `screenshot` and its `screenshot_thumb`; no baseline/diff files or their thumbnails are written, and the test is marked `passed=False`. A human must explicitly promote it via "Set as baseline" before it counts as passing or becomes the Baseline for that key.
 
 ## Migration of legacy data
 
