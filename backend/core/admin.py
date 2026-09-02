@@ -163,9 +163,11 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
             staging_key = staging_key_for_test(test.id)
             try:
                 s3_client.head_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key)
-            except ClientError:
-                missing += 1
-                continue
+            except ClientError as exc:
+                if exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
+                    missing += 1
+                    continue
+                raise
 
             test.status = Test.STATUS_PENDING
             test.save(update_fields=["status"])

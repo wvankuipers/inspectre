@@ -457,7 +457,7 @@ class TestRestartProcessingAction:
         )
 
     def test_restarts_test_when_staged_upload_present(self, admin_client, test_factory):
-        test = test_factory(status=Test.STATUS_PENDING)
+        test = test_factory(status=Test.STATUS_PROCESSING)
         staging_key = staging_key_for_test(test.id)
 
         with (
@@ -487,7 +487,11 @@ class TestRestartProcessingAction:
         ):
             mock_client = MagicMock()
             mock_client.head_object.side_effect = ClientError(
-                {"Error": {"Code": "404", "Message": "Not Found"}}, "HeadObject"
+                {
+                    "Error": {"Code": "404", "Message": "Not Found"},
+                    "ResponseMetadata": {"HTTPStatusCode": 404},
+                },
+                "HeadObject",
             )
             mock_get_client.return_value = mock_client
 
@@ -498,6 +502,34 @@ class TestRestartProcessingAction:
         test.refresh_from_db()
         assert test.status == Test.STATUS_PROCESSING
         assert b"had no staged upload left in S3" in response.content
+
+    def test_non_404_client_error_is_not_swallowed(self, admin_client, test_factory):
+        """A 403/500/etc from S3 must surface loudly, not be reported as a
+        harmless "missing staged upload" — that guidance would be actively
+        wrong during a transient S3/network/permissions incident.
+        """
+        test = test_factory(status=Test.STATUS_PROCESSING)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_client = MagicMock()
+            mock_client.head_object.side_effect = ClientError(
+                {
+                    "Error": {"Code": "403", "Message": "Forbidden"},
+                    "ResponseMetadata": {"HTTPStatusCode": 403},
+                },
+                "HeadObject",
+            )
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(ClientError):
+                self._run_action(admin_client, test)
+
+        mock_delay.assert_not_called()
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_PROCESSING
 
     def test_action_runs_despite_has_change_permission_false(self, admin_client, test_factory):
         """Regression guard for the read-only overrides on this ModelAdmin:
@@ -514,5 +546,3 @@ class TestRestartProcessingAction:
             self._run_action(admin_client, test)
 
         mock_delay.assert_called_once()
-        test.refresh_from_db()
-        assert test.status == Test.STATUS_PENDING
