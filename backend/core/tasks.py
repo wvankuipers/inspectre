@@ -20,9 +20,15 @@ logger = logging.getLogger(__name__)
 # that might someday lock on some other model's PK using the same numeric id.
 _PROCESS_TEST_LOCK_NAMESPACE = 1
 
+# Bounds on the requeue-on-lock-contention behavior below: how many times we'll
+# re-enqueue ourselves while another invocation holds the lock, and how long to
+# wait between attempts.
+_MAX_LOCK_WAIT_REQUEUES = 5
+_LOCK_WAIT_COUNTDOWN_SECONDS = 5
+
 
 @app.task(bind=True, max_retries=0)
-def process_test(self, test_id: int, staging_key: str, claimed_processing: int) -> None:
+def process_test(self, test_id: int, staging_key: str, claimed_processing: int, lock_wait_attempts: int = 0) -> None:
     """Download a staged upload from S3, run the diff pipeline, and update test status.
 
     Guarded by a Postgres session advisory lock keyed on `test_id`: if this
@@ -59,6 +65,33 @@ def process_test(self, test_id: int, staging_key: str, claimed_processing: int) 
     this exact claim; if so, this is a duplicate delivery of an
     already-finished attempt and we bail out immediately.
 
+    None of the first three guards catch a FOURTH case either: a currently
+    RUNNING invocation gets superseded MID-FLIGHT (e.g. an admin restarts the
+    same row while this invocation's pipeline — ImageMagick, S3 I/O — is still
+    executing). The claim and terminal-status checks above only run ONCE, at
+    the very start, so a stale-but-already-running invocation would otherwise
+    sail through to the end using stale data, overwrite the row with the
+    wrong terminal result, and delete the staged upload the newer attempt
+    still needs. We close this by re-checking `processing_claim` again AFTER
+    the pipeline finishes (and after `refresh_from_db()` picks up any
+    concurrent change) and gating BOTH the terminal status write and the
+    staged-file deletion behind that second check. Relatedly, when the
+    advisory lock itself is contended (a newer invocation racing a still-
+    running older one), we no longer just drop the message: we requeue it via
+    `apply_async` with an incremented `lock_wait_attempts`, up to
+    `_MAX_LOCK_WAIT_REQUEUES`, so a losing invocation gets another chance
+    instead of vanishing forever the instant Celery acks its message.
+
+    Known residual limitation: `ScreenshotComparison(test, uploaded_file).run()`
+    writes its own `screenshot`/`screenshot_baseline`/`screenshot_diff`/thumbnail
+    FileFields to S3 and saves them to the DB from inside its own `run()` call,
+    before this function gets a chance to revalidate the claim afterward — so a
+    mid-flight-superseded invocation's diff pipeline can still leave those file
+    fields overwritten with stale data even though this fix correctly guards
+    `status`/`is_new_baseline` and the staged-upload deletion. Fully closing
+    that would require making `ScreenshotComparison` itself claim-aware, which
+    is out of scope here.
+
     Assumes a direct Postgres connection per session (no transaction-pooling
     proxy like PgBouncer transaction-mode or RDS Proxy without pinning); this
     project doesn't use one today, but do not introduce one without revisiting
@@ -69,10 +102,24 @@ def process_test(self, test_id: int, staging_key: str, claimed_processing: int) 
         acquired = cursor.fetchone()[0]
 
     if not acquired:
+        if lock_wait_attempts >= _MAX_LOCK_WAIT_REQUEUES:
+            logger.error(
+                "process_test: test %s still locked by another invocation after %s requeue attempts, giving up",
+                test_id,
+                lock_wait_attempts,
+                extra={"test_id": test_id, "lock_wait_attempts": lock_wait_attempts},
+            )
+            return
         logger.warning(
-            "process_test: test %s is already being processed by another invocation, skipping",
+            "process_test: test %s is locked by another invocation, requeuing (attempt %s/%s)",
             test_id,
-            extra={"test_id": test_id},
+            lock_wait_attempts + 1,
+            _MAX_LOCK_WAIT_REQUEUES,
+            extra={"test_id": test_id, "lock_wait_attempts": lock_wait_attempts},
+        )
+        process_test.apply_async(
+            args=[test_id, staging_key, claimed_processing, lock_wait_attempts + 1],
+            countdown=_LOCK_WAIT_COUNTDOWN_SECONDS,
         )
         return
 
@@ -138,19 +185,37 @@ def process_test(self, test_id: int, staging_key: str, claimed_processing: int) 
                 with local_path.open("rb") as fh:
                     uploaded_file = File(fh, name="upload.png")
                     is_new_baseline = ScreenshotComparison(test, uploaded_file).run()
+            pipeline_failed = False
+        except Exception:
+            logger.exception("process_test failed", extra={"test_id": test_id})
+            pipeline_failed = True
 
-            test.refresh_from_db()
+        test.refresh_from_db()
+
+        if test.processing_claim != claimed_processing:
+            logger.warning(
+                "process_test: test %s claim superseded while processing (was %s, now %s); "
+                "discarding this result without writing status or deleting the staged upload",
+                test_id,
+                claimed_processing,
+                test.processing_claim,
+                extra={
+                    "test_id": test_id,
+                    "claimed_processing": claimed_processing,
+                    "current_processing_claim": test.processing_claim,
+                },
+            )
+            return
+
+        if pipeline_failed:
+            test.status = Test.STATUS_FAILED
+            test.save(update_fields=["status"])
+        else:
             test.is_new_baseline = is_new_baseline
             test.status = Test.STATUS_DONE
             test.save(update_fields=["status", "is_new_baseline"])
 
-        except Exception:
-            logger.exception("process_test failed", extra={"test_id": test_id})
-            test.status = Test.STATUS_FAILED
-            test.save(update_fields=["status"])
-
-        finally:
-            _delete_staged_file(staging_key)
+        _delete_staged_file(staging_key)
 
     finally:
         try:

@@ -5,9 +5,10 @@ import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 from django.conf import settings as django_settings
 from django.db import connection
+from django.db.models import F
 
 from core.models import Test
-from core.tasks import _PROCESS_TEST_LOCK_NAMESPACE, delete_test_file_keys, process_test
+from core.tasks import _MAX_LOCK_WAIT_REQUEUES, _PROCESS_TEST_LOCK_NAMESPACE, delete_test_file_keys, process_test
 
 pytestmark = pytest.mark.django_db
 
@@ -454,6 +455,207 @@ class TestProcessTestTask:
         test.refresh_from_db()
         assert test.status == Test.STATUS_DONE
         assert test.process_attempts == 2
+
+    def test_lock_contention_requeues_instead_of_dropping_message(self, test_factory, settings):
+        # Same "hold the lock from a separate thread/session" pattern as
+        # test_held_lock_blocks_concurrent_invocation above.
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+
+        lock_acquired = threading.Event()
+        release_lock = threading.Event()
+        holder_errors: list[BaseException] = []
+
+        def hold_lock_in_other_session():
+            try:
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_try_advisory_lock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+                        assert cursor.fetchone()[0] is True
+                    lock_acquired.set()
+                    release_lock.wait()
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+                except BaseException as exc:  # noqa: BLE001 - surfaced to main thread below
+                    holder_errors.append(exc)
+            finally:
+                connection.close()
+
+        holder = threading.Thread(target=hold_lock_in_other_session)
+        holder.start()
+
+        try:
+            assert lock_acquired.wait(timeout=5)
+
+            with (
+                patch("core.tasks.ScreenshotComparison") as mock_cls,
+                patch("core.tasks._download_staged_file") as mock_download,
+                patch("core.tasks._delete_staged_file"),
+                patch("core.tasks.process_test.apply_async") as mock_apply_async,
+            ):
+                # Call the task directly (not .delay()/.apply_async()) here: those
+                # both resolve to the SAME `apply_async` attribute we're patching
+                # above (`.delay()` is literally `return self.apply_async(...)`),
+                # so going through them would swallow this outer invocation into
+                # the mock too and the body below would never actually run.
+                # Calling the task instance directly invokes Task.__call__, which
+                # runs the underlying function body synchronously without touching
+                # apply_async at all — leaving the mock free to observe only the
+                # INNER, explicit requeue call the function makes on lock contention.
+                process_test(test.id, "screenshots/staging/1/upload.png", test.processing_claim)
+
+                mock_cls.assert_not_called()
+                mock_download.assert_not_called()
+                mock_apply_async.assert_called_once_with(
+                    args=[test.id, "screenshots/staging/1/upload.png", test.processing_claim, 1],
+                    countdown=5,
+                )
+        finally:
+            release_lock.set()
+            holder.join(timeout=5)
+            assert not holder.is_alive()
+
+        if holder_errors:
+            raise holder_errors[0]
+
+    def test_lock_contention_gives_up_after_cap(self, test_factory, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+
+        lock_acquired = threading.Event()
+        release_lock = threading.Event()
+        holder_errors: list[BaseException] = []
+
+        def hold_lock_in_other_session():
+            try:
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_try_advisory_lock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+                        assert cursor.fetchone()[0] is True
+                    lock_acquired.set()
+                    release_lock.wait()
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+                except BaseException as exc:  # noqa: BLE001 - surfaced to main thread below
+                    holder_errors.append(exc)
+            finally:
+                connection.close()
+
+        holder = threading.Thread(target=hold_lock_in_other_session)
+        holder.start()
+
+        try:
+            assert lock_acquired.wait(timeout=5)
+
+            with (
+                patch("core.tasks.ScreenshotComparison") as mock_cls,
+                patch("core.tasks._download_staged_file") as mock_download,
+                patch("core.tasks._delete_staged_file"),
+                patch("core.tasks.process_test.apply_async") as mock_apply_async,
+            ):
+                # See the comment in test_lock_contention_requeues_instead_of_dropping_message
+                # for why this calls the task directly instead of .delay()/.apply_async().
+                process_test(
+                    test.id,
+                    "screenshots/staging/1/upload.png",
+                    test.processing_claim,
+                    _MAX_LOCK_WAIT_REQUEUES,
+                )
+
+                mock_cls.assert_not_called()
+                mock_download.assert_not_called()
+                mock_apply_async.assert_not_called()
+        finally:
+            release_lock.set()
+            holder.join(timeout=5)
+            assert not holder.is_alive()
+
+        if holder_errors:
+            raise holder_errors[0]
+
+    @pytest.mark.django_db(transaction=True)
+    def test_mid_flight_supersede_discards_stale_result_without_writing_or_deleting(self, test_factory, settings):
+        # transaction=True: the pipeline thread below runs process_test on its OWN
+        # DB connection/session (same reasoning as test_held_lock_blocks_concurrent_invocation),
+        # so the Test row created here must be actually committed, not left inside
+        # the default per-test SAVEPOINT, or that thread's session won't see it.
+        #
+        # The core regression this task fixes: invocation A acquires the lock and
+        # passes its initial claim check, then while A is still mid-pipeline an
+        # admin restart bumps processing_claim (simulating restart_processing's
+        # atomic .update()). A must finish without writing status/is_new_baseline
+        # and without deleting the staged upload B's restart still needs.
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        test = test_factory()
+        original_status = test.status
+        staging_key = "screenshots/staging/1/upload.png"
+
+        entered_pipeline = threading.Event()
+        resume_pipeline = threading.Event()
+        task_errors: list[BaseException] = []
+
+        def fake_run(*_args, **_kwargs):
+            entered_pipeline.set()
+            resume_pipeline.wait(timeout=5)
+            return False
+
+        def run_task_in_background():
+            try:
+                with (
+                    patch("core.tasks.ScreenshotComparison") as mock_cls,
+                    patch("core.tasks._download_staged_file") as mock_download,
+                    patch("core.tasks._delete_staged_file") as mock_delete,
+                ):
+                    mock_download.side_effect = lambda key, dest: dest.write_bytes(b"fakepng")
+                    mock_instance = MagicMock()
+                    mock_instance.run.side_effect = fake_run
+                    mock_cls.return_value = mock_instance
+
+                    process_test.delay(test.id, staging_key, test.processing_claim)
+
+                    # Assert inside the same patch context, but capture failures
+                    # instead of letting a bare assert hang/kill this thread silently.
+                    try:
+                        mock_delete.assert_not_called()
+                    except AssertionError as exc:
+                        task_errors.append(exc)
+            except BaseException as exc:  # noqa: BLE001 - surfaced to main thread below
+                task_errors.append(exc)
+            finally:
+                connection.close()
+
+        worker = threading.Thread(target=run_task_in_background)
+        worker.start()
+
+        try:
+            assert entered_pipeline.wait(timeout=5)
+
+            # Simulate a concurrent admin restart bumping the fencing token while
+            # the stale invocation is still inside ScreenshotComparison.run().
+            Test.objects.filter(pk=test.id).update(processing_claim=F("processing_claim") + 1)
+        finally:
+            resume_pipeline.set()
+            worker.join(timeout=5)
+            assert not worker.is_alive()
+
+        if task_errors:
+            raise task_errors[0]
+
+        test.refresh_from_db()
+        # process_test unconditionally (and correctly, per its pre-existing
+        # process_attempts-cap mechanism) commits STATUS_PROCESSING before the
+        # pipeline runs, so it's already past `original_status` (STATUS_PENDING)
+        # by the time the claim gets superseded mid-flight below. What this fix
+        # guards is the TERMINAL write that happens after the pipeline finishes:
+        # it must never land as STATUS_DONE for a superseded claim.
+        assert original_status == Test.STATUS_PENDING
+        assert test.status == Test.STATUS_PROCESSING
+        assert test.status != Test.STATUS_DONE
+        assert test.processing_claim == 1
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+            assert cursor.fetchone()[0] is False
 
 
 class TestDeleteTestFileKeysTask:
