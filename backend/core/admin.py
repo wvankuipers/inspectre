@@ -203,8 +203,10 @@ class ProcessingQueueAdmin(admin.ModelAdmin):
                         Bucket=settings.AWS_STORAGE_BUCKET_NAME,
                         Key=staging_key_for_test(test.id),
                     )
-                except ClientError:
-                    pass  # already gone, or a transient error — the row is discarded regardless
+                except ClientError as exc:
+                    if exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
+                        continue
+                    raise
             count = queryset.count()
             queryset.delete()
             self.message_user(request, f"Discarded {count} test(s) from the queue.")

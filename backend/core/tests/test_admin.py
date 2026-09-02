@@ -612,3 +612,52 @@ class TestDiscardFromQueueAction:
         assert response.status_code == 200
         assert not Test.objects.filter(pk__in=[pending.pk, processing.pk]).exists()
         assert mock_client.delete_object.call_count == 2
+
+    def test_404_staged_upload_is_not_an_error(self, admin_client, test_factory):
+        """A 404 (staged upload already gone) is fine and doesn't block the
+        discard; the row is still deleted from the DB and success message shown.
+        """
+        test = test_factory(status=Test.STATUS_PROCESSING)
+
+        with patch("core.admin.get_s3_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.delete_object.side_effect = ClientError(
+                {
+                    "Error": {"Code": "404", "Message": "Not Found"},
+                    "ResponseMetadata": {"HTTPStatusCode": 404},
+                },
+                "DeleteObject",
+            )
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, test, confirm=True)
+
+        assert response.status_code == 200
+        assert not Test.objects.filter(pk=test.pk).exists()
+        assert b"Discarded 1 test(s)" in response.content
+
+    def test_non_404_client_error_is_not_swallowed(self, admin_client, test_factory):
+        """A 403/500/etc from S3 must surface loudly, not be treated as a
+        harmless "already gone" — that would leave the row deleted in the DB
+        while its staged upload silently leaks in S3.
+        """
+        test = test_factory(status=Test.STATUS_PROCESSING)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+        ):
+            mock_client = MagicMock()
+            mock_client.delete_object.side_effect = ClientError(
+                {
+                    "Error": {"Code": "403", "Message": "Forbidden"},
+                    "ResponseMetadata": {"HTTPStatusCode": 403},
+                },
+                "DeleteObject",
+            )
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(ClientError):
+                self._run_action(admin_client, test, confirm=True)
+
+        test.refresh_from_db()
+        assert Test.objects.filter(pk=test.pk).exists()
