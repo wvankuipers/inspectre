@@ -14,6 +14,12 @@ from inspectre.celery import app
 
 logger = logging.getLogger(__name__)
 
+# Arbitrary namespace id reserved for the process_test advisory lock family.
+# Passed as the first arg to the two-argument pg_try_advisory_lock/pg_advisory_unlock
+# forms so this lock's keyspace (test_id) never collides with an unrelated feature
+# that might someday lock on some other model's PK using the same numeric id.
+_PROCESS_TEST_LOCK_NAMESPACE = 1
+
 
 @app.task(bind=True, max_retries=0)
 def process_test(self, test_id: int, staging_key: str) -> None:
@@ -24,9 +30,14 @@ def process_test(self, test_id: int, staging_key: str) -> None:
     worker-crash redelivery racing a manual admin restart), this invocation
     backs off immediately instead of racing it on the shared staging key and
     Test row fields.
+
+    Assumes a direct Postgres connection per session (no transaction-pooling
+    proxy like PgBouncer transaction-mode or RDS Proxy without pinning); this
+    project doesn't use one today, but do not introduce one without revisiting
+    this.
     """
     with connection.cursor() as cursor:
-        cursor.execute("SELECT pg_try_advisory_lock(%s)", [test_id])
+        cursor.execute("SELECT pg_try_advisory_lock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test_id])
         acquired = cursor.fetchone()[0]
 
     if not acquired:
@@ -65,8 +76,20 @@ def process_test(self, test_id: int, staging_key: str) -> None:
             _delete_staged_file(staging_key)
 
     finally:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_unlock(%s)", [test_id])
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test_id])
+                released = cursor.fetchone()[0]
+            if not released:
+                logger.warning(
+                    "process_test: pg_advisory_unlock found no lock held for test %s",
+                    test_id,
+                    extra={"test_id": test_id},
+                )
+        except Exception:
+            logger.warning(
+                "process_test: failed to release advisory lock for test %s", test_id, extra={"test_id": test_id}
+            )
 
 
 @app.task(bind=True, max_retries=0)

@@ -7,7 +7,7 @@ from django.conf import settings as django_settings
 from django.db import connection
 
 from core.models import Test
-from core.tasks import delete_test_file_keys, process_test
+from core.tasks import _PROCESS_TEST_LOCK_NAMESPACE, delete_test_file_keys, process_test
 
 pytestmark = pytest.mark.django_db
 
@@ -111,10 +111,14 @@ class TestProcessTestTask:
 
             process_test.delay(test.id, "screenshots/staging/1/upload.png")
 
+        # pg_advisory_unlock returns False when the calling session holds no such
+        # lock. Calling it directly (with no preceding pg_try_advisory_lock) lets us
+        # actually distinguish "process_test released its lock" from "it leaked it" —
+        # pg_try_advisory_lock is re-entrant within a session, so checking via that
+        # would always succeed regardless of whether process_test's own unlock ran.
         with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_try_advisory_lock(%s)", [test.id])
-            assert cursor.fetchone()[0] is True
-            cursor.execute("SELECT pg_advisory_unlock(%s)", [test.id])
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+            assert cursor.fetchone()[0] is False
 
     def test_held_lock_blocks_concurrent_invocation(self, test_factory, settings):
         # Postgres session-level advisory locks are re-entrant within the SAME
@@ -134,24 +138,33 @@ class TestProcessTestTask:
 
         lock_acquired = threading.Event()
         release_lock = threading.Event()
+        holder_errors: list[BaseException] = []
 
         def hold_lock_in_other_session():
-            from django.db import connection as thread_connection
-
-            with thread_connection.cursor() as cursor:
-                cursor.execute("SELECT pg_try_advisory_lock(%s)", [test.id])
-                assert cursor.fetchone()[0] is True
-            lock_acquired.set()
-            release_lock.wait(timeout=5)
-            with thread_connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_unlock(%s)", [test.id])
-            thread_connection.close()
+            # `connection` (the module-level django.db.connection imported at the top
+            # of this file) is thread-local by Django's own connection-handling
+            # machinery, so using it here naturally gets a separate session/backend
+            # connection from the one the main thread uses.
+            try:
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_try_advisory_lock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+                        assert cursor.fetchone()[0] is True
+                    lock_acquired.set()
+                    release_lock.wait()
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+                except BaseException as exc:  # noqa: BLE001 - surfaced to main thread below
+                    holder_errors.append(exc)
+            finally:
+                connection.close()
 
         holder = threading.Thread(target=hold_lock_in_other_session)
         holder.start()
-        assert lock_acquired.wait(timeout=5)
 
         try:
+            assert lock_acquired.wait(timeout=5)
+
             with (
                 patch("core.tasks.ScreenshotComparison") as mock_cls,
                 patch("core.tasks._download_staged_file") as mock_download,
@@ -167,6 +180,10 @@ class TestProcessTestTask:
         finally:
             release_lock.set()
             holder.join(timeout=5)
+            assert not holder.is_alive()
+
+        if holder_errors:
+            raise holder_errors[0]
 
     def test_releases_lock_after_failed_run(self, test_factory, settings):
         settings.CELERY_TASK_ALWAYS_EAGER = True
@@ -188,10 +205,23 @@ class TestProcessTestTask:
         test.refresh_from_db()
         assert test.status == Test.STATUS_FAILED
 
+        # See test_releases_lock_after_successful_run for why pg_advisory_unlock
+        # (returning False) is the correct check here, not pg_try_advisory_lock.
         with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_try_advisory_lock(%s)", [test.id])
-            assert cursor.fetchone()[0] is True
-            cursor.execute("SELECT pg_advisory_unlock(%s)", [test.id])
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, test.id])
+            assert cursor.fetchone()[0] is False
+
+    def test_releases_lock_when_test_lookup_raises(self, settings):
+        settings.CELERY_TASK_ALWAYS_EAGER = True
+        settings.CELERY_TASK_EAGER_PROPAGATES = True
+        bogus_id = 999_999_999
+
+        with pytest.raises(Test.DoesNotExist):
+            process_test.delay(bogus_id, "screenshots/staging/1/upload.png")
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [_PROCESS_TEST_LOCK_NAMESPACE, bogus_id])
+            assert cursor.fetchone()[0] is False
 
 
 class TestDeleteTestFileKeysTask:
