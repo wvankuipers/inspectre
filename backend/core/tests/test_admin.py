@@ -1,10 +1,15 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
+from botocore.exceptions import ClientError
+from django.conf import settings as django_settings
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from core.models import Test
+from core.services.s3 import staging_key_for_test
 
 pytestmark = pytest.mark.django_db
 
@@ -411,3 +416,300 @@ class TestProcessingQueueAdmin:
             f"query count grew with row count ({small_count} -> {large_count}); "
             "list_select_related isn't preventing the N+1 on run_label"
         )
+
+
+# =============================================================================
+# ProcessingQueueAdmin.restart_processing — manual recovery action
+# =============================================================================
+
+
+class TestRestartProcessingAction:
+    """`restart_processing` re-enqueues stuck pending/processing rows by hand.
+
+    Exercised end-to-end through the admin changelist action endpoint (not by
+    calling the method directly) so these tests also prove the action runs
+    despite `has_change_permission` returning False on this ModelAdmin —
+    Django gates actions by their own `allowed_permissions`, not
+    `has_change_permission`, but that's worth confirming empirically rather
+    than assuming it.
+    """
+
+    @pytest.fixture
+    def admin_client(self, client):
+        User.objects.create_user(
+            username="admin",
+            password="secret",
+            is_staff=True,
+            is_superuser=True,
+        )
+        client.login(username="admin", password="secret")
+        return client
+
+    def _run_action(self, admin_client, *tests):
+        return admin_client.post(
+            "/admin/core/processingqueuetest/",
+            data={
+                "action": "restart_processing",
+                "_selected_action": [str(test.pk) for test in tests],
+                "index": 0,
+            },
+            follow=True,
+        )
+
+    def test_restarts_test_when_staged_upload_present(self, admin_client, test_factory):
+        test = test_factory(status=Test.STATUS_PROCESSING)
+        staging_key = staging_key_for_test(test.id)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, test)
+
+        assert response.status_code == 200
+        mock_client.head_object.assert_called_once_with(Bucket=django_settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key)
+        mock_delay.assert_called_once_with(test.id, staging_key, 1)
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_PENDING
+        assert b"Restarted 1 test" in response.content
+
+    def test_restart_bumps_processing_claim(self, admin_client, test_factory):
+        """The restart is a NEW logical attempt, so it must bump the fencing
+        token — that's what lets process_test reject a stale/superseded
+        delivery from a prior click or an old crash-redelivery instead of
+        potentially clobbering this restart's result.
+        """
+        test = test_factory(status=Test.STATUS_PROCESSING, processing_claim=0)
+        staging_key = staging_key_for_test(test.id)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_get_client.return_value = MagicMock()
+            self._run_action(admin_client, test)
+
+        test.refresh_from_db()
+        assert test.processing_claim == 1
+        mock_delay.assert_called_once_with(test.id, staging_key, 1)
+
+    def test_missing_staged_upload_is_reported_and_not_restarted(self, admin_client, test_factory):
+        test = test_factory(status=Test.STATUS_PROCESSING)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_client = MagicMock()
+            mock_client.head_object.side_effect = ClientError(
+                {
+                    "Error": {"Code": "404", "Message": "Not Found"},
+                    "ResponseMetadata": {"HTTPStatusCode": 404},
+                },
+                "HeadObject",
+            )
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, test)
+
+        assert response.status_code == 200
+        mock_delay.assert_not_called()
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_PROCESSING
+        assert b"had no staged upload left in S3" in response.content
+
+    def test_non_404_client_error_is_not_swallowed(self, admin_client, test_factory):
+        """A 403/500/etc from S3 must surface loudly, not be reported as a
+        harmless "missing staged upload" — that guidance would be actively
+        wrong during a transient S3/network/permissions incident.
+        """
+        test = test_factory(status=Test.STATUS_PROCESSING)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_client = MagicMock()
+            mock_client.head_object.side_effect = ClientError(
+                {
+                    "Error": {"Code": "403", "Message": "Forbidden"},
+                    "ResponseMetadata": {"HTTPStatusCode": 403},
+                },
+                "HeadObject",
+            )
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(ClientError):
+                self._run_action(admin_client, test)
+
+        mock_delay.assert_not_called()
+        test.refresh_from_db()
+        assert test.status == Test.STATUS_PROCESSING
+
+    def test_action_runs_despite_has_change_permission_false(self, admin_client, test_factory):
+        """Regression guard for the read-only overrides on this ModelAdmin:
+        `has_change_permission` returns False here, but that must not block
+        this action from actually running end-to-end through the admin UI.
+        """
+        test = test_factory(status=Test.STATUS_PENDING)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_get_client.return_value = MagicMock()
+            self._run_action(admin_client, test)
+
+        mock_delay.assert_called_once()
+
+    def test_no_queued_tests_shows_no_op_warning(self, admin_client, test_factory):
+        """If the selected row already left pending/processing by the time the
+        action runs (e.g. it finished between page load and clicking "Go"),
+        `get_queryset` filters it out and the action's queryset ends up empty —
+        both `restarted` and `missing` stay 0. The admin should still see
+        feedback instead of a silent no-op reload.
+        """
+        test = test_factory(status=Test.STATUS_DONE)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+            patch("core.admin.process_test.delay") as mock_delay,
+        ):
+            mock_get_client.return_value = MagicMock()
+            response = self._run_action(admin_client, test)
+
+        assert response.status_code == 200
+        mock_delay.assert_not_called()
+        assert b"No queued tests to restart." in response.content
+
+
+class TestDiscardFromQueueAction:
+    """`discard_from_queue` permanently removes stuck rows and their staged
+    S3 upload, behind a two-step confirmation like Django's built-in "Delete
+    selected" action.
+    """
+
+    @pytest.fixture
+    def admin_client(self, client):
+        User.objects.create_user(
+            username="admin",
+            password="secret",
+            is_staff=True,
+            is_superuser=True,
+        )
+        client.login(username="admin", password="secret")
+        return client
+
+    def _run_action(self, admin_client, *tests, confirm=False):
+        data = {
+            "action": "discard_from_queue",
+            "_selected_action": [str(test.pk) for test in tests],
+            "index": 0,
+        }
+        if confirm:
+            data["post"] = "yes"
+        return admin_client.post("/admin/core/processingqueuetest/", data=data, follow=True)
+
+    def test_unconfirmed_request_shows_confirmation_page_and_deletes_nothing(self, admin_client, test_factory):
+        test = test_factory(status=Test.STATUS_PENDING)
+
+        response = self._run_action(admin_client, test, confirm=False)
+
+        assert response.status_code == 200
+        assert str(test).encode() in response.content
+        assert Test.objects.filter(pk=test.pk).exists()
+
+    def test_unconfirmed_request_shows_cancel_link(self, admin_client, test_factory):
+        """The confirmation page must offer a way back besides the browser's
+        back button, matching Django's own delete-confirmation template.
+        """
+        test = test_factory(status=Test.STATUS_PENDING)
+
+        response = self._run_action(admin_client, test, confirm=False)
+
+        assert response.status_code == 200
+        assert b"No, take me back" in response.content
+        assert b"cancel-link" in response.content
+
+    def test_confirmed_request_deletes_row_and_cleans_up_s3(self, admin_client, test_factory):
+        test = test_factory(status=Test.STATUS_PROCESSING)
+        staging_key = staging_key_for_test(test.id)
+
+        with patch("core.admin.get_s3_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, test, confirm=True)
+
+        assert response.status_code == 200
+        assert not Test.objects.filter(pk=test.pk).exists()
+        mock_client.delete_object.assert_called_once_with(
+            Bucket=django_settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key
+        )
+        assert b"Discarded 1 test(s)" in response.content
+
+    def test_confirmed_request_on_multiple_rows_discards_all(self, admin_client, test_factory):
+        pending = test_factory(status=Test.STATUS_PENDING)
+        processing = test_factory(status=Test.STATUS_PROCESSING)
+
+        with patch("core.admin.get_s3_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, pending, processing, confirm=True)
+
+        assert response.status_code == 200
+        assert not Test.objects.filter(pk__in=[pending.pk, processing.pk]).exists()
+        assert mock_client.delete_object.call_count == 2
+
+    def test_404_staged_upload_is_not_an_error(self, admin_client, test_factory):
+        """A 404 (staged upload already gone) is fine and doesn't block the
+        discard; the row is still deleted from the DB and success message shown.
+        """
+        test = test_factory(status=Test.STATUS_PROCESSING)
+
+        with patch("core.admin.get_s3_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.delete_object.side_effect = ClientError(
+                {
+                    "Error": {"Code": "404", "Message": "Not Found"},
+                    "ResponseMetadata": {"HTTPStatusCode": 404},
+                },
+                "DeleteObject",
+            )
+            mock_get_client.return_value = mock_client
+
+            response = self._run_action(admin_client, test, confirm=True)
+
+        assert response.status_code == 200
+        assert not Test.objects.filter(pk=test.pk).exists()
+        assert b"Discarded 1 test(s)" in response.content
+
+    def test_non_404_client_error_is_not_swallowed(self, admin_client, test_factory):
+        """A 403/500/etc from S3 must surface loudly, not be treated as a
+        harmless "already gone" — that would leave the row deleted in the DB
+        while its staged upload silently leaks in S3.
+        """
+        test = test_factory(status=Test.STATUS_PROCESSING)
+
+        with (
+            patch("core.admin.get_s3_client") as mock_get_client,
+        ):
+            mock_client = MagicMock()
+            mock_client.delete_object.side_effect = ClientError(
+                {
+                    "Error": {"Code": "403", "Message": "Forbidden"},
+                    "ResponseMetadata": {"HTTPStatusCode": 403},
+                },
+                "DeleteObject",
+            )
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(ClientError):
+                self._run_action(admin_client, test, confirm=True)
+
+        test.refresh_from_db()
+        assert Test.objects.filter(pk=test.pk).exists()

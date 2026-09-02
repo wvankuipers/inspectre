@@ -1,9 +1,16 @@
+from botocore.exceptions import ClientError
 from django import forms
-from django.contrib import admin
+from django.conf import settings
+from django.contrib import admin, messages
+from django.contrib.admin import helpers
 from django.db import models as db_models
+from django.db.models import F
+from django.template.response import TemplateResponse
 from django.utils import timezone
 
 from core.models import Baseline, ProcessingQueueTest, Project, Run, Suite, Test
+from core.services.s3 import get_s3_client, staging_key_for_test
+from core.tasks import process_test
 
 
 class RenameWarningMixin:
@@ -137,11 +144,106 @@ class TestAdmin(admin.ModelAdmin):
 
 @admin.register(ProcessingQueueTest)
 class ProcessingQueueAdmin(admin.ModelAdmin):
-    list_display = ("name", "browser", "size", "status", "run_label", "waiting_since", "created_at")
+    list_display = (
+        "name",
+        "browser",
+        "size",
+        "status",
+        "process_attempts",
+        "processing_claim",
+        "run_label",
+        "waiting_since",
+        "created_at",
+    )
     list_filter = ("status", "browser", "run__suite__project")
     search_fields = ("name", "run__suite__name", "run__suite__project__name")
     ordering = ("created_at",)  # oldest first — front of the queue
     list_select_related = ("run__suite__project", "run__suite")
+    actions = ["restart_processing", "discard_from_queue"]
+
+    @admin.action(description="Restart processing")
+    def restart_processing(self, request, queryset):
+        """Manually re-enqueue stuck pending/processing rows (e.g. after a
+        worker crash left the queue stuck). Safe because `process_test` only
+        deletes the staged upload once the pipeline has finished AND its
+        processing claim is revalidated as still current — a row stuck here
+        in pending/processing never got that far, so its staged upload is
+        still sitting in S3, unless its status changed between page load and
+        running this action.
+        """
+        restarted = 0
+        missing = 0
+        s3_client = get_s3_client()
+        for test in queryset:
+            staging_key = staging_key_for_test(test.id)
+            try:
+                s3_client.head_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=staging_key)
+            except ClientError as exc:
+                if exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
+                    missing += 1
+                    continue
+                raise
+
+            Test.objects.filter(pk=test.id).update(
+                status=Test.STATUS_PENDING,
+                process_attempts=0,
+                processing_claim=F("processing_claim") + 1,
+            )
+            test.refresh_from_db(fields=["processing_claim"])
+            process_test.delay(test.id, staging_key, test.processing_claim)
+            restarted += 1
+
+        if restarted:
+            self.message_user(request, f"Restarted {restarted} test(s).")
+        if missing:
+            self.message_user(
+                request,
+                f"{missing} test(s) had no staged upload left in S3 and could not be restarted; re-run them from CI.",
+                level=messages.WARNING,
+            )
+        if not restarted and not missing:
+            self.message_user(request, "No queued tests to restart.", level=messages.WARNING)
+
+    @admin.action(description="Discard from queue")
+    def discard_from_queue(self, request, queryset):
+        """Permanently remove selected rows and their orphaned staged S3 upload.
+
+        Two-step confirm, like Django's built-in "Delete selected" — but skips
+        `get_deleted_objects`'s cascade/permission check, since that would
+        evaluate `has_delete_permission` against this deliberately locked-down
+        ModelAdmin and always report "no permission". Safe to skip: `Test` has
+        no meaningful cascade (`Baseline.test` is SET_NULL).
+
+        A missing staged upload (S3 404) is not an error — nothing to clean up,
+        so the row is still discarded. Any other S3 error aborts the whole
+        action before any row is deleted, rather than discarding a row without
+        actually cleaning up its upload.
+        """
+        if request.POST.get("post") == "yes":
+            s3_client = get_s3_client()
+            for test in queryset:
+                try:
+                    s3_client.delete_object(
+                        Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+                        Key=staging_key_for_test(test.id),
+                    )
+                except ClientError as exc:
+                    if exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
+                        continue
+                    raise
+            count = queryset.count()
+            queryset.delete()
+            self.message_user(request, f"Discarded {count} test(s) from the queue.")
+            return None
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Discard from queue?",
+            "queryset": queryset,
+            "opts": self.model._meta,
+            "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
+        }
+        return TemplateResponse(request, "admin/core/discard_from_queue_confirmation.html", context)
 
     def has_add_permission(self, request):
         return False

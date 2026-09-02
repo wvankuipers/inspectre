@@ -1,6 +1,14 @@
 from unittest.mock import patch
 
-from core.services.s3 import generate_presigned_url, get_presign_s3_client
+from core.services.s3 import generate_presigned_url, get_presign_s3_client, staging_key_for_test
+
+
+class TestStagingKeyForTest:
+    def test_returns_correct_key_for_test_id(self):
+        assert staging_key_for_test(42) == "screenshots/staging/42/upload.png"
+
+    def test_returns_correct_key_for_different_test_id(self):
+        assert staging_key_for_test(1) == "screenshots/staging/1/upload.png"
 
 
 class TestGeneratePresignedUrl:

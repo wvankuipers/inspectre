@@ -75,7 +75,7 @@ def attach_test_thumbnails(
             with local_dest.open("rb") as fh:
                 field.save(s3_name, File(fh), save=False)
             uploaded_fields.append(field)
-        test.save()
+        test.save(update_fields=["screenshot_thumb", "screenshot_baseline_thumb", "screenshot_diff_thumb"])
     except Exception:
         for field in uploaded_fields:
             try:
