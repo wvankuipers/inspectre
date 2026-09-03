@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/wvankuipers/inspectre/compare/1.4.1...1.4.2) - 2026-09-03
+
+- chore(deps-dev): bump angular-eslint from 22.1.0 to 22.2.0 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/107
+- chore(deps-dev): bump browserslist from 4.28.5 to 4.28.8 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/109
+- chore(deps): bump fast-uri from 3.1.5 to 3.1.7 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/108
+- fix: parse scientific notation in ImageMagick AE metric by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/110
+
 ## [1.4.1](https://github.com/wvankuipers/inspectre/compare/1.4.0...1.4.1) - 2026-09-02
 
 - Fix/worker queue recovery by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/105
