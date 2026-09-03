@@ -189,6 +189,90 @@ def test_corrupt_input_raises_imagediff_error(test_factory, upload, tmp_path):
         ScreenshotComparison(test, upload(not_an_image)).run()
 
 
+def test_compare_parses_scientific_notation_ae_metric(test_factory, upload, testcard, run1, run2):
+    """ImageMagick's `-metric AE` switches to scientific notation (e.g. "1.86196e+06")
+    once the differing-pixel count is large enough. Previously `_compare` parsed
+    stderr with plain `int()`, which raises ValueError on that format and gets
+    wrapped into ImageDiffError -- so any run diffed against an existing baseline
+    with a large enough pixel delta failed with no screenshot/diff ever persisted,
+    even though the images themselves were completely valid.
+
+    Regression test: patches subprocess.run to substitute the real `compare`
+    call's stderr with a scientific-notation AE value, while letting every other
+    ImageMagick invocation (both `convert` pads, and `compare` itself) run for
+    real -- only the returned CompletedProcess.stderr is rewritten. No actual
+    multi-million-pixel image is required.
+    """
+    first = test_factory()
+    ScreenshotComparison(first, upload(testcard)).run()
+    _approve(first)
+
+    second = test_factory(
+        run=first.run,
+        name=first.name,
+        browser=first.browser,
+        size=first.size,
+    )
+
+    real_run = subprocess.run
+
+    def rewrite_compare_stderr(*args, **kwargs):
+        result = real_run(*args, **kwargs)
+        cmd = args[0] if args else kwargs.get("args")
+        if cmd and cmd[0] == "compare":
+            result = subprocess.CompletedProcess(
+                args=result.args,
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr="1.86196e+06",
+            )
+        return result
+
+    with patch("subprocess.run", side_effect=rewrite_compare_stderr):
+        ScreenshotComparison(second, upload(run2)).run()
+
+    second.refresh_from_db()
+    assert second.diff > 0
+    assert second.screenshot
+    assert second.screenshot_baseline
+    assert second.screenshot_diff
+
+
+def test_compare_malformed_ae_metric_still_raises_imagediff_error(test_factory, upload, testcard, run2):
+    """Genuinely unparseable compare output (neither plain int nor scientific
+    notation) must still raise ImageDiffError -- the except (ValueError, IndexError)
+    fallback is preserved by the fix, not silently swallowed.
+    """
+    first = test_factory()
+    ScreenshotComparison(first, upload(testcard)).run()
+    _approve(first)
+
+    second = test_factory(
+        run=first.run,
+        name=first.name,
+        browser=first.browser,
+        size=first.size,
+    )
+
+    real_run = subprocess.run
+
+    def rewrite_compare_stderr(*args, **kwargs):
+        result = real_run(*args, **kwargs)
+        cmd = args[0] if args else kwargs.get("args")
+        if cmd and cmd[0] == "compare":
+            result = subprocess.CompletedProcess(
+                args=result.args,
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr="not-a-number",
+            )
+        return result
+
+    with patch("subprocess.run", side_effect=rewrite_compare_stderr):
+        with pytest.raises(ImageDiffError, match="could not parse compare output"):
+            ScreenshotComparison(second, upload(run2)).run()
+
+
 def test_first_upload_thumbnail_failure_leaves_no_orphaned_screenshot(
     test_factory,
     upload,

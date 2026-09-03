@@ -236,7 +236,7 @@ class ScreenshotComparison:
             raise ImageDiffError(f"compare failed (rc={result.returncode}): {result.stderr.strip()}")
 
         try:
-            return int(result.stderr.strip().split()[0])
+            return int(float(result.stderr.strip().split()[0]))
         except (ValueError, IndexError) as exc:
             raise ImageDiffError(f"could not parse compare output: {result.stderr!r}") from exc
 
