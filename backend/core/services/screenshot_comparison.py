@@ -237,7 +237,7 @@ class ScreenshotComparison:
 
         try:
             return int(float(result.stderr.strip().split()[0]))
-        except (ValueError, IndexError) as exc:
+        except (ValueError, IndexError, OverflowError) as exc:
             raise ImageDiffError(f"could not parse compare output: {result.stderr!r}") from exc
 
     def _record_result(self, canvas: Canvas, diff_pixels: int) -> None:

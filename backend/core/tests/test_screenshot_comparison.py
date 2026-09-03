@@ -273,6 +273,42 @@ def test_compare_malformed_ae_metric_still_raises_imagediff_error(test_factory, 
             ScreenshotComparison(second, upload(run2)).run()
 
 
+def test_compare_non_finite_ae_metric_raises_imagediff_error(test_factory, upload, testcard, run2):
+    """A non-finite AE value (e.g. "1e9999", which Python parses as float("inf"))
+    must raise ImageDiffError, not an uncaught OverflowError. `int(float("inf"))`
+    raises OverflowError, which the original except (ValueError, IndexError)
+    clause does not catch.
+    """
+    first = test_factory()
+    ScreenshotComparison(first, upload(testcard)).run()
+    _approve(first)
+
+    second = test_factory(
+        run=first.run,
+        name=first.name,
+        browser=first.browser,
+        size=first.size,
+    )
+
+    real_run = subprocess.run
+
+    def rewrite_compare_stderr(*args, **kwargs):
+        result = real_run(*args, **kwargs)
+        cmd = args[0] if args else kwargs.get("args")
+        if cmd and cmd[0] == "compare":
+            result = subprocess.CompletedProcess(
+                args=result.args,
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr="1e9999",
+            )
+        return result
+
+    with patch("subprocess.run", side_effect=rewrite_compare_stderr):
+        with pytest.raises(ImageDiffError, match="could not parse compare output"):
+            ScreenshotComparison(second, upload(run2)).run()
+
+
 def test_first_upload_thumbnail_failure_leaves_no_orphaned_screenshot(
     test_factory,
     upload,
