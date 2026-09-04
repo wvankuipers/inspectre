@@ -12,11 +12,11 @@ asgiref==3.12.1
     #   django-cors-headers
 billiard==4.2.4
     # via celery
-boto3==1.43.83
+boto3==1.43.85
     # via
     #   django-storages
     #   inspectre (pyproject.toml)
-botocore==1.43.83
+botocore==1.43.85
     # via
     #   boto3
     #   s3transfer
@@ -86,9 +86,9 @@ pluggy==1.6.0
     #   pytest-cov
 prompt-toolkit==3.0.53
     # via click-repl
-psycopg==3.3.4
+psycopg==3.3.5
     # via inspectre (pyproject.toml)
-psycopg-binary==3.3.4
+psycopg-binary==3.3.5
     # via psycopg
 pygments==2.21.0
     # via pytest
