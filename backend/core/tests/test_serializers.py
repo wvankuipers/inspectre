@@ -346,6 +346,17 @@ def test_project_serializer_has_no_suites_field(project_factory):
     assert "suites" not in body
 
 
+def test_project_serializer_without_aggregates_context_raises_instead_of_silently_zeroing(project_factory):
+    """ProjectSerializer is not usable without context["project_aggregates"] — a missing
+    context key must raise loudly, not silently render "0 suites, no runs, no tests" on
+    the landing page (see _aggregate).
+    """
+    project = project_factory(name="Acme")
+
+    with pytest.raises(KeyError):
+        _ = ProjectSerializer(project).data
+
+
 def test_build_project_aggregates_zero_suite_project(project_factory):
     """A project with no suites at all: suite_count 0, everything else null/empty."""
     project = project_factory()

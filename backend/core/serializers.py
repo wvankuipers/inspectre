@@ -312,7 +312,8 @@ class RunSummarySerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         # Fast path: counts were pre-batched across many runs by SuiteDetailSerializer /
-        # ProjectSerializer (see build_run_counts) — zero extra queries here.
+        # ProjectDetailSerializer / build_project_aggregates (see build_run_counts) — zero
+        # extra queries here.
         run_counts = self.context.get("run_counts")
         if run_counts is not None and instance.id in run_counts:
             self._counts = run_counts[instance.id]
@@ -407,7 +408,8 @@ class SuiteDetailSerializer(serializers.ModelSerializer):
         # doesn't issue one Baseline query per run (same pattern as RunDetailSerializer).
         baselined_keys = set(Baseline.objects.filter(suite_id=obj.pk).values_list("key", flat=True))
         # Batch passing/failing/unbaselined counts for these runs into two GROUP BY queries
-        # total, instead of 3 raw .count() queries per run (same pattern as ProjectSerializer).
+        # total, instead of 3 raw .count() queries per run (same pattern as
+        # build_project_aggregates).
         run_counts = build_run_counts([run.id for run in runs], baselined_keys)
         return RunSummarySerializer(
             runs, many=True, context={"baselined_keys": baselined_keys, "run_counts": run_counts}
@@ -488,16 +490,12 @@ class ProjectSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "slug", "suite_count", "single_suite_slug", "last_run_at", "totals"]
 
     def _aggregate(self, obj):
-        aggregates = self.context.get("project_aggregates") or {}
-        return aggregates.get(
-            obj.id,
-            {
-                "suite_count": 0,
-                "single_suite_slug": None,
-                "last_run_at": None,
-                "totals": {"passing": 0, "failing": 0, "unbaselined": 0},
-            },
-        )
+        # No silent-zero fallback here by design: this serializer is not usable without
+        # `context["project_aggregates"]` (see build_project_aggregates). A missing context
+        # key or missing project id must raise KeyError rather than silently rendering every
+        # project as "0 suites, no runs, no tests" on the app's landing page.
+        aggregates = self.context["project_aggregates"]
+        return aggregates[obj.id]
 
     def get_suite_count(self, obj):
         return self._aggregate(obj)["suite_count"]
