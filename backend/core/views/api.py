@@ -15,9 +15,11 @@ from rest_framework.response import Response
 from core.models import Baseline, Project, Run, Suite, Test
 from core.serializers import (
     BaselineSerializer,
+    ProjectDetailSerializer,
     ProjectSerializer,
     RunDetailSerializer,
     SuiteDetailSerializer,
+    build_project_aggregates,
     serialize_test_history,
     serialize_tests_bulk,
 )
@@ -33,7 +35,15 @@ MAX_BULK_TEST_IDS = 1000
 @permission_classes([AllowAny])
 def projects_list(request):
     qs = Project.objects.prefetch_related("suites__runs").order_by("name")
-    return Response(ProjectSerializer(qs, many=True).data)
+    project_aggregates = build_project_aggregates(qs)
+    return Response(ProjectSerializer(qs, many=True, context={"project_aggregates": project_aggregates}).data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def project_detail(request, project):
+    obj = get_object_or_404(Project.objects.prefetch_related("suites__runs"), slug=project)
+    return Response(ProjectDetailSerializer(obj).data)
 
 
 @api_view(["GET"])
