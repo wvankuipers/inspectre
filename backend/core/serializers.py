@@ -414,42 +414,102 @@ class SuiteDetailSerializer(serializers.ModelSerializer):
         ).data
 
 
-class ProjectSerializer(serializers.ModelSerializer):
-    """Top-level projects list. One row per (project, suite) — flattened by the view."""
+def build_project_aggregates(projects):
+    """Batch per-project aggregate counters for the projects list into one dict.
 
-    suites = serializers.SerializerMethodField()
+    Expects `Project` instances with `suites__runs` prefetched (see `projects_list`
+    view). For each project: `suite_count`, `single_suite_slug` (the one suite's slug
+    when there's exactly one, else None), `last_run_at` (max `created_at` across each
+    suite's *current* latest run, or None if no suite has ever run), and `totals`
+    (summed passing/failing/unbaselined across each suite's current latest-run counts;
+    a suite with no runs contributes zero to each).
+
+    Batching discipline mirrors `build_run_counts`: one query for baselined_keys across
+    every suite of every project, and exactly one call to `build_run_counts` covering
+    every project's latest-run ids — never a query (or a build_run_counts call) per
+    project.
+    """
+    projects = list(projects)
+    suites_by_project = {}
+    all_suites = []
+    for project in projects:
+        suites = list(project.suites.all())
+        suites_by_project[project.id] = suites
+        all_suites.extend(suites)
+
+    suite_ids = [suite.id for suite in all_suites]
+    baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
+
+    latest_run_by_suite = {}
+    for suite in all_suites:
+        suite_runs = list(suite.runs.all())
+        latest_run_by_suite[suite.id] = suite_runs[0] if suite_runs else None
+
+    all_latest_run_ids = [run.id for run in latest_run_by_suite.values() if run is not None]
+    run_counts = build_run_counts(all_latest_run_ids, baselined_keys)
+
+    aggregates = {}
+    for project in projects:
+        suites = suites_by_project[project.id]
+        last_run_at = None
+        totals = {"passing": 0, "failing": 0, "unbaselined": 0}
+        for suite in suites:
+            latest = latest_run_by_suite[suite.id]
+            if latest is None:
+                continue
+            if last_run_at is None or latest.created_at > last_run_at:
+                last_run_at = latest.created_at
+            counts = run_counts.get(latest.id, {"passing": 0, "failing": 0, "unbaselined": 0})
+            totals["passing"] += counts["passing"]
+            totals["failing"] += counts["failing"]
+            totals["unbaselined"] += counts["unbaselined"]
+        aggregates[project.id] = {
+            "suite_count": len(suites),
+            "single_suite_slug": suites[0].slug if len(suites) == 1 else None,
+            "last_run_at": last_run_at,
+            "totals": totals,
+        }
+    return aggregates
+
+
+class ProjectSerializer(serializers.ModelSerializer):
+    """Top-level projects list. One row per project, with aggregate counts across its
+    suites — backed by `context["project_aggregates"]` (see `build_project_aggregates`).
+    The old per-suite breakdown moves to `ProjectDetailSerializer`.
+    """
+
+    suite_count = serializers.SerializerMethodField()
+    single_suite_slug = serializers.SerializerMethodField()
+    last_run_at = serializers.SerializerMethodField()
+    totals = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
-        fields = ["id", "name", "slug", "suites"]
+        fields = ["id", "name", "slug", "suite_count", "single_suite_slug", "last_run_at", "totals"]
 
-    def get_suites(self, obj):
-        suites = list(obj.suites.all())
-        # Pre-fetch baseline keys once for the whole project so RunSummarySerializer.
-        # get_unbaselined doesn't issue one Baseline query per suite (same pattern as
-        # SuiteDetailSerializer.get_latest_runs / RunDetailSerializer.get_tests).
-        suite_ids = [suite.id for suite in suites]
-        baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
-        # Batch passing/failing/unbaselined counts for every suite's latest run into two
-        # GROUP BY queries total, instead of 3 raw .count() queries per suite.
-        latest_by_suite = {}
-        for suite in suites:
-            suite_runs = list(suite.runs.all())
-            latest_by_suite[suite.id] = suite_runs[0] if suite_runs else None
-        run_counts = build_run_counts([run.id for run in latest_by_suite.values() if run is not None], baselined_keys)
-        result = []
-        for suite in suites:
-            latest = latest_by_suite[suite.id]
-            result.append(
-                {
-                    "id": suite.id,
-                    "name": suite.name,
-                    "slug": suite.slug,
-                    "latest_run": RunSummarySerializer(
-                        latest, context={"baselined_keys": baselined_keys, "run_counts": run_counts}
-                    ).data
-                    if latest
-                    else None,
-                }
-            )
-        return result
+    def _aggregate(self, obj):
+        aggregates = self.context.get("project_aggregates") or {}
+        return aggregates.get(
+            obj.id,
+            {
+                "suite_count": 0,
+                "single_suite_slug": None,
+                "last_run_at": None,
+                "totals": {"passing": 0, "failing": 0, "unbaselined": 0},
+            },
+        )
+
+    def get_suite_count(self, obj):
+        return self._aggregate(obj)["suite_count"]
+
+    def get_single_suite_slug(self, obj):
+        return self._aggregate(obj)["single_suite_slug"]
+
+    def get_last_run_at(self, obj):
+        last_run_at = self._aggregate(obj)["last_run_at"]
+        if last_run_at is None:
+            return None
+        return serializers.DateTimeField().to_representation(last_run_at)
+
+    def get_totals(self, obj):
+        return self._aggregate(obj)["totals"]

@@ -11,6 +11,7 @@ from core.serializers import (
     SuiteDetailSerializer,
     TestHistoryEntrySerializer,
     TestRowSerializer,
+    build_project_aggregates,
     build_run_counts,
     serialize_test_history,
 )
@@ -318,43 +319,239 @@ def test_spa_test_row_uses_passed_not_pass(test_factory):
     assert "pass" not in body, "leaked the legacy wire format into the SPA payload"
 
 
-# ---- ProjectSerializer flattens suites -----------------------------------
+# ---- ProjectSerializer / build_project_aggregates — one row per project --
 
 
-def test_project_serializer_includes_suites(project_factory, suite_factory, run_factory):
+def _projects_with_prefetch(*project_ids):
+    """Mirrors the view's queryset: Project.objects.prefetch_related("suites__runs")."""
+    from core.models import Project
+
+    return list(Project.objects.filter(id__in=project_ids).prefetch_related("suites__runs").order_by("name"))
+
+
+def _serialize_project(project, many_projects=None):
+    """Build project_aggregates the way the view will, then serialize."""
+    projects = many_projects if many_projects is not None else _projects_with_prefetch(project.id)
+    aggregates = build_project_aggregates(projects)
+    if many_projects is not None:
+        return ProjectSerializer(projects, many=True, context={"project_aggregates": aggregates}).data
+    return ProjectSerializer(projects[0], context={"project_aggregates": aggregates}).data
+
+
+def test_project_serializer_has_no_suites_field(project_factory):
+    """The old flattened suites-list shape moves to ProjectDetailSerializer (Task 2)."""
     project = project_factory(name="Acme")
+    body = _serialize_project(project)
+    assert "suites" not in body
+
+
+def test_build_project_aggregates_zero_suite_project(project_factory):
+    """A project with no suites at all: suite_count 0, everything else null/empty."""
+    project = project_factory()
+    projects = _projects_with_prefetch(project.id)
+
+    aggregates = build_project_aggregates(projects)
+
+    assert aggregates[project.id]["suite_count"] == 0
+    assert aggregates[project.id]["single_suite_slug"] is None
+    assert aggregates[project.id]["last_run_at"] is None
+    assert aggregates[project.id]["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0}
+
+
+def test_build_project_aggregates_no_suite_has_ever_run(project_factory, suite_factory):
+    """Suites exist, but none has a run: last_run_at is null, totals are all zero."""
+    project = project_factory()
     suite_factory(project=project, name="Desktop")
     suite_factory(project=project, name="Mobile")
+    projects = _projects_with_prefetch(project.id)
 
-    body = ProjectSerializer(project).data
-    suite_names = {s["name"] for s in body["suites"]}
-    assert suite_names == {"Desktop", "Mobile"}
+    aggregates = build_project_aggregates(projects)
+
+    assert aggregates[project.id]["suite_count"] == 2
+    assert aggregates[project.id]["single_suite_slug"] is None
+    assert aggregates[project.id]["last_run_at"] is None
+    assert aggregates[project.id]["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0}
 
 
-def test_project_serializer_suite_with_no_runs_has_null_latest_run(
-    project_factory,
-    suite_factory,
+def test_build_project_aggregates_single_suite_slug_only_when_suite_count_is_one(
+    project_factory, suite_factory
 ):
-    """The legacy template crashed when suite.latest_run was nil. The SPA gets a clean null."""
     project = project_factory()
-    suite_factory(project=project)
+    suite_factory(project=project, name="Desktop", slug="desktop")
+    projects = _projects_with_prefetch(project.id)
 
-    body = ProjectSerializer(project).data
-    assert body["suites"][0]["latest_run"] is None
+    aggregates = build_project_aggregates(projects)
+
+    assert aggregates[project.id]["suite_count"] == 1
+    assert aggregates[project.id]["single_suite_slug"] == "desktop"
 
 
-def test_project_serializer_suite_with_runs_includes_latest_run_summary(
-    project_factory,
-    suite_factory,
-    run_factory,
+def test_build_project_aggregates_single_suite_slug_is_null_when_multiple_suites(
+    project_factory, suite_factory
 ):
+    project = project_factory()
+    suite_factory(project=project, name="Desktop")
+    suite_factory(project=project, name="Mobile")
+    projects = _projects_with_prefetch(project.id)
+
+    aggregates = build_project_aggregates(projects)
+
+    assert aggregates[project.id]["single_suite_slug"] is None
+
+
+def test_build_project_aggregates_last_run_at_is_max_across_suites_latest_runs(
+    project_factory, suite_factory, run_factory
+):
+    """Mixed project: one suite with runs, one suite with no runs.
+
+    last_run_at is the max created_at across each suite's *current* latest run;
+    the suite with no runs contributes nothing.
+    """
+    project = project_factory()
+    suite_with_runs = suite_factory(project=project, name="Desktop")
+    suite_factory(project=project, name="Mobile")  # never run
+    run_factory(suite=suite_with_runs)
+    latest_run = run_factory(suite=suite_with_runs)
+
+    projects = _projects_with_prefetch(project.id)
+    aggregates = build_project_aggregates(projects)
+
+    assert aggregates[project.id]["suite_count"] == 2
+    assert aggregates[project.id]["last_run_at"] == latest_run.created_at
+
+
+def test_build_project_aggregates_totals_sum_each_suites_latest_run_counts(
+    project_factory, suite_factory, run_factory, test_factory, baseline_factory
+):
+    """totals.{passing,failing,unbaselined} sum across each suite's current latest-run
+    counts; a suite with no runs contributes 0 to each."""
+    project = project_factory()
+
+    suite_a = suite_factory(project=project, name="Desktop")
+    run_a = run_factory(suite=suite_a)
+    t1 = test_factory(run=run_a, passed=True)
+    test_factory(run=run_a, passed=False)
+    baseline_factory(suite=suite_a, key=t1.key)
+
+    suite_b = suite_factory(project=project, name="Mobile")
+    run_b = run_factory(suite=suite_b)
+    test_factory(run=run_b, passed=True)
+
+    suite_factory(project=project, name="Tablet")  # no runs — contributes 0
+
+    projects = _projects_with_prefetch(project.id)
+    aggregates = build_project_aggregates(projects)
+
+    totals = aggregates[project.id]["totals"]
+    assert totals == {"passing": 2, "failing": 1, "unbaselined": 2}
+
+
+def test_build_project_aggregates_ignores_older_runs_not_just_latest(
+    project_factory, suite_factory, run_factory, test_factory
+):
+    """Only the *current* latest run per suite counts — an older run's tests must not
+    leak into the totals."""
     project = project_factory()
     suite = suite_factory(project=project)
-    run_factory(suite=suite)
-    run_factory(suite=suite)
+    old_run = run_factory(suite=suite)
+    test_factory(run=old_run, passed=False)
+    new_run = run_factory(suite=suite)
+    test_factory(run=new_run, passed=True)
 
-    body = ProjectSerializer(project).data
-    assert body["suites"][0]["latest_run"]["sequential_id"] == 2
+    projects = _projects_with_prefetch(project.id)
+    aggregates = build_project_aggregates(projects)
+
+    assert aggregates[project.id]["totals"] == {"passing": 1, "failing": 0, "unbaselined": 1}
+
+
+def test_build_project_aggregates_batches_across_all_projects_in_one_pass(
+    django_assert_num_queries, project_factory, suite_factory, run_factory, test_factory, baseline_factory
+):
+    """Must not regress into a query-per-project pattern: build_run_counts is called
+    once across every project's latest-run ids, and baselined_keys is fetched once."""
+    projects = []
+    for i in range(3):
+        project = project_factory(name=f"Project {i}")
+        suite = suite_factory(project=project, name=f"Suite {i}")
+        run = run_factory(suite=suite)
+        t = test_factory(run=run, passed=True)
+        baseline_factory(suite=suite, key=t.key)
+        projects.append(project)
+
+    project_ids = [p.id for p in projects]
+    fetched = _projects_with_prefetch(*project_ids)  # the prefetch queries happen here
+
+    # Inside build_project_aggregates itself: 1 query for baselined_keys across all
+    # suites of all projects + 2 queries for build_run_counts's GROUP BYs across all
+    # latest-run ids — never scaling with project or suite count.
+    with django_assert_num_queries(3):
+        aggregates = build_project_aggregates(fetched)
+
+    assert len(aggregates) == 3
+    for project in projects:
+        assert aggregates[project.id]["totals"]["passing"] == 1
+
+
+def test_project_serializer_exposes_aggregate_fields(project_factory, suite_factory, run_factory, test_factory):
+    project = project_factory(name="Acme")
+    suite = suite_factory(project=project, name="Desktop")
+    run = run_factory(suite=suite)
+    test_factory(run=run, passed=True)
+
+    body = _serialize_project(project)
+
+    assert body["id"] == project.id
+    assert body["name"] == "Acme"
+    assert body["slug"] == project.slug
+    assert body["suite_count"] == 1
+    assert body["single_suite_slug"] == suite.slug
+    assert body["last_run_at"] is not None
+    assert body["totals"] == {"passing": 1, "failing": 0, "unbaselined": 1}
+
+
+def test_project_serializer_zero_suite_project(project_factory):
+    project = project_factory()
+
+    body = _serialize_project(project)
+
+    assert body["suite_count"] == 0
+    assert body["single_suite_slug"] is None
+    assert body["last_run_at"] is None
+    assert body["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0}
+
+
+def test_project_serializer_multi_suite_mixed_runs(project_factory, suite_factory, run_factory, test_factory):
+    """Multiple suites, some with runs, some without: single_suite_slug is null,
+    last_run_at reflects the run-having suite, totals only include it."""
+    project = project_factory()
+    suite_with_run = suite_factory(project=project, name="Desktop")
+    suite_factory(project=project, name="Mobile")  # never run
+    run = run_factory(suite=suite_with_run)
+    test_factory(run=run, passed=True)
+    test_factory(run=run, passed=False)
+
+    body = _serialize_project(project)
+
+    assert body["suite_count"] == 2
+    assert body["single_suite_slug"] is None
+    assert body["last_run_at"] is not None
+    assert body["totals"] == {"passing": 1, "failing": 1, "unbaselined": 2}
+
+
+def test_project_serializer_many_uses_shared_context(project_factory, suite_factory, run_factory, test_factory):
+    """Sanity check for the many=True path with a shared project_aggregates context."""
+    project_a = project_factory(name="Acme")
+    project_b = project_factory(name="Beta")
+    suite_a = suite_factory(project=project_a, name="Desktop")
+    run_a = run_factory(suite=suite_a)
+    test_factory(run=run_a, passed=True)
+
+    projects = _projects_with_prefetch(project_a.id, project_b.id)
+    body = _serialize_project(None, many_projects=projects)
+
+    by_id = {row["id"]: row for row in body}
+    assert by_id[project_a.id]["totals"]["passing"] == 1
+    assert by_id[project_b.id]["suite_count"] == 0
 
 
 # ---- RunSummarySerializer.unbaselined ------------------------------------
