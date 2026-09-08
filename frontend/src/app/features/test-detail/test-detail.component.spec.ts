@@ -1,10 +1,12 @@
 import { TestBed } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
+import { ImageViewerComponent } from '../../core/components/image-viewer/image-viewer.component';
 import { TestHistory } from '../../core/models/api';
 import { TestDetailComponent } from './test-detail.component';
 
@@ -25,6 +27,10 @@ const HISTORY: TestHistory = {
       is_new_baseline: true,
       status: 'done',
       screenshot_thumb_url: 'http://s3/thumb1.png',
+      diff: 12.5,
+      screenshot_url: 'http://s3/full1.png',
+      baseline_url: 'http://s3/baseline1.png',
+      diff_url: 'http://s3/diff1.png',
     },
     {
       id: 2,
@@ -35,6 +41,10 @@ const HISTORY: TestHistory = {
       is_new_baseline: false,
       status: 'done',
       screenshot_thumb_url: 'http://s3/thumb2.png',
+      diff: 0,
+      screenshot_url: 'http://s3/full2.png',
+      baseline_url: null,
+      diff_url: null,
     },
     {
       id: 3,
@@ -45,6 +55,10 @@ const HISTORY: TestHistory = {
       is_new_baseline: false,
       status: 'done',
       screenshot_thumb_url: null,
+      diff: 0,
+      screenshot_url: null,
+      baseline_url: null,
+      diff_url: null,
     },
     {
       id: 4,
@@ -55,6 +69,10 @@ const HISTORY: TestHistory = {
       is_new_baseline: null,
       status: 'pending',
       screenshot_thumb_url: null,
+      diff: 0,
+      screenshot_url: null,
+      baseline_url: null,
+      diff_url: null,
     },
   ],
 };
@@ -62,6 +80,7 @@ const HISTORY: TestHistory = {
 async function setup({
   apiSpy = vi.fn().mockReturnValue(of(HISTORY)),
   key = 'home-page-chrome-1280x800',
+  dialogSpy = { open: vi.fn() },
 } = {}) {
   await TestBed.configureTestingModule({
     imports: [TestDetailComponent],
@@ -83,20 +102,21 @@ async function setup({
         },
       },
       { provide: InspectreApiService, useValue: { testHistory: apiSpy } },
+      { provide: MatDialog, useValue: dialogSpy },
     ],
   }).compileComponents();
 
   const fixture = TestBed.createComponent(TestDetailComponent);
   fixture.detectChanges();
   await fixture.whenStable();
-  return fixture;
+  return { fixture, dialogSpy };
 }
 
 describe('TestDetailComponent happy path', () => {
   afterEach(() => TestBed.resetTestingModule());
 
   it('renders the test name and browser/size in the header', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const h1 = el.querySelector('h1');
     expect(h1?.textContent).toContain('Home page');
@@ -104,14 +124,14 @@ describe('TestDetailComponent happy path', () => {
   });
 
   it('renders one row per history entry', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const rows = el.querySelectorAll('tbody tr');
     expect(rows.length).toBe(HISTORY.runs.length);
   });
 
   it('renders a routerLink to the run for each row', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const links = Array.from(el.querySelectorAll('tbody tr a')) as HTMLAnchorElement[];
     expect(links[0].textContent).toContain('#1');
@@ -119,7 +139,7 @@ describe('TestDetailComponent happy path', () => {
   });
 
   it('renders the formatted date for each row', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     // 'medium' date pipe format renders month name; just assert year present per row.
     const dateCells = el.querySelectorAll('tbody tr td:nth-child(2)');
@@ -127,7 +147,7 @@ describe('TestDetailComponent happy path', () => {
   });
 
   it('renders a thumbnail image when screenshot_thumb_url is present', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const rows = el.querySelectorAll('tbody tr');
     const img = rows[0].querySelector('img');
@@ -135,12 +155,47 @@ describe('TestDetailComponent happy path', () => {
   });
 
   it('renders a dash placeholder when screenshot_thumb_url is null', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const rows = el.querySelectorAll('tbody tr');
     // Row 3 (index 2) has screenshot_thumb_url: null
     expect(rows[2].querySelector('img')).toBeNull();
     expect(rows[2].textContent).toContain('—');
+  });
+
+  it('wraps the thumbnail image in a thumb-btn button', async () => {
+    const { fixture } = await setup();
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = el.querySelectorAll('tbody tr');
+    const button = rows[0].querySelector('button.thumb-btn');
+    expect(button).not.toBeNull();
+    expect(button?.querySelector('img')).not.toBeNull();
+  });
+
+  it('opens the image viewer dialog with mapped tests, index, and comparison slot when a thumbnail is clicked', async () => {
+    const { fixture, dialogSpy } = await setup();
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = el.querySelectorAll('tbody tr');
+    const button = rows[0].querySelector('button.thumb-btn') as HTMLButtonElement;
+    button.click();
+
+    expect(dialogSpy.open).toHaveBeenCalledTimes(1);
+    const [component, config] = dialogSpy.open.mock.calls[0];
+    expect(component).toBe(ImageViewerComponent);
+    expect(config.data.index).toBe(0);
+    expect(config.data.slot).toBe('comparison');
+    expect(config.data.tests).toEqual(
+      HISTORY.runs.map((r) => ({
+        name: HISTORY.name,
+        browser: HISTORY.browser,
+        size: HISTORY.size,
+        diff: r.diff,
+        passed: r.original_passed ?? false,
+        screenshot_url: r.screenshot_url,
+        baseline_url: r.baseline_url,
+        diff_url: r.diff_url,
+      })),
+    );
   });
 });
 
@@ -148,7 +203,7 @@ describe('TestDetailComponent chip precedence', () => {
   afterEach(() => TestBed.resetTestingModule());
 
   it('shows "Processing…" chip when status is pending, regardless of other flags', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const rows = el.querySelectorAll('tbody tr');
     // Row 4 (index 3) has status: 'pending'
@@ -163,13 +218,13 @@ describe('TestDetailComponent chip precedence', () => {
       ...HISTORY,
       runs: [{ ...HISTORY.runs[0], status: 'processing' }],
     };
-    const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(processingHistory)) });
+    const { fixture } = await setup({ apiSpy: vi.fn().mockReturnValue(of(processingHistory)) });
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('.chip-none')?.textContent).toContain('Processing');
   });
 
   it('shows only the "New" chip when is_new_baseline is true, even though original_passed is false', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const rows = el.querySelectorAll('tbody tr');
     // Row 1 (index 0): is_new_baseline: true, original_passed: false
@@ -179,7 +234,7 @@ describe('TestDetailComponent chip precedence', () => {
   });
 
   it('shows a "Pass" chip using original_passed when not new baseline and not pending', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const rows = el.querySelectorAll('tbody tr');
     // Row 2 (index 1): original_passed: true, is_new_baseline: false
@@ -189,7 +244,7 @@ describe('TestDetailComponent chip precedence', () => {
   });
 
   it('shows a "Fail" chip using original_passed when not new baseline and not pending', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const rows = el.querySelectorAll('tbody tr');
     // Row 3 (index 2): original_passed: false, is_new_baseline: false
@@ -213,10 +268,14 @@ describe('TestDetailComponent chip precedence', () => {
           is_new_baseline: false,
           status: 'done',
           screenshot_thumb_url: null,
+          diff: 0,
+          screenshot_url: null,
+          baseline_url: null,
+          diff_url: null,
         },
       ],
     };
-    const fixture = await setup({ apiSpy: vi.fn().mockReturnValue(of(promotedHistory)) });
+    const { fixture } = await setup({ apiSpy: vi.fn().mockReturnValue(of(promotedHistory)) });
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('.chip-fail')?.textContent).toContain('Fail');
   });
@@ -226,7 +285,7 @@ describe('TestDetailComponent error state', () => {
   afterEach(() => TestBed.resetTestingModule());
 
   it('renders the error message when the API call fails', async () => {
-    const fixture = await setup({
+    const { fixture } = await setup({
       apiSpy: vi.fn().mockReturnValue(throwError(() => new Error('network'))),
     });
     const el = fixture.nativeElement as HTMLElement;
@@ -236,7 +295,7 @@ describe('TestDetailComponent error state', () => {
   });
 
   it('does not render the header when the API call fails', async () => {
-    const fixture = await setup({
+    const { fixture } = await setup({
       apiSpy: vi.fn().mockReturnValue(throwError(() => new Error('network'))),
     });
     const el = fixture.nativeElement as HTMLElement;
@@ -248,7 +307,7 @@ describe('TestDetailComponent breadcrumb', () => {
   afterEach(() => TestBed.resetTestingModule());
 
   it('renders Projects, project name, suite, and test name segments', async () => {
-    const fixture = await setup();
+    const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const nav = el.querySelector('nav.breadcrumb');
     expect(nav?.textContent).toContain('Projects');
