@@ -2,7 +2,23 @@
 // Field names match DRF output exactly. If a name diverges, the SPA breaks at
 // runtime; TypeScript can't catch wire-format drift at compile time.
 
-export interface Project {
+export interface RunStats {
+  passing: number;
+  failing: number;
+  unbaselined: number;
+}
+
+export interface ProjectSummary {
+  id: number;
+  name: string;
+  slug: string;
+  suite_count: number;
+  single_suite_slug: string | null;
+  last_run_at: string | null; // ISO-8601 from DRF, null if no suite has ever run
+  totals: RunStats;
+}
+
+export interface ProjectDetail {
   id: number;
   name: string;
   slug: string;
@@ -25,13 +41,10 @@ export interface SuiteDetail {
   baselines: Baseline[];
 }
 
-export interface RunSummary {
+export interface RunSummary extends RunStats {
   id: number;
   sequential_id: number;
   created_at: string; // ISO-8601 from DRF
-  passing: number;
-  failing: number;
-  unbaselined: number;
 }
 
 export interface RunDetail {
