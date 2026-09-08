@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { RunStatsChipsComponent } from './run-stats-chips.component';
-import { RunSummary } from '../../models/api';
+import { RunStats, RunSummary } from '../../models/api';
 
 const base: RunSummary = {
   id: 1, sequential_id: 1, created_at: '2026-01-01T00:00:00Z',
@@ -60,5 +60,18 @@ describe('RunStatsChipsComponent', () => {
     expect(el.querySelector('.chip-fail')).not.toBeNull();
     expect(el.querySelector('.chip-new')).not.toBeNull();
     expect(el.querySelector('.chip-none')).toBeNull();
+  });
+
+  it('accepts bare RunStats object (no id/sequential_id/created_at)', () => {
+    const bareStats: RunStats = { passing: 1, failing: 2, unbaselined: 3 };
+    fixture.componentRef.setInput('stats', bareStats);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.chip-pass')).not.toBeNull();
+    expect(el.querySelector('.chip-pass')!.textContent).toContain('1');
+    expect(el.querySelector('.chip-fail')).not.toBeNull();
+    expect(el.querySelector('.chip-fail')!.textContent).toContain('2');
+    expect(el.querySelector('.chip-new')).not.toBeNull();
+    expect(el.querySelector('.chip-new')!.textContent).toContain('3');
   });
 });
