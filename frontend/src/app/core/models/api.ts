@@ -75,7 +75,11 @@ export interface TestHistoryEntry {
   original_passed: boolean | null;
   is_new_baseline: boolean | null;
   status: string;
+  diff: number;
   screenshot_thumb_url: string | null;
+  screenshot_url: string | null;
+  baseline_url: string | null;
+  diff_url: string | null;
 }
 
 export interface TestHistory {
