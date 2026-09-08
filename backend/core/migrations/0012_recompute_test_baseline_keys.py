@@ -18,6 +18,10 @@ from django.db import migrations
 from django.utils.text import slugify
 
 
+# Frozen copy of Test._compute_key's formula as of this migration. Do NOT
+# import from models.py or update this if the model's formula changes later
+# — migrations must remain stable snapshots of what they did at the time
+# they ran.
 def _key(*parts):
     return "--".join(slugify(part) for part in parts)[:512]
 

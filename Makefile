@@ -18,6 +18,7 @@ PYTEST_FAST_PACKS := \
     core/tests/test_serializers.py \
     core/tests/test_spa_api.py \
     core/tests/test_admin.py \
+    core/tests/test_migrations.py \
     core/tests/test_models.py \
     core/tests/test_settings.py \
     core/tests/test_tasks.py
