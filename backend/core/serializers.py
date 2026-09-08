@@ -240,6 +240,7 @@ class TestHistoryEntrySerializer(serializers.ModelSerializer):
             "original_passed",
             "is_new_baseline",
             "status",
+            "diff",
             "screenshot_thumb_url",
             "screenshot_url",
             "baseline_url",

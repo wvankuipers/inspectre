@@ -584,6 +584,16 @@ def test_test_history_entry_url_fields_are_presigned(test_factory, monkeypatch, 
     assert body[url_field] == f"https://signed.example/{field.name}?exp=86400"
 
 
+def test_test_history_entry_serializer_includes_diff(test_factory):
+    """`diff` is a plain passthrough field (like TestRowSerializer's), needed by the
+    frontend's TestDetail/ImageViewer header to render "X% diff".
+    """
+    test = test_factory(diff=12.34)
+    body = TestHistoryEntrySerializer(test).data
+
+    assert body["diff"] == test.diff
+
+
 def test_serialize_test_history_returns_key_metadata_and_ordered_runs(
     suite_factory,
     run_factory,
