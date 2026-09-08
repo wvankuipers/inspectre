@@ -5,6 +5,7 @@ from core.serializers import (
     LegacyBaselineSerializer,
     LegacyRunSerializer,
     LegacyTestSerializer,
+    ProjectDetailSerializer,
     ProjectSerializer,
     RunDetailSerializer,
     RunSummarySerializer,
@@ -814,3 +815,44 @@ def test_serialize_test_history_returns_key_metadata_and_ordered_runs(
     assert body["project_name"] == suite.project.name
     assert body["suite_slug"] == suite.slug
     assert [entry["id"] for entry in body["runs"]] == [newer.id, older.id]
+
+
+# ---- ProjectDetailSerializer flattens suites ------------------------------
+
+
+def test_project_detail_serializer_includes_suites(project_factory, suite_factory, run_factory):
+    project = project_factory(name="Acme")
+    suite_factory(project=project, name="Desktop")
+    suite_factory(project=project, name="Mobile")
+
+    body = ProjectDetailSerializer(project).data
+    suite_names = {s["name"] for s in body["suites"]}
+    assert suite_names == {"Desktop", "Mobile"}
+
+
+def test_project_detail_serializer_suite_with_no_runs_has_null_latest_run(
+    project_factory,
+    suite_factory,
+):
+    """The legacy template crashed when suite.latest_run was nil. The SPA gets a clean null."""
+    project = project_factory()
+    suite_factory(project=project)
+
+    body = ProjectDetailSerializer(project).data
+    assert body["suites"][0]["latest_run"] is None
+
+
+def test_project_detail_serializer_suite_with_runs_includes_latest_run_summary(
+    project_factory,
+    suite_factory,
+    run_factory,
+):
+    project = project_factory()
+    suite = suite_factory(project=project)
+    run_factory(suite=suite)
+    run_factory(suite=suite)
+
+    body = ProjectDetailSerializer(project).data
+    latest_run = body["suites"][0]["latest_run"]
+    assert latest_run["sequential_id"] == 2
+    assert set(latest_run.keys()) == {"id", "sequential_id", "created_at", "passing", "failing", "unbaselined"}

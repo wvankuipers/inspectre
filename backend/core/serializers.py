@@ -513,3 +513,48 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     def get_totals(self, obj):
         return self._aggregate(obj)["totals"]
+
+
+class ProjectDetailSerializer(serializers.ModelSerializer):
+    """Project detail page: one row per suite, each with its latest-run summary.
+
+    Operates on a single `Project` instance (not a queryset like `ProjectSerializer`),
+    so batching only needs to cover that one project's suites' latest runs.
+    """
+
+    suites = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Project
+        fields = ["id", "name", "slug", "suites"]
+
+    def get_suites(self, obj):
+        suites = list(obj.suites.all())
+        # Pre-fetch baseline keys once for the whole project so RunSummarySerializer.
+        # get_unbaselined doesn't issue one Baseline query per suite (same pattern as
+        # SuiteDetailSerializer.get_latest_runs / RunDetailSerializer.get_tests).
+        suite_ids = [suite.id for suite in suites]
+        baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
+        # Batch passing/failing/unbaselined counts for every suite's latest run into two
+        # GROUP BY queries total, instead of 3 raw .count() queries per suite.
+        latest_by_suite = {}
+        for suite in suites:
+            suite_runs = list(suite.runs.all())
+            latest_by_suite[suite.id] = suite_runs[0] if suite_runs else None
+        run_counts = build_run_counts([run.id for run in latest_by_suite.values() if run is not None], baselined_keys)
+        result = []
+        for suite in suites:
+            latest = latest_by_suite[suite.id]
+            result.append(
+                {
+                    "id": suite.id,
+                    "name": suite.name,
+                    "slug": suite.slug,
+                    "latest_run": RunSummarySerializer(
+                        latest, context={"baselined_keys": baselined_keys, "run_counts": run_counts}
+                    ).data
+                    if latest
+                    else None,
+                }
+            )
+        return result
