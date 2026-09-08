@@ -10,6 +10,7 @@ import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
 import {
   ImageViewerComponent,
+  ImageViewerData,
   ImageViewerTest,
 } from '../../core/components/image-viewer/image-viewer.component';
 import { TestHistory, TestHistoryEntry } from '../../core/models/api';
@@ -78,7 +79,7 @@ export class TestDetailComponent {
       diff_url: r.diff_url,
     }));
     const index = h.runs.indexOf(entry);
-    this.dialog.open(ImageViewerComponent, {
+    this.dialog.open<ImageViewerComponent, ImageViewerData>(ImageViewerComponent, {
       data: { tests, index, slot: 'comparison' },
       maxWidth: '100vw',
       maxHeight: '100vh',
