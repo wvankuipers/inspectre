@@ -545,6 +545,45 @@ def test_test_history_entry_serializer_includes_run_fields(run_factory, test_fac
     assert body["run_created_at"] is not None
 
 
+@pytest.mark.parametrize(
+    "url_field",
+    [
+        "screenshot_url",
+        "baseline_url",
+        "diff_url",
+    ],
+)
+def test_test_history_entry_url_fields_are_none_when_no_file(test_factory, url_field):
+    """Same invariant as TestRowSerializer: missing FileFields render as null, not a broken URL."""
+    body = TestHistoryEntrySerializer(test_factory()).data
+    assert body[url_field] is None
+
+
+@pytest.mark.parametrize(
+    ("file_attr", "url_field"),
+    [
+        ("screenshot", "screenshot_url"),
+        ("screenshot_baseline", "baseline_url"),
+        ("screenshot_diff", "diff_url"),
+    ],
+)
+def test_test_history_entry_url_fields_are_presigned(test_factory, monkeypatch, file_attr, url_field):
+    """_file_url delegates to generate_presigned_url, mirroring TestRowSerializer."""
+    from django.core.files.base import ContentFile
+
+    monkeypatch.setattr(
+        "core.serializers.generate_presigned_url",
+        lambda key, expires_in=86400: f"https://signed.example/{key}?exp={expires_in}",
+    )
+
+    test = test_factory()
+    field = getattr(test, file_attr)
+    field.save("file.png", ContentFile(b"fake-image-bytes"))
+
+    body = TestHistoryEntrySerializer(test).data
+    assert body[url_field] == f"https://signed.example/{field.name}?exp=86400"
+
+
 def test_serialize_test_history_returns_key_metadata_and_ordered_runs(
     suite_factory,
     run_factory,
