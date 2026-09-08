@@ -42,6 +42,11 @@ export class TestDetailComponent {
 
   readonly history = computed(() => this.historyData() ?? null);
 
+  readonly breadcrumbLabel = computed(() => {
+    const h = this.history();
+    return h ? `${h.name} (${h.browser}, ${h.size})` : this.key();
+  });
+
   readonly thumbLoaded = signal<Set<string>>(new Set<string>());
 
   onImgLoad(src: string): void {

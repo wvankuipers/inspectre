@@ -3,7 +3,7 @@
     { label: 'Projects', link: '/projects' },
     { label: history()?.project_name ?? projectSlug() },
     { label: history()?.suite_slug ?? suiteSlug(), link: ['/projects', projectSlug(), 'suites', suiteSlug()] },
-    { label: history()?.name ?? key() }
+    { label: breadcrumbLabel() }
   ]" />
 
   @if (history(); as h) {

@@ -306,13 +306,48 @@ describe('TestDetailComponent error state', () => {
 describe('TestDetailComponent breadcrumb', () => {
   afterEach(() => TestBed.resetTestingModule());
 
-  it('renders Projects, project name, suite, and test name segments', async () => {
+  it('renders Projects, project name, suite, and test name segments with browser/size disambiguation', async () => {
     const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const nav = el.querySelector('nav.breadcrumb');
     expect(nav?.textContent).toContain('Projects');
     expect(nav?.textContent).toContain('Acme Corp');
     expect(nav?.textContent).toContain('main-suite');
-    expect(nav?.textContent).toContain('Home page');
+    expect(nav?.textContent).toContain('Home page (chrome, 1280x800)');
+  });
+
+  it('renders different breadcrumb labels for tests with same name but different browser/size', async () => {
+    const FIREFOX_HISTORY: TestHistory = {
+      key: 'home-page-firefox-375x667',
+      name: 'Home page',
+      browser: 'firefox',
+      size: '375x667',
+      project_name: 'Acme Corp',
+      suite_slug: 'main-suite',
+      runs: [
+        {
+          id: 5,
+          run_id: 20,
+          run_sequential_id: 5,
+          run_created_at: '2026-02-01T00:00:00Z',
+          original_passed: true,
+          is_new_baseline: false,
+          status: 'done',
+          screenshot_thumb_url: 'http://s3/thumb5.png',
+          diff: 0,
+          screenshot_url: 'http://s3/full5.png',
+          baseline_url: 'http://s3/baseline5.png',
+          diff_url: null,
+        },
+      ],
+    };
+    const { fixture } = await setup({
+      apiSpy: vi.fn().mockReturnValue(of(FIREFOX_HISTORY)),
+      key: 'home-page-firefox-375x667',
+    });
+    const el = fixture.nativeElement as HTMLElement;
+    const nav = el.querySelector('nav.breadcrumb');
+    expect(nav?.textContent).toContain('Home page (firefox, 375x667)');
+    expect(nav?.textContent).not.toContain('(chrome, 1280x800)');
   });
 });
