@@ -42,7 +42,8 @@ Two URL surfaces, both unauthenticated (`AllowAny`):
 
 **SPA endpoints** (`/api/*`) — can evolve freely:
 
-- `GET /api/projects/`
+- `GET /api/projects/` — one object per project with aggregate fields: `id, name, slug, suite_count, single_suite_slug (string|null), last_run_at (string|null), totals: {passing, failing, unbaselined}`
+- `GET /api/projects/<slug>/` — project detail page; returns project with suite list: `id, name, slug, suites: [{id, name, slug, latest_run}]`
 - `GET /api/projects/<slug>/suites/<slug>/`
 - `GET /api/projects/<slug>/suites/<slug>/runs/<seq>/`
 - `GET /api/projects/<slug>/suites/<slug>/tests/<key>/` — cross-run pass/fail history for a test
@@ -108,7 +109,8 @@ Run tests: `cd frontend && npm test`
 
 | Route                                     | Component                                              |
 | ----------------------------------------- | ------------------------------------------------------ |
-| `/projects`                               | `ProjectsListComponent` — flattened project+suite rows |
+| `/projects`                               | `ProjectsListComponent` — one row per project, aggregate totals; single-suite projects link directly to suite detail |
+| `/projects/:proj`                         | `ProjectDetailComponent` — one row per suite for a project |
 | `/projects/:proj/suites/:suite`           | `SuiteDetailComponent` — latest 5 runs + baselines     |
 | `/projects/:proj/suites/:suite/runs/:seq` | `RunDetailComponent` — test table with thumbnails      |
 | `/projects/:proj/suites/:suite/tests/:key` | `TestDetailComponent` — cross-run pass/fail history for one test |
