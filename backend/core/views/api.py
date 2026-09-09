@@ -134,7 +134,7 @@ def run_validate(request, project, suite, seq):
         suite__slug=suite,
         sequential_id=seq,
     )
-    return Response(compute_run_verdict(obj.tests.values_list("status", "passed")))
+    return Response(compute_run_verdict(obj.tests.order_by().values_list("status", "passed")))
 
 
 @api_view(["GET"])
@@ -158,7 +158,9 @@ def project_validate(request, project):
     # suite (a real N+1).
     run_ids = [run.id for run in latest_run_by_suite.values() if run is not None]
     rows_by_run = {run_id: [] for run_id in run_ids}
-    for run_id, status, passed in Test.objects.filter(run_id__in=run_ids).values_list("run_id", "status", "passed"):
+    for run_id, status, passed in (
+        Test.objects.filter(run_id__in=run_ids).order_by().values_list("run_id", "status", "passed")
+    ):
         rows_by_run[run_id].append((status, passed))
 
     suites = []

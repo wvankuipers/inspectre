@@ -215,7 +215,7 @@ Full CRUD over Project / Suite / Run / Test / Baseline. See [admin.md](admin.md)
 
 These back the Angular frontend and are free to evolve — see the [route table](#spa-endpoints--api-free-to-evolve) above for the full list. Four are otherwise undocumented. Although `run_validate` and `project_validate` live under this SPA-internal `/api/*` prefix, they're designed for CI consumption — treat changes to their response shape (the `status`/`passing`/`failing`/`pending`/`total`/`suites` fields) as a breaking change for any external CI integration, even though the route isn't part of the frozen Client API contract below.
 
-- **`GET /api/projects/<slug>/suites/<slug>/runs/<seq>/validate/`** (`run_validate`) — computes a tri-state CI-facing gate verdict for one run via `compute_run_verdict(status_passed_rows)` (`backend/core/serializers.py`), fed `run.tests.values_list("status", "passed")`. Unlike `RunSummarySerializer`'s `passing`/`failing`/`unbaselined` counts (display-only, and blind to the difference between "still processing" and "pipeline error"), this endpoint's `status` field is meant to be read by a CI pipeline to decide pass/fail: `"passed"`, `"failed"`, or `"pending"`. Derivation, per test:
+- **`GET /api/projects/<slug>/suites/<slug>/runs/<seq>/validate/`** (`run_validate`) — computes a tri-state CI-facing gate verdict for one run via `compute_run_verdict(status_passed_rows)` (`backend/core/serializers.py`), fed `run.tests.order_by().values_list("status", "passed")` — `.order_by()` clears `Test.Meta.ordering` (`created_at`), which is otherwise pointless for a pure aggregate query. Unlike `RunSummarySerializer`'s `passing`/`failing`/`unbaselined` counts (display-only, and blind to the difference between "still processing" and "pipeline error"), this endpoint's `status` field is meant to be read by a CI pipeline to decide pass/fail: `"passed"`, `"failed"`, or `"pending"`. Derivation, per test:
   - A test counts as **failing** if `status == "done" and passed == False`, or if `status == "failed"` (a pipeline error, not a visual diff).
   - A test counts as **pending** if `status` is `"pending"` or `"processing"`.
   - The run's overall `status` is `"failed"` if any test is failing, else `"pending"` if any test is pending, else `"passed"`. A run with zero tests is `"pending"`.
@@ -528,7 +528,9 @@ def project_validate(request, project):
     # per-suite would be a real N+1.
     run_ids = [run.id for run in latest_run_by_suite.values() if run is not None]
     rows_by_run = {run_id: [] for run_id in run_ids}
-    for run_id, status, passed in Test.objects.filter(run_id__in=run_ids).values_list('run_id', 'status', 'passed'):
+    for run_id, status, passed in Test.objects.filter(run_id__in=run_ids).order_by().values_list(
+        'run_id', 'status', 'passed',
+    ):
         rows_by_run[run_id].append((status, passed))
     suites = []
     for suite, latest_run in latest_run_by_suite.items():
@@ -569,7 +571,7 @@ def run_validate(request, project, suite, seq):
         Run.objects.select_related('suite__project'),
         suite__project__slug=project, suite__slug=suite, sequential_id=seq,
     )
-    return Response(compute_run_verdict(obj.tests.values_list('status', 'passed')))
+    return Response(compute_run_verdict(obj.tests.order_by().values_list('status', 'passed')))
 
 
 @api_view(['POST'])
