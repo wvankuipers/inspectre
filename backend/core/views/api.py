@@ -20,6 +20,7 @@ from core.serializers import (
     RunDetailSerializer,
     SuiteDetailSerializer,
     build_project_aggregates,
+    compute_run_verdict,
     serialize_test_history,
     serialize_tests_bulk,
 )
@@ -121,3 +122,48 @@ def tests_bulk(request):
 def baseline_detail(request, key):
     obj = get_object_or_404(Baseline, key=key)
     return Response(BaselineSerializer(obj).data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def run_validate(request, project, suite, seq):
+    obj = get_object_or_404(
+        Run.objects.select_related("suite__project").prefetch_related("tests"),
+        suite__project__slug=project,
+        suite__slug=suite,
+        sequential_id=seq,
+    )
+    return Response(compute_run_verdict(obj))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def project_validate(request, project):
+    obj = get_object_or_404(Project.objects.prefetch_related("suites__runs"), slug=project)
+    suites = []
+    for suite in obj.suites.all():
+        latest_run = suite.runs.first()
+        if latest_run is None:
+            suites.append(
+                {
+                    "suite": suite.slug,
+                    "run_sequential_id": None,
+                    "status": "failed",
+                    "passing": 0,
+                    "failing": 0,
+                    "pending": 0,
+                    "total": 0,
+                }
+            )
+            continue
+        verdict = compute_run_verdict(latest_run)
+        suites.append({"suite": suite.slug, "run_sequential_id": latest_run.sequential_id, **verdict})
+
+    statuses = {s["status"] for s in suites}
+    if "failed" in statuses:
+        overall = "failed"
+    elif "pending" in statuses:
+        overall = "pending"
+    else:
+        overall = "passed"
+    return Response({"status": overall, "suites": suites})

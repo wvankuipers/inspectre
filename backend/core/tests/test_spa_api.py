@@ -910,3 +910,279 @@ class TestBaselineDetailSpa:
 
     def test_unknown_key_returns_404(self, api):
         assert api.get("/api/baselines/no-such-key/").status_code == 404
+
+
+# =============================================================================
+# GET /api/projects/<slug>/suites/<slug>/runs/<seq>/validate/  — run validate
+# =============================================================================
+
+
+class TestRunValidate:
+    def test_run_all_passed_returns_passed_status(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run = run_factory(suite=suite)
+        test_factory(run=run, name="Test 1", status="done", passed=True)
+        test_factory(run=run, name="Test 2", status="done", passed=True)
+
+        response = api.get(f"/api/projects/acme/suites/desktop/runs/{run.sequential_id}/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "passed"
+        assert body["passing"] == 2
+        assert body["failing"] == 0
+        assert body["pending"] == 0
+        assert body["total"] == 2
+
+    def test_run_with_failing_test_returns_failed_status(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run = run_factory(suite=suite)
+        test_factory(run=run, name="Test 1", status="done", passed=True)
+        test_factory(run=run, name="Test 2", status="done", passed=False)
+
+        response = api.get(f"/api/projects/acme/suites/desktop/runs/{run.sequential_id}/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["passing"] == 1
+        assert body["failing"] == 1
+        assert body["pending"] == 0
+        assert body["total"] == 2
+
+    def test_run_with_pending_test_returns_pending_status(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run = run_factory(suite=suite)
+        test_factory(run=run, name="Test 1", status="done", passed=True)
+        test_factory(run=run, name="Test 2", status="pending")
+
+        response = api.get(f"/api/projects/acme/suites/desktop/runs/{run.sequential_id}/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "pending"
+        assert body["passing"] == 1
+        assert body["failing"] == 0
+        assert body["pending"] == 1
+        assert body["total"] == 2
+
+    def test_run_with_processing_test_returns_pending_status(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run = run_factory(suite=suite)
+        test_factory(run=run, name="Test 1", status="done", passed=True)
+        test_factory(run=run, name="Test 2", status="processing")
+
+        response = api.get(f"/api/projects/acme/suites/desktop/runs/{run.sequential_id}/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "pending"
+
+    def test_run_with_failed_status_test_returns_failed(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run = run_factory(suite=suite)
+        test_factory(run=run, name="Test 1", status="done", passed=True)
+        test_factory(run=run, name="Test 2", status="failed")
+
+        response = api.get(f"/api/projects/acme/suites/desktop/runs/{run.sequential_id}/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failing"] == 1
+
+    def test_empty_run_returns_pending(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run = run_factory(suite=suite)
+
+        response = api.get(f"/api/projects/acme/suites/desktop/runs/{run.sequential_id}/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "pending"
+        assert body["passing"] == 0
+        assert body["failing"] == 0
+        assert body["pending"] == 0
+        assert body["total"] == 0
+
+    def test_unknown_project_returns_404(self, api):
+        assert api.get("/api/projects/no-such-project/suites/desktop/runs/1/validate/").status_code == 404
+
+    def test_unknown_suite_returns_404(
+        self,
+        api,
+        project_factory,
+    ):
+        project = project_factory(name="Acme")
+        assert api.get(f"/api/projects/acme/suites/no-such-suite/runs/1/validate/").status_code == 404
+
+    def test_unknown_seq_returns_404(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        assert api.get(f"/api/projects/acme/suites/desktop/runs/999/validate/").status_code == 404
+
+
+# =============================================================================
+# GET /api/projects/<slug>/validate/  — project validate
+# =============================================================================
+
+
+class TestProjectValidate:
+    def test_project_all_suites_passed_returns_passed(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite1 = suite_factory(project=project, name="Desktop")
+        suite2 = suite_factory(project=project, name="Mobile")
+        run1 = run_factory(suite=suite1)
+        run2 = run_factory(suite=suite2)
+        test_factory(run=run1, status="done", passed=True)
+        test_factory(run=run2, status="done", passed=True)
+
+        response = api.get("/api/projects/acme/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "passed"
+        assert len(body["suites"]) == 2
+        statuses = {s["status"] for s in body["suites"]}
+        assert statuses == {"passed"}
+
+    def test_project_one_suite_failed_returns_failed(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite1 = suite_factory(project=project, name="Desktop")
+        suite2 = suite_factory(project=project, name="Mobile")
+        run1 = run_factory(suite=suite1)
+        run2 = run_factory(suite=suite2)
+        test_factory(run=run1, status="done", passed=True)
+        test_factory(run=run2, status="done", passed=False)
+
+        response = api.get("/api/projects/acme/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        suites_by_slug = {s["suite"]: s for s in body["suites"]}
+        assert suites_by_slug["desktop"]["status"] == "passed"
+        assert suites_by_slug["mobile"]["status"] == "failed"
+
+    def test_project_suite_with_no_runs_returns_failed(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite1 = suite_factory(project=project, name="Desktop")
+        suite2 = suite_factory(project=project, name="Mobile")
+        run1 = run_factory(suite=suite1)
+        test_factory(run=run1, status="done", passed=True)
+        # suite2 has no runs
+
+        response = api.get("/api/projects/acme/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        suites_by_slug = {s["suite"]: s for s in body["suites"]}
+        assert suites_by_slug["desktop"]["status"] == "passed"
+        assert suites_by_slug["mobile"]["status"] == "failed"
+        assert suites_by_slug["mobile"]["run_sequential_id"] is None
+        assert suites_by_slug["mobile"]["passing"] == 0
+        assert suites_by_slug["mobile"]["failing"] == 0
+        assert suites_by_slug["mobile"]["pending"] == 0
+        assert suites_by_slug["mobile"]["total"] == 0
+
+    def test_project_one_suite_pending_returns_pending(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite1 = suite_factory(project=project, name="Desktop")
+        suite2 = suite_factory(project=project, name="Mobile")
+        run1 = run_factory(suite=suite1)
+        run2 = run_factory(suite=suite2)
+        test_factory(run=run1, status="done", passed=True)
+        test_factory(run=run2, status="pending")
+
+        response = api.get("/api/projects/acme/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "pending"
+
+    def test_unknown_project_returns_404(self, api):
+        assert api.get("/api/projects/no-such-project/validate/").status_code == 404
+
+    def test_project_with_zero_suites_returns_passed(
+        self,
+        api,
+        project_factory,
+    ):
+        project = project_factory(name="Acme")
+
+        response = api.get("/api/projects/acme/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "passed"
+        assert body["suites"] == []

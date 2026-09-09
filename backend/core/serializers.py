@@ -135,6 +135,28 @@ def build_run_counts(run_ids, baselined_keys):
     return counts
 
 
+def compute_run_verdict(run):
+    """Aggregate one run's tests into a CI-facing pass/fail/pending verdict."""
+    counts = {"passing": 0, "failing": 0, "pending": 0, "total": 0}
+    for status, passed in run.tests.values_list("status", "passed"):
+        counts["total"] += 1
+        if status == Test.STATUS_DONE:
+            counts["passing" if passed else "failing"] += 1
+        elif status == Test.STATUS_FAILED:
+            counts["failing"] += 1
+        else:
+            counts["pending"] += 1
+    if counts["total"] == 0:
+        status = "pending"
+    elif counts["failing"] > 0:
+        status = "failed"
+    elif counts["pending"] > 0:
+        status = "pending"
+    else:
+        status = "passed"
+    return {"status": status, **counts}
+
+
 class TestRowSerializer(serializers.ModelSerializer):
     """One row in the run-detail table: status, three thumbnails, three full-size URLs.
 
