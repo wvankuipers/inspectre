@@ -135,6 +135,34 @@ def build_run_counts(run_ids, baselined_keys):
     return counts
 
 
+def compute_run_verdict(status_passed_rows):
+    """Aggregate one run's (status, passed) rows into a CI-facing pass/fail/pending verdict.
+
+    Takes an iterable of (status, passed) tuples rather than a `Run` instance so
+    callers can batch the underlying `Test` query across many runs (see
+    `project_validate`) instead of issuing one query per run — the same batching
+    discipline as `build_run_counts`.
+    """
+    counts = {"passing": 0, "failing": 0, "pending": 0, "total": 0}
+    for status, passed in status_passed_rows:
+        counts["total"] += 1
+        if status == Test.STATUS_DONE:
+            counts["passing" if passed else "failing"] += 1
+        elif status == Test.STATUS_FAILED:
+            counts["failing"] += 1
+        else:
+            counts["pending"] += 1
+    if counts["total"] == 0:
+        status = "pending"
+    elif counts["failing"] > 0:
+        status = "failed"
+    elif counts["pending"] > 0:
+        status = "pending"
+    else:
+        status = "passed"
+    return {"status": status, **counts}
+
+
 class TestRowSerializer(serializers.ModelSerializer):
     """One row in the run-detail table: status, three thumbnails, three full-size URLs.
 

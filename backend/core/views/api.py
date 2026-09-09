@@ -6,6 +6,7 @@ caught at PR time. The legacy endpoints (POST /runs, POST /tests, PATCH
 frozen for Client API compatibility.
 """
 
+from django.db.models import Prefetch
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
@@ -20,6 +21,7 @@ from core.serializers import (
     RunDetailSerializer,
     SuiteDetailSerializer,
     build_project_aggregates,
+    compute_run_verdict,
     serialize_test_history,
     serialize_tests_bulk,
 )
@@ -121,3 +123,75 @@ def tests_bulk(request):
 def baseline_detail(request, key):
     obj = get_object_or_404(Baseline, key=key)
     return Response(BaselineSerializer(obj).data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def run_validate(request, project, suite, seq):
+    obj = get_object_or_404(
+        Run.objects.select_related("suite__project"),
+        suite__project__slug=project,
+        suite__slug=suite,
+        sequential_id=seq,
+    )
+    return Response(compute_run_verdict(obj.tests.order_by().values_list("status", "passed")))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def project_validate(request, project):
+    # DISTINCT ON (suite_id) ordered by -id per suite fetches only each suite's latest
+    # Run, instead of materializing its full run history, while still landing in the
+    # same "runs" prefetch cache that suite.runs.first() reads from with no extra query.
+    latest_run_prefetch = Prefetch(
+        "suites__runs",
+        queryset=Run.objects.order_by("suite_id", "-id").distinct("suite_id"),
+    )
+    obj = get_object_or_404(Project.objects.prefetch_related(latest_run_prefetch), slug=project)
+    latest_run_by_suite = {}
+    for suite in obj.suites.all():
+        latest_run_by_suite[suite] = suite.runs.first()
+
+    # Batch every suite's latest-run tests into ONE query, regardless of suite
+    # count — mirrors build_run_counts's batching discipline. Without this,
+    # compute_run_verdict's per-run values_list() call would issue one query per
+    # suite (a real N+1).
+    run_ids = [run.id for run in latest_run_by_suite.values() if run is not None]
+    rows_by_run = {run_id: [] for run_id in run_ids}
+    for run_id, status, passed in (
+        Test.objects.filter(run_id__in=run_ids).order_by().values_list("run_id", "status", "passed")
+    ):
+        rows_by_run[run_id].append((status, passed))
+
+    suites = []
+    for suite, latest_run in latest_run_by_suite.items():
+        if latest_run is None:
+            suites.append(
+                {
+                    "suite": suite.slug,
+                    "run_sequential_id": None,
+                    "status": "failed",
+                    "passing": 0,
+                    "failing": 0,
+                    "pending": 0,
+                    "total": 0,
+                }
+            )
+            continue
+        verdict = compute_run_verdict(rows_by_run[latest_run.id])
+        suites.append({"suite": suite.slug, "run_sequential_id": latest_run.sequential_id, **verdict})
+
+    if not suites:
+        # A project with zero suites has never had a chance to pass — an empty/
+        # unreached state must never read as a clean gate (same "never vacuously
+        # pass" pattern as a suite with zero runs, or a run with zero tests).
+        overall = "pending"
+    else:
+        statuses = {s["status"] for s in suites}
+        if "failed" in statuses:
+            overall = "failed"
+        elif "pending" in statuses:
+            overall = "pending"
+        else:
+            overall = "passed"
+    return Response({"status": overall, "suites": suites})
