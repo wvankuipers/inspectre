@@ -232,7 +232,7 @@ These back the Angular frontend and are free to evolve — see the [route table]
   }
   ```
 
-- **`GET /api/projects/<slug>/validate/`** (`project_validate`) — rolls up `compute_run_verdict` across every suite in a project, using each suite's *latest* run only (`suite.runs.first()`), not full run history. Every suite's latest-run tests are fetched in a single batched query (one `Test.objects.filter(run_id__in=...)` for the whole project), not one query per suite. A suite with **zero runs** contributes a synthetic entry with `status: "failed"` and `run_sequential_id: null` — deliberately, so an unreached suite can never let the project read as fully passed by omission. The project's overall `status` is `"failed"` if any suite is failed, else `"pending"` if any suite is pending, else `"passed"` — except a project with **zero suites**, which is always `"pending"` (never vacuously `"passed"`, same rationale as the zero-runs and zero-tests cases).
+- **`GET /api/projects/<slug>/validate/`** (`project_validate`) — rolls up `compute_run_verdict` across every suite in a project, using each suite's *latest* run only (`suite.runs.first()`), not full run history. The `suites__runs` prefetch uses a `Prefetch` with a `DISTINCT ON (suite_id)` queryset (`Run.objects.order_by("suite_id", "-id").distinct("suite_id")`) so only each suite's latest run is ever materialized — historical runs aren't fetched at all, not even to be discarded. Every suite's latest-run tests are then fetched in a single batched query (one `Test.objects.filter(run_id__in=...)` for the whole project), not one query per suite. A suite with **zero runs** contributes a synthetic entry with `status: "failed"` and `run_sequential_id: null` — deliberately, so an unreached suite can never let the project read as fully passed by omission. The project's overall `status` is `"failed"` if any suite is failed, else `"pending"` if any suite is pending, else `"passed"` — except a project with **zero suites**, which is always `"pending"` (never vacuously `"passed"`, same rationale as the zero-runs and zero-tests cases).
 
   Example response:
 
@@ -483,6 +483,7 @@ These can evolve. The SPA ships from the same repo, so contract drift is caught 
 
 ```python
 # core/views/api.py
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -514,7 +515,13 @@ def project_detail(request, project):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def project_validate(request, project):
-    obj = get_object_or_404(Project.objects.prefetch_related('suites__runs'), slug=project)
+    # DISTINCT ON (suite_id) ordered by -id per suite: prefetches only each suite's
+    # latest Run, not its full history, while still landing in the "runs" prefetch
+    # cache that suite.runs.first() reads with no extra query.
+    latest_run_prefetch = Prefetch(
+        'suites__runs', queryset=Run.objects.order_by('suite_id', '-id').distinct('suite_id'),
+    )
+    obj = get_object_or_404(Project.objects.prefetch_related(latest_run_prefetch), slug=project)
     latest_run_by_suite = {suite: suite.runs.first() for suite in obj.suites.all()}
     # Batch every suite's latest-run tests into ONE query, regardless of suite count —
     # compute_run_verdict's values_list() doesn't reuse a prefetch cache, so calling it

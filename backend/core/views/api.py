@@ -6,6 +6,7 @@ caught at PR time. The legacy endpoints (POST /runs, POST /tests, PATCH
 frozen for Client API compatibility.
 """
 
+from django.db.models import Prefetch
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
@@ -139,7 +140,14 @@ def run_validate(request, project, suite, seq):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def project_validate(request, project):
-    obj = get_object_or_404(Project.objects.prefetch_related("suites__runs"), slug=project)
+    # DISTINCT ON (suite_id) ordered by -id per suite fetches only each suite's latest
+    # Run, instead of materializing its full run history, while still landing in the
+    # same "runs" prefetch cache that suite.runs.first() reads from with no extra query.
+    latest_run_prefetch = Prefetch(
+        "suites__runs",
+        queryset=Run.objects.order_by("suite_id", "-id").distinct("suite_id"),
+    )
+    obj = get_object_or_404(Project.objects.prefetch_related(latest_run_prefetch), slug=project)
     latest_run_by_suite = {}
     for suite in obj.suites.all():
         latest_run_by_suite[suite] = suite.runs.first()
