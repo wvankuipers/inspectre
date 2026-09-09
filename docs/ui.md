@@ -24,7 +24,8 @@ Routes mirror the legacy URL structure. Standalone components are lazy-loaded.
 | Path | Component | Description |
 |------|-----------|-------------|
 | `/` | — | Redirect → `/projects` |
-| `/projects` | `ProjectsListComponent` | Flattened table of projects + suites |
+| `/projects` | `ProjectsListComponent` | One row per project, with aggregate totals |
+| `/projects/:projectSlug` | `ProjectDetailComponent` | Suite list for one project |
 | `/projects/:projectSlug/suites/:suiteSlug` | `SuiteDetailComponent` | Latest 5 runs + all baselines |
 | `/projects/:projectSlug/suites/:suiteSlug/runs/:seqId` | `RunDetailComponent` | Test table with thumbnails |
 | `/projects/:projectSlug/suites/:suiteSlug/tests/:key` | `TestDetailComponent` | Cross-run pass/fail history for one test |
@@ -38,14 +39,20 @@ The `/admin/*` path is never handled by the Angular router — nginx routes thos
 
 Route: `/projects`
 
-Loads all projects via `GET /api/projects/`. Renders a flat table — one row per (project, suite) pair — with columns:
+Loads all projects via `GET /api/projects/`. Renders a table with one row per project — columns:
 
-- **Project** — project name
-- **Suite** — suite name, links to suite detail
-- **Last run** — `#<seq_id>` with relative timestamp
-- **Status** — pass/fail/new chips; only shown for statuses with count > 0. "No tests" pill if the latest run is empty.
+- **Project** — project name; links to `ProjectDetailComponent` (or directly to suite detail if the project has exactly one suite, via `single_suite_slug`)
+- **Suites** — `suite_count`
+- **Last run** — relative timestamp from `last_run_at`
+- **Status** — pass/fail/unbaselined chips from `totals`; only shown for statuses with count > 0. "No tests" pill if the project has no runs yet.
 
-The table is sortable by column (persisted to `localStorage` via `SortStateService`). A status filter dropdown (All / Pass / Fail / New) and a search field filter by project or suite name. Both filters apply simultaneously.
+The table is sortable by column (persisted to `localStorage` via `SortStateService`). A status filter dropdown (All / Pass / Fail / New) and a search field filter by project name. Both filters apply simultaneously.
+
+### `ProjectDetailComponent`
+
+Route: `/projects/:projectSlug`
+
+Loads via `GET /api/projects/:proj/`. Renders a table of the project's suites (name, latest run summary), each linking to `SuiteDetailComponent`.
 
 ### `SuiteDetailComponent`
 

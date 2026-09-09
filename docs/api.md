@@ -27,7 +27,8 @@ Defined in `backend/core/urls/spa.py`. Consumed only by the Angular frontend; no
 
 | Method | Path                                                                       | View            | Notes |
 | ------ | --------------------------------------------------------------------------- | --------------- | ----- |
-| GET    | `/api/projects/`                                                            | `projects_list` | Flattened project+suite rows |
+| GET    | `/api/projects/`                                                            | `projects_list` | One row per project, with aggregate totals (`suite_count`, `single_suite_slug`, `last_run_at`, `totals`) |
+| GET    | `/api/projects/<slug>/`                                                     | `project_detail` | Project detail: suite list for one project |
 | GET    | `/api/projects/<slug>/suites/<slug>/`                                       | `suite_detail`  | Latest 5 runs + baselines |
 | GET    | `/api/projects/<slug>/suites/<slug>/runs/<seq>/`                            | `run_detail`    | Run + test table |
 | GET    | `/api/projects/<slug>/suites/<slug>/tests/<key>/`                          | `test_history`  | Cross-run pass/fail history for one test key |
@@ -264,7 +265,8 @@ Clients have no other obligations — Spectre handles baselining server-side.
 - Skip CSRF on the API endpoints (DRF's default `SessionAuthentication` only enforces CSRF for cookie-based requests; if you don't add session auth at all, CSRF is moot).
 - **Legacy URLs are preserved** ([decisions.md](decisions.md) #7). `POST /runs`, `POST /tests`, `PATCH /tests/:id`, and `GET /baselines/:key` keep their un-prefixed paths and field shapes so existing CI clients keep working without changes. New SPA-only endpoints sit under `/api/` to avoid colliding with the legacy surface.
 - Frontend (Angular) consumes:
-  - `GET /api/projects/` (list)
+  - `GET /api/projects/` (list, aggregate totals per project)
+  - `GET /api/projects/<slug>/` (project detail: suite list)
   - `GET /api/projects/<slug>/suites/<slug>/` (suite detail w/ recent runs + baselines)
   - `GET /api/projects/<slug>/suites/<slug>/runs/<seq_id>/` (run detail w/ tests)
   - `POST /api/tests/<id>/set-baseline/` (JSON, empty body) is the SPA-preferred shape — idiomatic for Angular's `HttpClient`. Legacy `PATCH /tests/:id` with form-encoded `test[baseline]=true` is kept for CI client compatibility; both endpoints share the same handler.
@@ -297,6 +299,7 @@ from core.views import api as v
 
 urlpatterns = [
     path('projects/',                                          v.projects_list),
+    path('projects/<slug:project>/',                           v.project_detail),
     path('projects/<slug:project>/suites/<slug:suite>/',       v.suite_detail),
     path('projects/<slug:project>/suites/<slug:suite>/runs/<int:seq>/', v.run_detail),
     path('projects/<slug:project>/suites/<slug:suite>/tests/<str:key>/', v.test_history),  # GET, cross-run history
@@ -438,7 +441,8 @@ from rest_framework.response import Response
 
 from core.models import Baseline, Project, Run, Suite, Test
 from core.serializers import (
-    ProjectSerializer, SuiteDetailSerializer, RunDetailSerializer, BaselineSerializer,
+    ProjectSerializer, ProjectDetailSerializer, SuiteDetailSerializer, RunDetailSerializer, BaselineSerializer,
+    build_project_aggregates,
 )
 from core.views.legacy import _set_as_baseline
 
@@ -447,7 +451,15 @@ from core.views.legacy import _set_as_baseline
 @permission_classes([AllowAny])
 def projects_list(request):
     qs = Project.objects.prefetch_related('suites__runs').order_by('name')
-    return Response(ProjectSerializer(qs, many=True).data)
+    project_aggregates = build_project_aggregates(qs)
+    return Response(ProjectSerializer(qs, many=True, context={'project_aggregates': project_aggregates}).data)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def project_detail(request, project):
+    obj = get_object_or_404(Project.objects.prefetch_related('suites__runs'), slug=project)
+    return Response(ProjectDetailSerializer(obj).data)
 
 
 @api_view(['GET'])
@@ -725,7 +737,26 @@ def serialize_tests_bulk(tests):
 
 
 class ProjectSerializer(serializers.ModelSerializer):
-    """Top-level projects list. One row per (project, suite) — flattened by the view."""
+    """Top-level projects list. One row per project, with aggregate totals batched
+    across every project's latest-run ids in one pass by `build_project_aggregates`
+    (reusing `build_run_counts` for the GROUP BY batching) and passed in via
+    `context['project_aggregates']` — avoids N+1 queries across the project list.
+    """
+    suite_count = serializers.SerializerMethodField()
+    single_suite_slug = serializers.SerializerMethodField()
+    last_run_at = serializers.SerializerMethodField()
+    totals = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Project
+        fields = ['id', 'name', 'slug', 'suite_count', 'single_suite_slug', 'last_run_at', 'totals']
+
+    def _aggregate(self, obj):
+        return self.context['project_aggregates'][obj.id]
+
+
+class ProjectDetailSerializer(serializers.ModelSerializer):
+    """Project detail page: one row per suite for a single project."""
     suites = serializers.SerializerMethodField()
 
     class Meta:
@@ -743,6 +774,8 @@ class ProjectSerializer(serializers.ModelSerializer):
             for suite in obj.suites.all()
         ]
 ```
+
+`ProjectSerializer`'s `SerializerMethodField`s (elided above for brevity) each read from `self._aggregate(obj)` — the pre-batched dict from `build_project_aggregates`, not a per-object query.
 
 ### Why two serializer hierarchies, not one with conditionals
 
