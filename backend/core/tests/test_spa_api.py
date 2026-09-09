@@ -1174,7 +1174,7 @@ class TestProjectValidate:
     def test_unknown_project_returns_404(self, api):
         assert api.get("/api/projects/no-such-project/validate/").status_code == 404
 
-    def test_project_with_zero_suites_returns_passed(
+    def test_project_with_zero_suites_returns_pending(
         self,
         api,
         project_factory,
@@ -1184,5 +1184,97 @@ class TestProjectValidate:
         response = api.get("/api/projects/acme/validate/")
         assert response.status_code == 200
         body = response.json()
-        assert body["status"] == "passed"
+        assert body["status"] == "pending"
         assert body["suites"] == []
+
+    def test_uses_latest_run_not_first_run_older_passing_newer_failing(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        """A suite's older run passed, but its newer run failed — the endpoint must
+        report the newer run's verdict (and sequential_id), not the older one's,
+        since `suite.runs.first()` picks the newest run (Run.Meta.ordering = ["-id"]).
+        """
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        older_run = run_factory(suite=suite)
+        test_factory(run=older_run, status="done", passed=True)
+        newer_run = run_factory(suite=suite)
+        test_factory(run=newer_run, status="done", passed=False)
+
+        response = api.get("/api/projects/acme/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        suite_entry = body["suites"][0]
+        assert suite_entry["status"] == "failed"
+        assert suite_entry["run_sequential_id"] == newer_run.sequential_id
+        assert suite_entry["run_sequential_id"] != older_run.sequential_id
+
+    def test_uses_latest_run_not_first_run_older_failing_newer_passing(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        """The more important case: CI went green after a fix. An older failing run
+        followed by a newer passing run on the same suite must report "passed"
+        overall, not "failed" — proving the endpoint doesn't just pick "any" run.
+        """
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        older_run = run_factory(suite=suite)
+        test_factory(run=older_run, status="done", passed=False)
+        newer_run = run_factory(suite=suite)
+        test_factory(run=newer_run, status="done", passed=True)
+
+        response = api.get("/api/projects/acme/validate/")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "passed"
+        suite_entry = body["suites"][0]
+        assert suite_entry["status"] == "passed"
+        assert suite_entry["run_sequential_id"] == newer_run.sequential_id
+        assert suite_entry["run_sequential_id"] != older_run.sequential_id
+
+    def test_query_count_does_not_scale_with_suite_count(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+        django_assert_num_queries,
+    ):
+        """Regression test for the N+1 in compute_run_verdict's per-run test query:
+        project_validate must batch all suites' latest-run tests into ONE query,
+        regardless of how many suites the project has.
+        """
+        project = project_factory(name="Acme")
+        suite_a = suite_factory(project=project, name="Suite A")
+        suite_b = suite_factory(project=project, name="Suite B")
+        run_a = run_factory(suite=suite_a)
+        run_b = run_factory(suite=suite_b)
+        test_factory(run=run_a, status="done", passed=True)
+        test_factory(run=run_b, status="done", passed=True)
+
+        with django_assert_num_queries(4):
+            response_two_suites = api.get("/api/projects/acme/validate/")
+        assert response_two_suites.status_code == 200
+
+        project2 = project_factory(name="Widgets")
+        suite_names = ["Suite A", "Suite B", "Suite C", "Suite D"]
+        for name in suite_names:
+            suite = suite_factory(project=project2, name=name)
+            run = run_factory(suite=suite)
+            test_factory(run=run, status="done", passed=True)
+
+        with django_assert_num_queries(4):
+            response_four_suites = api.get("/api/projects/widgets/validate/")
+        assert response_four_suites.status_code == 200

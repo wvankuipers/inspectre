@@ -213,9 +213,9 @@ Full CRUD over Project / Suite / Run / Test / Baseline. See [admin.md](admin.md)
 
 ### SPA endpoints (`/api/*`)
 
-These back the Angular frontend and are free to evolve — see the [route table](#spa-endpoints--api-free-to-evolve) above for the full list. Four are otherwise undocumented:
+These back the Angular frontend and are free to evolve — see the [route table](#spa-endpoints--api-free-to-evolve) above for the full list. Four are otherwise undocumented. Although `run_validate` and `project_validate` live under this SPA-internal `/api/*` prefix, they're designed for CI consumption — treat changes to their response shape (the `status`/`passing`/`failing`/`pending`/`total`/`suites` fields) as a breaking change for any external CI integration, even though the route isn't part of the frozen Client API contract below.
 
-- **`GET /api/projects/<slug>/suites/<slug>/runs/<seq>/validate/`** (`run_validate`) — computes a tri-state CI-facing gate verdict for one run via `compute_run_verdict(run)` (`backend/core/serializers.py`). Unlike `RunSummarySerializer`'s `passing`/`failing`/`unbaselined` counts (display-only, and blind to the difference between "still processing" and "pipeline error"), this endpoint's `status` field is meant to be read by a CI pipeline to decide pass/fail: `"passed"`, `"failed"`, or `"pending"`. Derivation, per test:
+- **`GET /api/projects/<slug>/suites/<slug>/runs/<seq>/validate/`** (`run_validate`) — computes a tri-state CI-facing gate verdict for one run via `compute_run_verdict(status_passed_rows)` (`backend/core/serializers.py`), fed `run.tests.values_list("status", "passed")`. Unlike `RunSummarySerializer`'s `passing`/`failing`/`unbaselined` counts (display-only, and blind to the difference between "still processing" and "pipeline error"), this endpoint's `status` field is meant to be read by a CI pipeline to decide pass/fail: `"passed"`, `"failed"`, or `"pending"`. Derivation, per test:
   - A test counts as **failing** if `status == "done" and passed == False`, or if `status == "failed"` (a pipeline error, not a visual diff).
   - A test counts as **pending** if `status` is `"pending"` or `"processing"`.
   - The run's overall `status` is `"failed"` if any test is failing, else `"pending"` if any test is pending, else `"passed"`. A run with zero tests is `"pending"`.
@@ -232,7 +232,7 @@ These back the Angular frontend and are free to evolve — see the [route table]
   }
   ```
 
-- **`GET /api/projects/<slug>/validate/`** (`project_validate`) — rolls up `compute_run_verdict` across every suite in a project, using each suite's *latest* run only (`suite.runs.first()`), not full run history. A suite with **zero runs** contributes a synthetic entry with `status: "failed"` and `run_sequential_id: null` — deliberately, so an unreached suite can never let the project read as fully passed by omission. The project's overall `status` is `"failed"` if any suite is failed, else `"pending"` if any suite is pending, else `"passed"`.
+- **`GET /api/projects/<slug>/validate/`** (`project_validate`) — rolls up `compute_run_verdict` across every suite in a project, using each suite's *latest* run only (`suite.runs.first()`), not full run history. Every suite's latest-run tests are fetched in a single batched query (one `Test.objects.filter(run_id__in=...)` for the whole project), not one query per suite. A suite with **zero runs** contributes a synthetic entry with `status: "failed"` and `run_sequential_id: null` — deliberately, so an unreached suite can never let the project read as fully passed by omission. The project's overall `status` is `"failed"` if any suite is failed, else `"pending"` if any suite is pending, else `"passed"` — except a project with **zero suites**, which is always `"pending"` (never vacuously `"passed"`, same rationale as the zero-runs and zero-tests cases).
 
   Example response:
 

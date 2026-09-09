@@ -128,21 +128,33 @@ def baseline_detail(request, key):
 @permission_classes([AllowAny])
 def run_validate(request, project, suite, seq):
     obj = get_object_or_404(
-        Run.objects.select_related("suite__project").prefetch_related("tests"),
+        Run.objects.select_related("suite__project"),
         suite__project__slug=project,
         suite__slug=suite,
         sequential_id=seq,
     )
-    return Response(compute_run_verdict(obj))
+    return Response(compute_run_verdict(obj.tests.values_list("status", "passed")))
 
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def project_validate(request, project):
     obj = get_object_or_404(Project.objects.prefetch_related("suites__runs"), slug=project)
-    suites = []
+    latest_run_by_suite = {}
     for suite in obj.suites.all():
-        latest_run = suite.runs.first()
+        latest_run_by_suite[suite] = suite.runs.first()
+
+    # Batch every suite's latest-run tests into ONE query, regardless of suite
+    # count — mirrors build_run_counts's batching discipline. Without this,
+    # compute_run_verdict's per-run values_list() call would issue one query per
+    # suite (a real N+1).
+    run_ids = [run.id for run in latest_run_by_suite.values() if run is not None]
+    rows_by_run = {run_id: [] for run_id in run_ids}
+    for run_id, status, passed in Test.objects.filter(run_id__in=run_ids).values_list("run_id", "status", "passed"):
+        rows_by_run[run_id].append((status, passed))
+
+    suites = []
+    for suite, latest_run in latest_run_by_suite.items():
         if latest_run is None:
             suites.append(
                 {
@@ -156,14 +168,20 @@ def project_validate(request, project):
                 }
             )
             continue
-        verdict = compute_run_verdict(latest_run)
+        verdict = compute_run_verdict(rows_by_run[latest_run.id])
         suites.append({"suite": suite.slug, "run_sequential_id": latest_run.sequential_id, **verdict})
 
-    statuses = {s["status"] for s in suites}
-    if "failed" in statuses:
-        overall = "failed"
-    elif "pending" in statuses:
+    if not suites:
+        # A project with zero suites has never had a chance to pass — an empty/
+        # unreached state must never read as a clean gate (same "never vacuously
+        # pass" pattern as a suite with zero runs, or a run with zero tests).
         overall = "pending"
     else:
-        overall = "passed"
+        statuses = {s["status"] for s in suites}
+        if "failed" in statuses:
+            overall = "failed"
+        elif "pending" in statuses:
+            overall = "pending"
+        else:
+            overall = "passed"
     return Response({"status": overall, "suites": suites})
