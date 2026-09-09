@@ -24,6 +24,8 @@ Hierarchy is strict cascading-delete (`dependent: :destroy`):
 
 ## Tables
 
+> **Legacy schema.** The tables below (`projects` through `friendly_id_slugs`) describe the historical Rails/ActiveRecord schema (Dragonfly UIDs, `acts_as_sequenced`, `parameterize`, `dependent: :destroy`, etc.) and predate the Django rebuild. They're kept for historical reference. The schema actually shipped in this codebase is documented later in [Full model implementation](#full-model-implementation).
+
 ### `projects`
 
 | Column     | Type      | Notes                                                |
@@ -210,7 +212,7 @@ The `db/migrate/` history shows the schema's evolution; for the rebuild, work fr
   Run.objects.filter(pk__in=ids).delete()
   ```
   Django doesn't allow `.delete()` on a sliced queryset directly — materialize to a PK list first.
-- **"New baseline" signal** — when `Test.save()` upserts a Baseline that did not previously exist for the key, mark this on the API response (e.g. `"is_new_baseline": true`). Surface as a Material chip in the SPA. Don't persist on the Test row — it's a per-run UI signal.
+- **"New baseline" signal** — when a Test's async processing upserts a Baseline that did not previously exist for the key, record this as `is_new_baseline` (nullable `BooleanField`, `None` until processing completes). Surface as a Material chip in the SPA. This is persisted as a real column on the Test row (see [Full model implementation](#full-model-implementation)) rather than kept as an ephemeral per-run signal — it needs to survive across the async diff pipeline (staged → Celery task → result written back), and polling clients (`GET /tests/<id>/status`, `POST /api/tests/bulk/`) need to read it back after the fact, which a response-only field can't support.
 - **`dependent: :destroy`** → Django `on_delete=models.CASCADE` on the FK fields.
 - **Field rename**: Rails has `pass` (boolean) on `Test`; `pass` is a Python keyword. Use `passed` on the model. The API still serializes the field as `"pass"` for CI client compatibility — set the DRF serializer's source mapping accordingly.
 - Drop the `friendly_id_slugs` table.
@@ -339,14 +341,50 @@ class Test(models.Model):
     name = models.CharField(max_length=255)
     browser = models.CharField(max_length=255)
     size = models.CharField(max_length=255)
-    source_url = models.URLField(max_length=2048, blank=True, null=True)
+    source_url = models.URLField(max_length=2048, blank=True, default='')
 
     fuzz_level = models.CharField(max_length=10, default='30%')
     highlight_colour = models.CharField(max_length=6, default='ff0000')
-    crop_area = models.CharField(max_length=64, blank=True, null=True)
+    crop_area = models.CharField(max_length=64, blank=True, default='')
+
+    # source_url/crop_area intentionally use blank=True, default='' rather than
+    # null=True — nullability on string-ish fields was deliberately dropped to
+    # satisfy the ruff DJ001 rule ("avoid null=True on string-based fields").
+
+    STATUS_PENDING = 'pending'
+    STATUS_PROCESSING = 'processing'
+    STATUS_DONE = 'done'
+    STATUS_FAILED = 'failed'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_PROCESSING, 'Processing'),
+        (STATUS_DONE, 'Done'),
+        (STATUS_FAILED, 'Failed'),
+    ]
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+
+    # Fencing-token pair guarding the async diff pipeline (core/tasks.py).
+    # `processing_claim` is bumped only when a NEW process_test invocation is
+    # deliberately enqueued (initial creation, or a manual admin restart) —
+    # NOT on an automatic worker-crash redelivery of the same message, which
+    # carries the same token. The task rejects a delivery whose token doesn't
+    # match the row's current value, so a stale/superseded attempt can't
+    # clobber a result produced by a newer one.
+    processing_claim = models.IntegerField(default=0)
+    # Incremented each time process_test starts running this test. Used to
+    # cap redelivery attempts after a worker-crash requeue, so a screenshot
+    # that reliably crashes the worker fails permanently instead of looping.
+    process_attempts = models.IntegerField(default=0)
 
     diff = models.FloatField(default=0)
     passed = models.BooleanField(default=False)
+    # Set once by the diff pipeline; never mutated by later baseline promotion
+    # (unlike `passed`, which can flip via the "set as baseline" PATCH). This
+    # is the tamper-proof snapshot of the test's original pass/fail outcome.
+    original_passed = models.BooleanField(null=True, default=None)
+    # None = processing not yet complete; True = this submission established
+    # a new baseline; False = a baseline already existed for this key.
+    is_new_baseline = models.BooleanField(null=True, default=None)
     key = models.CharField(max_length=512, db_index=True, blank=True)
 
     screenshot          = models.FileField(upload_to=test_screenshot_path,        null=True, blank=True)
@@ -361,6 +399,11 @@ class Test(models.Model):
 
     class Meta:
         ordering = ['created_at']
+        indexes = [
+            # Speeds up the Celery worker's "find pending/processing rows"
+            # queries and the admin Processing queue view (below).
+            models.Index(fields=['status', 'created_at'], name='core_test_status_created_idx'),
+        ]
 
     def save(self, *args, **kwargs):
         # Recompute the key on every save so it always reflects the current
@@ -371,10 +414,28 @@ class Test(models.Model):
 
     def _compute_key(self) -> str:
         suite = self.run.suite
-        return slugify(f"{suite.project.name} {suite.name} {self.name} {self.browser} {self.size}")
+        # Truncate to 512 chars to match `key`'s max_length — long
+        # project/suite/test names could otherwise overflow the column.
+        return slugify(f"{suite.project.name} {suite.name} {self.name} {self.browser} {self.size}")[:512]
 
     def __str__(self):
         return f"{self.name} ({self.browser}, {self.size})"
+
+
+class ProcessingQueueTest(Test):
+    """Proxy model over the same `tests` table — no new columns or migration.
+
+    Exists purely so the Django admin can register a second, filtered
+    section ("Processing queue") showing rows still waiting for or
+    undergoing async image-diff processing, without duplicating Test's
+    field definitions or affecting the main Test admin. Added in migration
+    `0008_processingqueuetest.py`.
+    """
+
+    class Meta:
+        proxy = True
+        verbose_name = 'Processing queue'
+        verbose_name_plural = 'Processing queue'
 
 
 class Baseline(models.Model):
@@ -386,8 +447,12 @@ class Baseline(models.Model):
     size = models.CharField(max_length=255)
     key = models.CharField(max_length=512, unique=True, db_index=True)
 
-    screenshot = models.FileField(upload_to=baseline_screenshot_path, null=True, blank=True)
-    thumbnail  = models.FileField(upload_to=baseline_thumbnail_path,  null=True, blank=True)
+    # max_length=600 overrides FileField's default of 100 — the
+    # `baselines/{key}/...` path (key can be up to 512 chars) plus filename
+    # would otherwise overflow the column. Added in migration
+    # `0007_alter_baseline_screenshot_alter_baseline_thumbnail.py`.
+    screenshot = models.FileField(upload_to=baseline_screenshot_path, null=True, blank=True, max_length=600)
+    thumbnail  = models.FileField(upload_to=baseline_thumbnail_path,  null=True, blank=True, max_length=600)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -411,10 +476,12 @@ Two changes from the legacy schema worth flagging:
 import logging
 
 from django.conf import settings
-from django.db.models.signals import post_save
+from django.db import transaction
+from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 
-from .models import Run
+from .models import Run, Test
+from .tasks import delete_test_file_keys
 
 logger = logging.getLogger(__name__)
 
@@ -444,6 +511,29 @@ def purge_old_runs(sender, instance, created, **kwargs):
         logger.info("purged old runs", extra={
             'suite_id': instance.suite_id, 'purged': len(stale_ids), 'retained': retain,
         })
+
+
+_TEST_FILE_FIELDS = [
+    'screenshot', 'screenshot_baseline', 'screenshot_diff',
+    'screenshot_thumb', 'screenshot_baseline_thumb', 'screenshot_diff_thumb',
+]
+
+
+@receiver(pre_delete, sender=Test)
+def delete_test_files(sender, instance, **kwargs):
+    """Enqueue async deletion of a Test's S3/storage files.
+
+    Runs on pre_delete (including cascade deletes, e.g. deleting a Project
+    from admin) so file names are still available before the row is gone.
+    Deletion itself is deferred to a Celery task, and the enqueue is
+    deferred to transaction.on_commit, so a large cascade delete never
+    blocks the request on synchronous S3 calls, and a rolled-back
+    transaction never triggers deletion of files that still exist.
+    """
+    keys = [name for f in _TEST_FILE_FIELDS if (name := getattr(instance, f).name)]
+    if not keys:
+        return
+    transaction.on_commit(lambda: delete_test_file_keys.delay(keys))
 ```
 
 ### `core/apps.py`
@@ -471,3 +561,5 @@ The Rails app uses an `after_create` callback on `Run`. The Django-idiomatic tra
 - **No baseline upsert in `Test.save()`.** The legacy app uses an `after_save :update_baseline` hook on Test that fires whenever `pass` flips to `true`, including from the "set as baseline" PATCH. The rebuild moves that logic into `screenshot_comparison.py` (for the diff path) and `_set_as_baseline` in `core/views/legacy.py` (for the PATCH path). Reasons: (a) the upsert needs to attach the screenshot file, which the model doesn't have access to mid-save; (b) the legacy hook silently fires on any save, which makes admin edits to a Test mutate Baselines unexpectedly.
 - **No thumbnail rendering in `Test.save()`.** Same reasoning — explicit calls from the service layer ([storage-and-thumbnails.md](storage-and-thumbnails.md)) instead of an implicit hook.
 - **No `default_scope`.** Rails's `default_scope ordering` is a known footgun. The two `Meta.ordering` declarations cover the common cases; queries that need a different order should be explicit about it.
+
+File cleanup on delete *is* implemented, just not on the model: it's the `delete_test_files` `pre_delete` signal above, which enqueues an async Celery task (`delete_test_file_keys`) rather than deleting from S3 synchronously inside `Test.save()`/`delete()`. This mirrors the legacy Rails `after_destroy :delete_thumbnails` hook but moves the actual deletion off the request/transaction path.
