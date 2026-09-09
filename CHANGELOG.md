@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.5.0](https://github.com/wvankuipers/inspectre/compare/1.4.2...1.5.0) - 2026-09-09
+
+- chore(deps-dev): bump typescript-eslint from 8.68.0 to 8.69.0 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/112
+- chore(deps): bump the backend-pip group in /backend with 4 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/113
+- Worktree test detail viewer and key fix by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/119
+- chore(deps): bump the frontend-npm group across 1 directory with 13 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/114
+- chore(deps-dev): bump @babel/core from 7.29.0 to 7.29.7 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/121
+- chore(deps): bump the backend-pip group across 1 directory with 5 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/117
+- Worktree projects overview detail by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/118
+- chore: update .gitignore to include .superpowers and .angular dir by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/122
+- Docs/fix claude md by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/123
+- Docs/fix technical docs by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/124
+- Worktree validate endpoints by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/125
+- Refactor CLAUDE.md and add new skills for Inspectre by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/126
+
 ## [1.4.2](https://github.com/wvankuipers/inspectre/compare/1.4.1...1.4.2) - 2026-09-03
 
 - chore(deps-dev): bump angular-eslint from 22.1.0 to 22.2.0 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/107
