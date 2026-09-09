@@ -19,6 +19,54 @@ describe('InspectreApiService', () => {
     httpController.verify();
   });
 
+  describe('projects()', () => {
+    it('GETs /api/projects/ and returns the response body', () => {
+      let result: unknown;
+      service.projects().subscribe((r) => (result = r));
+      const req = httpController.expectOne('/api/projects/');
+      expect(req.request.method).toBe('GET');
+      const body = [
+        {
+          id: 1,
+          name: 'Acme',
+          slug: 'acme',
+          suite_count: 3,
+          single_suite_slug: null,
+          last_run_at: '2026-09-08T12:00:00Z',
+          totals: { passing: 10, failing: 2, unbaselined: 1 },
+        },
+      ];
+      req.flush(body);
+      expect(result).toEqual(body);
+    });
+  });
+
+  describe('projectDetail()', () => {
+    it('encodes projectSlug with special characters in the URL', () => {
+      service.projectDetail('my project').subscribe();
+      const req = httpController.expectOne('/api/projects/my%20project/');
+      expect(req.request.method).toBe('GET');
+      req.flush({});
+    });
+
+    it('encodes projectSlug with slash characters in the URL', () => {
+      service.projectDetail('proj/name').subscribe();
+      const req = httpController.expectOne('/api/projects/proj%2Fname/');
+      expect(req.request.method).toBe('GET');
+      req.flush({});
+    });
+
+    it('leaves plain slugs unchanged, and returns the response body', () => {
+      let result: unknown;
+      service.projectDetail('my-project').subscribe((r) => (result = r));
+      const req = httpController.expectOne('/api/projects/my-project/');
+      expect(req.request.method).toBe('GET');
+      const body = { id: 1, name: 'My Project', slug: 'my-project', suites: [] };
+      req.flush(body);
+      expect(result).toEqual(body);
+    });
+  });
+
   describe('suite()', () => {
     it('encodes projectSlug with special characters in the URL', () => {
       service.suite('my project', 'my suite').subscribe();

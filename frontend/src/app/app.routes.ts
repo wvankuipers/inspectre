@@ -16,6 +16,14 @@ export const routes: Routes = [
         data: {},
       },
       {
+        path: 'projects/:projectSlug',
+        loadComponent: () =>
+          import('./features/project-detail/project-detail.component').then(
+            (m) => m.ProjectDetailComponent,
+          ),
+        data: { backLink: '/projects' },
+      },
+      {
         path: 'projects/:projectSlug/suites/:suiteSlug',
         loadComponent: () =>
           import('./features/suite-detail/suite-detail.component').then(

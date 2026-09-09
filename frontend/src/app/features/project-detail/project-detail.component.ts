@@ -1,31 +1,24 @@
 import { DatePipe } from '@angular/common';
-import {
-  Component,
-  DestroyRef,
-  ViewChild,
-  computed,
-  effect,
-  inject,
-  signal,
-} from '@angular/core';
+import { Component, DestroyRef, ViewChild, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Subject, catchError, debounceTime, of } from 'rxjs';
+import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
+import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
 import { RunStatsChipsComponent } from '../../core/components/run-stats-chips/run-stats-chips.component';
 import { SearchFieldComponent } from '../../core/components/search-field/search-field.component';
-import { ProjectSummary } from '../../core/models/api';
+import { ProjectDetail, SuiteSummary } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
 
 const VALID_STATUSES = ['pass', 'fail', 'new'] as const;
 type Status = (typeof VALID_STATUSES)[number];
 
 @Component({
-  selector: 'app-projects-list',
+  selector: 'app-project-detail',
   standalone: true,
   imports: [
     DatePipe,
@@ -34,12 +27,13 @@ type Status = (typeof VALID_STATUSES)[number];
     MatSortModule,
     MatTableModule,
     SearchFieldComponent,
+    BreadcrumbComponent,
     RunStatsChipsComponent,
   ],
-  templateUrl: './projects-list.component.html',
-  styleUrl: './projects-list.component.scss',
+  templateUrl: './project-detail.component.html',
+  styleUrl: './project-detail.component.scss',
 })
-export class ProjectsListComponent {
+export class ProjectDetailComponent {
   private api = inject(InspectreApiService);
   private sortService = inject(SortStateService);
   private destroyRef = inject(DestroyRef);
@@ -59,7 +53,7 @@ export class ProjectsListComponent {
     this.dataSource.sort = sort;
     sort.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s: Sort) => {
       this.sortState.set(s);
-      this.sortService.save('projects', s);
+      this.sortService.save('project-detail', s);
       this.writeQueryParams(
         s.active && s.direction ? { sort: s.active, dir: s.direction } : { sort: null, dir: null },
       );
@@ -68,11 +62,11 @@ export class ProjectsListComponent {
 
   private readonly initialQueryParams = this.route.snapshot.queryParamMap;
 
-  readonly columns = ['project', 'suiteCount', 'latestRun', 'status'];
+  readonly columns = ['suite', 'latestRun', 'status'];
   readonly sortState = signal<Sort>(this.readInitialSort());
   readonly searchTerm = signal<string>(this.initialQueryParams.get('q') ?? '');
   readonly activeStatuses = signal<Set<Status>>(this.readInitialStatuses());
-  readonly dataSource = new MatTableDataSource<ProjectSummary>();
+  readonly dataSource = new MatTableDataSource<SuiteSummary>();
 
   private readonly searchWrite$ = new Subject<string>();
 
@@ -82,7 +76,7 @@ export class ProjectsListComponent {
       const dir = this.initialQueryParams.get('dir');
       return { active, direction: dir === 'desc' ? 'desc' : 'asc' };
     }
-    return this.sortService.get('projects');
+    return this.sortService.get('project-detail');
   }
 
   private readInitialStatuses(): Set<Status> {
@@ -100,25 +94,42 @@ export class ProjectsListComponent {
     });
   }
 
-  private projects = toSignal(
-    this.api.projects().pipe(
+  private params = toSignal(this.route.paramMap, {
+    initialValue: this.route.snapshot.paramMap,
+  });
+
+  readonly projectSlug = computed(() => this.params().get('projectSlug') ?? '');
+
+  private projectData = toSignal(
+    this.route.paramMap.pipe(
+      switchMap((p) =>
+        this.api.projectDetail(p.get('projectSlug')!).pipe(catchError(() => of<ProjectDetail | null>(null))),
+      ),
       takeUntilDestroyed(),
-      catchError(() => of<ProjectSummary[]>([])),
     ),
     { initialValue: undefined },
   );
 
-  readonly loading = computed(() => this.projects() === undefined);
+  readonly loading = computed(() => this.projectData() === undefined);
 
-  readonly rows = computed<ProjectSummary[]>(() => this.projects() ?? []);
+  readonly project = computed(() => this.projectData() ?? null);
 
-  private classifyRow(row: ProjectSummary): 'pass' | 'fail' | 'new' {
-    if (row.totals.unbaselined > 0) return 'new';
-    if (row.totals.failing > 0) return 'fail';
+  readonly rows = computed<SuiteSummary[]>(() => this.project()?.suites ?? []);
+
+  // A suite with no runs yet (`latest_run: null`) has no pass/fail/new signal
+  // of its own. We classify it as "pass" for filtering purposes so it stays
+  // neutral, mirroring the "all-zero totals -> pass" convention the main
+  // projects list already uses for projects with no runs yet, rather than
+  // inventing a fourth filter bucket or hiding the row entirely.
+  private classifyRow(row: SuiteSummary): 'pass' | 'fail' | 'new' {
+    const stats = row.latest_run;
+    if (!stats) return 'pass';
+    if (stats.unbaselined > 0) return 'new';
+    if (stats.failing > 0) return 'fail';
     return 'pass';
   }
 
-  readonly visibleRows = computed<ProjectSummary[]>(() => {
+  readonly visibleRows = computed<SuiteSummary[]>(() => {
     const statuses = this.activeStatuses();
     if (statuses.size === 0) return this.rows();
     return this.rows().filter((row) => {
@@ -128,17 +139,15 @@ export class ProjectsListComponent {
   });
 
   constructor() {
-    this.dataSource.filterPredicate = (row: ProjectSummary, filter: string) =>
+    this.dataSource.filterPredicate = (row: SuiteSummary, filter: string) =>
       row.name.toLowerCase().includes(filter);
 
-    this.dataSource.sortingDataAccessor = (row: ProjectSummary, sortHeaderId: string): string | number => {
+    this.dataSource.sortingDataAccessor = (row: SuiteSummary, sortHeaderId: string): string | number => {
       switch (sortHeaderId) {
-        case 'project':
+        case 'suite':
           return row.name;
-        case 'suiteCount':
-          return row.suite_count;
         case 'latestRun':
-          return row.last_run_at ? Date.parse(row.last_run_at) : -1;
+          return row.latest_run ? Date.parse(row.latest_run.created_at) : -1;
         default:
           return '';
       }

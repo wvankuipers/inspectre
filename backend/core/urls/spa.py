@@ -6,6 +6,7 @@ from core.views import api as v
 
 urlpatterns = [
     path("projects/", v.projects_list),
+    path("projects/<slug:project>/", v.project_detail),
     path("projects/<slug:project>/suites/<slug:suite>/", v.suite_detail),
     path(
         "projects/<slug:project>/suites/<slug:suite>/runs/<int:seq>/",

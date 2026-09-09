@@ -6,76 +6,46 @@ import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { delay, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
-import { Project } from '../../core/models/api';
+import { ProjectSummary } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
 import { ProjectsListComponent } from './projects-list.component';
 
-const PROJECTS: Project[] = [
+const PROJECTS: ProjectSummary[] = [
   {
     id: 1,
     name: 'Beta',
     slug: 'beta',
-    suites: [
-      {
-        id: 10,
-        name: 'S1',
-        slug: 's1',
-        latest_run: {
-          id: 1,
-          sequential_id: 5,
-          created_at: '2026-01-01T00:00:00Z',
-          passing: 0,
-          failing: 3,
-          unbaselined: 3,
-        },
-      },
-    ],
+    suite_count: 1,
+    single_suite_slug: 's1',
+    last_run_at: '2026-01-01T00:00:00Z',
+    totals: { passing: 0, failing: 3, unbaselined: 3 },
   },
   {
     id: 2,
     name: 'Alpha',
     slug: 'alpha',
-    suites: [
-      {
-        id: 20,
-        name: 'S2',
-        slug: 's2',
-        latest_run: {
-          id: 2,
-          sequential_id: 1,
-          created_at: '2026-01-05T00:00:00Z',
-          passing: 6,
-          failing: 0,
-          unbaselined: 0,
-        },
-      },
-    ],
+    suite_count: 1,
+    single_suite_slug: 's2',
+    last_run_at: '2026-01-05T00:00:00Z',
+    totals: { passing: 6, failing: 0, unbaselined: 0 },
   },
   {
     id: 3,
     name: 'Gamma',
     slug: 'gamma',
-    suites: [
-      {
-        id: 30,
-        name: 'S3',
-        slug: 's3',
-        latest_run: {
-          id: 3,
-          sequential_id: 3,
-          created_at: '2026-01-03T00:00:00Z',
-          passing: 2,
-          failing: 3,
-          unbaselined: 0,
-        },
-      },
-    ],
+    suite_count: 2,
+    single_suite_slug: null,
+    last_run_at: '2026-01-03T00:00:00Z',
+    totals: { passing: 2, failing: 3, unbaselined: 0 },
   },
   {
     id: 4,
     name: 'Delta',
     slug: 'delta',
-    suites: [{ id: 40, name: 'S4', slug: 's4', latest_run: null }],
+    suite_count: 1,
+    single_suite_slug: 's4',
+    last_run_at: null,
+    totals: { passing: 0, failing: 0, unbaselined: 0 },
   },
 ];
 
@@ -125,7 +95,7 @@ describe('ProjectsListComponent sorting', () => {
     );
   });
 
-  it('sortingDataAccessor returns project name for project column', async () => {
+  it('sortingDataAccessor returns project name and suite count for their columns', async () => {
     const fixture = TestBed.createComponent(ProjectsListComponent);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -133,22 +103,21 @@ describe('ProjectsListComponent sorting', () => {
     const ds = component.dataSource;
     const row = ds.data[0]; // Beta row
     expect(ds.sortingDataAccessor(row, 'project')).toBe('Beta');
-    expect(ds.sortingDataAccessor(row, 'suite')).toBe('S1');
+    expect(ds.sortingDataAccessor(row, 'suiteCount')).toBe(1);
   });
 
-  it('sortingDataAccessor sorts the latestRun column by created_at, not sequential_id', async () => {
+  it('sortingDataAccessor sorts the latestRun column by last_run_at, treating null as earliest', async () => {
     const fixture = TestBed.createComponent(ProjectsListComponent);
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
     const ds = component.dataSource;
-    const row = ds.data[0]; // Beta row: sequential_id 5, created_at 2026-01-01 (earliest)
-    // Beta has the *highest* sequential_id but the *earliest* created_at, so sorting
-    // by date vs. by run number gives different results — this distinguishes them.
-    expect(ds.sortingDataAccessor(row, 'latestRun')).toBe(
+    const betaRow = ds.data.find((r) => r.name === 'Beta')!;
+    const deltaRow = ds.data.find((r) => r.name === 'Delta')!;
+    expect(ds.sortingDataAccessor(betaRow, 'latestRun')).toBe(
       Date.parse('2026-01-01T00:00:00Z'),
     );
-    expect(ds.sortingDataAccessor(row, 'latestRun')).not.toBe(5);
+    expect(ds.sortingDataAccessor(deltaRow, 'latestRun')).toBe(-1);
   });
 
   it('actually reorders the connected table rows when a real MatSort is triggered', async () => {
@@ -197,14 +166,12 @@ describe('ProjectsListComponent sorting', () => {
     expect(renderedProjectNames()).toEqual(['Alpha', 'Beta', 'Delta', 'Gamma']);
   });
 
-  it('reorders rows by created_at (not sequential_id) when sorting the Last run column', async () => {
-    // Fixture run numbers vs. dates deliberately diverge:
-    //   Beta:  sequential_id 5, created_at 2026-01-01 (earliest)
-    //   Alpha: sequential_id 1, created_at 2026-01-05 (latest)
-    //   Gamma: sequential_id 3, created_at 2026-01-03 (middle)
-    //   Delta: no latest_run
-    // Sorting ascending by sequential_id would give: Delta, Alpha, Gamma, Beta.
-    // Sorting ascending by created_at (the desired behavior) gives: Delta, Beta, Gamma, Alpha.
+  it('reorders rows by last_run_at (treating null as earliest) when sorting the Last run column', async () => {
+    // Fixture dates deliberately diverge from name order:
+    //   Beta:  2026-01-01 (earliest with a run)
+    //   Alpha: 2026-01-05 (latest)
+    //   Gamma: 2026-01-03 (middle)
+    //   Delta: null (no runs yet — sorts before all dated rows)
     await TestBed.resetTestingModule()
       .configureTestingModule({
         imports: [ProjectsListComponent],
@@ -314,7 +281,7 @@ describe('ProjectsListComponent search', () => {
     await fixture.whenStable();
     const rows = component.dataSource.filteredData;
     expect(rows.length).toBe(1);
-    expect(rows[0].project.name).toBe('Alpha');
+    expect(rows[0].name).toBe('Alpha');
   });
 
   it('shows no-data row when search term matches nothing', async () => {
@@ -394,15 +361,22 @@ describe('ProjectsListComponent status filter', () => {
     expect(fixture.componentInstance.visibleRows().length).toBe(4);
   });
 
-  it('shows only passing rows when pass filter is active', async () => {
+  it('shows passing rows (including projects with no runs yet) when pass filter is active', async () => {
+    // Data-shape change: a project row's classification is derived purely
+    // from its aggregate totals (unbaselined>0 -> new, else failing>0 ->
+    // fail, else pass) — there is no more per-row "no run yet" exclusion
+    // branch like the old per-suite latest_run-null check, since totals is
+    // always present. Delta has all-zero totals, so it classifies as pass.
     const fixture = TestBed.createComponent(ProjectsListComponent);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance.toggleStatus('pass');
     fixture.detectChanges();
     const rows = fixture.componentInstance.visibleRows();
-    expect(rows.length).toBe(1);
-    expect(rows[0].project.name).toBe('Alpha');
+    const names = rows.map((r) => r.name);
+    expect(names).toContain('Alpha');
+    expect(names).toContain('Delta');
+    expect(rows.length).toBe(2);
   });
 
   it('shows failing rows (including unbaselined ones) when fail filter is active', async () => {
@@ -412,7 +386,7 @@ describe('ProjectsListComponent status filter', () => {
     fixture.componentInstance.toggleStatus('fail');
     fixture.detectChanges();
     const rows = fixture.componentInstance.visibleRows();
-    const names = rows.map((r) => r.project.name);
+    const names = rows.map((r) => r.name);
     // Beta is unbaselined (which also counts as failing on the backend), so it
     // should show up under "Fail" too, matching run-detail's behavior.
     expect(names).toContain('Gamma');
@@ -428,17 +402,7 @@ describe('ProjectsListComponent status filter', () => {
     fixture.detectChanges();
     const rows = fixture.componentInstance.visibleRows();
     expect(rows.length).toBe(1);
-    expect(rows[0].project.name).toBe('Beta');
-  });
-
-  it('hides rows with no latest_run when any filter is active', async () => {
-    const fixture = TestBed.createComponent(ProjectsListComponent);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.componentInstance.toggleStatus('pass');
-    fixture.detectChanges();
-    const names = fixture.componentInstance.visibleRows().map((r) => r.project.name);
-    expect(names).not.toContain('Delta');
+    expect(rows[0].name).toBe('Beta');
   });
 
   it('clears filter when same status is toggled twice', async () => {
@@ -461,7 +425,7 @@ describe('ProjectsListComponent status filter', () => {
     await fixture.whenStable();
     const rows = fixture.componentInstance.dataSource.filteredData;
     expect(rows.length).toBe(1);
-    expect(rows[0].project.name).toBe('Alpha');
+    expect(rows[0].name).toBe('Alpha');
   });
 });
 
@@ -499,14 +463,14 @@ describe('ProjectsListComponent query params', () => {
   }
 
   it('seeds searchTerm, activeStatuses, and sortState from URL query params on init', async () => {
-    await configureWithQueryParams({ q: 'alpha', status: 'fail,new', sort: 'suite', dir: 'desc' });
+    await configureWithQueryParams({ q: 'alpha', status: 'fail,new', sort: 'suiteCount', dir: 'desc' });
     const fixture = TestBed.createComponent(ProjectsListComponent);
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
     expect(component.searchTerm()).toBe('alpha');
     expect(component.activeStatuses()).toEqual(new Set(['fail', 'new']));
-    expect(component.sortState()).toEqual({ active: 'suite', direction: 'desc' });
+    expect(component.sortState()).toEqual({ active: 'suiteCount', direction: 'desc' });
   });
 
   it('falls back to SortStateService when the URL has no sort/dir params', async () => {
@@ -638,5 +602,49 @@ describe('ProjectsListComponent API failure', () => {
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('No projects yet.');
+  });
+});
+
+describe('ProjectsListComponent project name link target', () => {
+  afterEach(() => localStorage.clear());
+
+  beforeEach(async () => {
+    localStorage.clear();
+    const getSpy = vi.fn().mockReturnValue({ active: '', direction: '' });
+    const saveSpy = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [ProjectsListComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS) } },
+        { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
+      ],
+    }).compileComponents();
+  });
+
+  it('links the project name straight to the suite when the project has exactly one suite', async () => {
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const link = Array.from(el.querySelectorAll('td.mat-column-project a')).find(
+      (a) => a.textContent?.trim() === 'Beta',
+    ) as HTMLAnchorElement | undefined;
+    expect(link).toBeTruthy();
+    expect(link!.getAttribute('href')).toBe('/projects/beta/suites/s1');
+  });
+
+  it('links the project name to the project detail page when the project has multiple suites', async () => {
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const link = Array.from(el.querySelectorAll('td.mat-column-project a')).find(
+      (a) => a.textContent?.trim() === 'Gamma',
+    ) as HTMLAnchorElement | undefined;
+    expect(link).toBeTruthy();
+    expect(link!.getAttribute('href')).toBe('/projects/gamma');
   });
 });

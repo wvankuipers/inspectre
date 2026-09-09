@@ -1,5 +1,5 @@
 import { Component, input } from '@angular/core';
-import { RunSummary } from '../../models/api';
+import { RunStats } from '../../models/api';
 
 @Component({
   selector: 'app-run-stats-chips',
@@ -8,5 +8,5 @@ import { RunSummary } from '../../models/api';
   templateUrl: './run-stats-chips.component.html',
 })
 export class RunStatsChipsComponent {
-  readonly stats = input.required<RunSummary>();
+  readonly stats = input.required<RunStats>();
 }

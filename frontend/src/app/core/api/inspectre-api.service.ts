@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import { Baseline, Project, RunDetail, SuiteDetail, TestHistory, TestRow } from '../models/api';
+import { Baseline, ProjectDetail, ProjectSummary, RunDetail, SuiteDetail, TestHistory, TestRow } from '../models/api';
 
 @Injectable({ providedIn: 'root' })
 export class InspectreApiService {
@@ -15,8 +15,12 @@ export class InspectreApiService {
 
   // ---- Read paths --------------------------------------------------------
 
-  projects(): Observable<Project[]> {
-    return this.http.get<Project[]>(`${this.apiBase}/projects/`);
+  projects(): Observable<ProjectSummary[]> {
+    return this.http.get<ProjectSummary[]>(`${this.apiBase}/projects/`);
+  }
+
+  projectDetail(projectSlug: string): Observable<ProjectDetail> {
+    return this.http.get<ProjectDetail>(`${this.apiBase}/projects/${encodeURIComponent(projectSlug)}/`);
   }
 
   suite(projectSlug: string, suiteSlug: string): Observable<SuiteDetail> {
