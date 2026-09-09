@@ -136,6 +136,17 @@ Full-screen modal (`MatDialog`) for inspecting a test's images. Receives the ful
 
 **Loading state** — each slot transition shows a shimmer skeleton (`#1e293b` background with cyan sweep) until the image fires its `load` event. `onImgError` also dismisses the skeleton to avoid lingering placeholders on broken images. The `viewerLoaded` signal resets whenever `testIndex` or `slot` changes.
 
+## Key files
+
+| Path                                                        | Purpose                                                              |
+|--------------------------------------------------------------|------------------------------------------------------------------------|
+| `frontend/src/app/core/api/inspectre-api.service.ts`        | `InspectreApiService` — HTTP client for all API calls                |
+| `frontend/src/app/core/services/sort-state.service.ts`      | Persists table sort to `localStorage` (keys: `inspectre.sort.*`)     |
+| `frontend/src/app/core/interceptors/error.interceptor.ts`   | Shows snackbar on HTTP errors                                        |
+| `frontend/src/app/core/interceptors/loading.interceptor.ts` | Drives `loading.service.ts` counter for the global loading indicator |
+| `frontend/src/app/core/models/api.ts`                       | TypeScript types mirroring DRF serializers                           |
+| `frontend/src/styles.scss`                                  | Global styles: Material theme, `.inspectre-card`, chip classes       |
+
 ## Services
 
 ### `InspectreApiService`

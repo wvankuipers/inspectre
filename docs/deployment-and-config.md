@@ -41,17 +41,37 @@ Services start at:
 | Django admin  | http://localhost:8000/admin  |
 | MinIO console | http://localhost:9001        |
 
+### Docker Compose services (`deploy/docker-compose.yml`)
+
+| Service      | Purpose                                                                     | Port                 |
+|--------------|------------------------------------------------------------------------------|----------------------|
+| `api`        | Django / gunicorn                                                           | 8000                 |
+| `spa`        | nginx serving Angular bundle + reverse-proxy                                | 4200                 |
+| `db`         | PostgreSQL                                                                  | —                    |
+| `valkey`     | Redis-protocol broker for Celery                                            | —                    |
+| `worker`     | Celery worker (`celery -A inspectre worker`) — runs the image diff pipeline | —                    |
+| `minio`      | S3-compatible image storage (dev)                                          | 9000, 9001 (console) |
+| `minio-init` | Creates `inspectre-screenshots` bucket on first boot                       | —                    |
+| `api-dev`    | api + dev tools, bind-mounted source (`--profile dev`)                     | —                    |
+| `spa-dev`    | Node container for `npm` (`--profile dev`)                                 | —                    |
+
 ### Useful make targets
 
-| Target           | What it does                              |
-|------------------|-------------------------------------------|
-| `make up`        | Start all services                        |
-| `make migrate`   | Run Django migrations inside api container|
-| `make test`      | All tests (backend + frontend)            |
-| `make test-fast` | Backend only, no ImageMagick              |
-| `make test-slow` | Backend including image diff tests        |
-| `make lint`      | Ruff + Angular ESLint                     |
-| `make lint-fix`  | Auto-fix both                             |
+| Target              | What it does                                        |
+|----------------------|------------------------------------------------------|
+| `make up`            | Start all services                                    |
+| `make down`          | Stop and remove all containers (preserves volumes)   |
+| `make logs`          | Tail the api service's logs                          |
+| `make shell-api`     | Open a Django shell inside the api container         |
+| `make migrate`       | Run Django migrations inside api container           |
+| `make test`          | All tests (backend fast+slow + frontend)             |
+| `make test-fast`     | Backend only, no ImageMagick                         |
+| `make test-slow`     | Backend including image diff tests                   |
+| `make test-frontend` | Angular Vitest                                        |
+| `make lint`          | Ruff + Angular ESLint                                 |
+| `make lint-fix`      | Auto-fix both                                         |
+| `make seed`          | Load demo data (wipes existing demo data first)      |
+| `make clean`         | Stop containers and remove volumes — DESTROYS local data |
 
 ### Rebuilding after code changes
 
