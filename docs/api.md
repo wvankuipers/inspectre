@@ -29,8 +29,10 @@ Defined in `backend/core/urls/spa.py`. Consumed only by the Angular frontend; no
 | ------ | --------------------------------------------------------------------------- | --------------- | ----- |
 | GET    | `/api/projects/`                                                            | `projects_list` | One row per project, with aggregate totals (`suite_count`, `single_suite_slug`, `last_run_at`, `totals`) |
 | GET    | `/api/projects/<slug>/`                                                     | `project_detail` | Project detail: suite list for one project |
+| GET    | `/api/projects/<slug>/validate/`                                            | `project_validate` | Pass/fail/pending verdict for every suite's latest run |
 | GET    | `/api/projects/<slug>/suites/<slug>/`                                       | `suite_detail`  | Latest 5 runs + baselines |
 | GET    | `/api/projects/<slug>/suites/<slug>/runs/<seq>/`                            | `run_detail`    | Run + test table |
+| GET    | `/api/projects/<slug>/suites/<slug>/runs/<seq>/validate/`                   | `run_validate`  | Pass/fail/pending verdict for one run |
 | GET    | `/api/projects/<slug>/suites/<slug>/tests/<key>/`                          | `test_history`  | Cross-run pass/fail history for one test key |
 | POST   | `/api/tests/bulk/`                                                          | `tests_bulk`    | Fetch fresh `TestRow` data for a set of ids (polling) |
 | POST   | `/api/tests/<id>/set-baseline/`                                             | `set_baseline`  | JSON, empty body |
@@ -211,7 +213,54 @@ Full CRUD over Project / Suite / Run / Test / Baseline. See [admin.md](admin.md)
 
 ### SPA endpoints (`/api/*`)
 
-These back the Angular frontend and are free to evolve — see the [route table](#spa-endpoints--api-free-to-evolve) above for the full list. Two are otherwise undocumented:
+These back the Angular frontend and are free to evolve — see the [route table](#spa-endpoints--api-free-to-evolve) above for the full list. Four are otherwise undocumented:
+
+- **`GET /api/projects/<slug>/suites/<slug>/runs/<seq>/validate/`** (`run_validate`) — computes a tri-state CI-facing gate verdict for one run via `compute_run_verdict(run)` (`backend/core/serializers.py`). Unlike `RunSummarySerializer`'s `passing`/`failing`/`unbaselined` counts (display-only, and blind to the difference between "still processing" and "pipeline error"), this endpoint's `status` field is meant to be read by a CI pipeline to decide pass/fail: `"passed"`, `"failed"`, or `"pending"`. Derivation, per test:
+  - A test counts as **failing** if `status == "done" and passed == False`, or if `status == "failed"` (a pipeline error, not a visual diff).
+  - A test counts as **pending** if `status` is `"pending"` or `"processing"`.
+  - The run's overall `status` is `"failed"` if any test is failing, else `"pending"` if any test is pending, else `"passed"`. A run with zero tests is `"pending"`.
+
+  Example response:
+
+  ```json
+  {
+    "status": "failed",
+    "passing": 1,
+    "failing": 1,
+    "pending": 0,
+    "total": 2
+  }
+  ```
+
+- **`GET /api/projects/<slug>/validate/`** (`project_validate`) — rolls up `compute_run_verdict` across every suite in a project, using each suite's *latest* run only (`suite.runs.first()`), not full run history. A suite with **zero runs** contributes a synthetic entry with `status: "failed"` and `run_sequential_id: null` — deliberately, so an unreached suite can never let the project read as fully passed by omission. The project's overall `status` is `"failed"` if any suite is failed, else `"pending"` if any suite is pending, else `"passed"`.
+
+  Example response:
+
+  ```json
+  {
+    "status": "failed",
+    "suites": [
+      {
+        "suite": "desktop",
+        "run_sequential_id": 12,
+        "status": "passed",
+        "passing": 2,
+        "failing": 0,
+        "pending": 0,
+        "total": 2
+      },
+      {
+        "suite": "mobile",
+        "run_sequential_id": null,
+        "status": "failed",
+        "passing": 0,
+        "failing": 0,
+        "pending": 0,
+        "total": 0
+      }
+    ]
+  }
+  ```
 
 - **`GET /api/projects/<slug>/suites/<slug>/tests/<key>/`** (`test_history`) — returns the cross-run pass/fail history for a single test key within a suite, newest run first. 404 if no `Test` rows match. Response shape (via `serialize_test_history`):
 
@@ -442,7 +491,7 @@ from rest_framework.response import Response
 from core.models import Baseline, Project, Run, Suite, Test
 from core.serializers import (
     ProjectSerializer, ProjectDetailSerializer, SuiteDetailSerializer, RunDetailSerializer, BaselineSerializer,
-    build_project_aggregates,
+    build_project_aggregates, compute_run_verdict,
 )
 from core.views.legacy import _set_as_baseline
 
@@ -464,6 +513,22 @@ def project_detail(request, project):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+def project_validate(request, project):
+    obj = get_object_or_404(Project.objects.prefetch_related('suites__runs'), slug=project)
+    suites = []
+    for suite in obj.suites.all():
+        latest_run = suite.runs.first()
+        if latest_run is None:
+            suites.append({'suite': suite.slug, 'run_sequential_id': None, 'status': 'failed', ...})
+            continue
+        verdict = compute_run_verdict(latest_run)
+        suites.append({'suite': suite.slug, 'run_sequential_id': latest_run.sequential_id, **verdict})
+    overall = 'failed' if any(s['status'] == 'failed' for s in suites) else ...
+    return Response({'status': overall, 'suites': suites})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
 def suite_detail(request, project, suite):
     obj = get_object_or_404(
         Suite.objects.select_related('project'),
@@ -480,6 +545,16 @@ def run_detail(request, project, suite, seq):
         suite__project__slug=project, suite__slug=suite, sequential_id=seq,
     )
     return Response(RunDetailSerializer(obj).data)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def run_validate(request, project, suite, seq):
+    obj = get_object_or_404(
+        Run.objects.select_related('suite__project').prefetch_related('tests'),
+        suite__project__slug=project, suite__slug=suite, sequential_id=seq,
+    )
+    return Response(compute_run_verdict(obj))
 
 
 @api_view(['POST'])
