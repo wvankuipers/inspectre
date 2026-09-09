@@ -385,9 +385,7 @@ def test_build_project_aggregates_no_suite_has_ever_run(project_factory, suite_f
     assert aggregates[project.id]["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0}
 
 
-def test_build_project_aggregates_single_suite_slug_only_when_suite_count_is_one(
-    project_factory, suite_factory
-):
+def test_build_project_aggregates_single_suite_slug_only_when_suite_count_is_one(project_factory, suite_factory):
     project = project_factory()
     suite_factory(project=project, name="Desktop", slug="desktop")
     projects = _projects_with_prefetch(project.id)
@@ -398,9 +396,7 @@ def test_build_project_aggregates_single_suite_slug_only_when_suite_count_is_one
     assert aggregates[project.id]["single_suite_slug"] == "desktop"
 
 
-def test_build_project_aggregates_single_suite_slug_is_null_when_multiple_suites(
-    project_factory, suite_factory
-):
+def test_build_project_aggregates_single_suite_slug_is_null_when_multiple_suites(project_factory, suite_factory):
     project = project_factory()
     suite_factory(project=project, name="Desktop")
     suite_factory(project=project, name="Mobile")
