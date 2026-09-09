@@ -1054,8 +1054,8 @@ class TestRunValidate:
         api,
         project_factory,
     ):
-        project = project_factory(name="Acme")
-        assert api.get(f"/api/projects/acme/suites/no-such-suite/runs/1/validate/").status_code == 404
+        project_factory(name="Acme")
+        assert api.get("/api/projects/acme/suites/no-such-suite/runs/1/validate/").status_code == 404
 
     def test_unknown_seq_returns_404(
         self,
@@ -1064,8 +1064,8 @@ class TestRunValidate:
         suite_factory,
     ):
         project = project_factory(name="Acme")
-        suite = suite_factory(project=project, name="Desktop")
-        assert api.get(f"/api/projects/acme/suites/desktop/runs/999/validate/").status_code == 404
+        suite_factory(project=project, name="Desktop")
+        assert api.get("/api/projects/acme/suites/desktop/runs/999/validate/").status_code == 404
 
 
 # =============================================================================
@@ -1132,7 +1132,7 @@ class TestProjectValidate:
     ):
         project = project_factory(name="Acme")
         suite1 = suite_factory(project=project, name="Desktop")
-        suite2 = suite_factory(project=project, name="Mobile")
+        suite_factory(project=project, name="Mobile")
         run1 = run_factory(suite=suite1)
         test_factory(run=run1, status="done", passed=True)
         # suite2 has no runs
@@ -1179,7 +1179,7 @@ class TestProjectValidate:
         api,
         project_factory,
     ):
-        project = project_factory(name="Acme")
+        project_factory(name="Acme")
 
         response = api.get("/api/projects/acme/validate/")
         assert response.status_code == 200
