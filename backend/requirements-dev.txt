@@ -12,11 +12,11 @@ asgiref==3.12.1
     #   django-cors-headers
 billiard==4.2.4
     # via celery
-boto3==1.43.85
+boto3==1.43.89
     # via
     #   django-storages
     #   inspectre (pyproject.toml)
-botocore==1.43.85
+botocore==1.43.89
     # via
     #   boto3
     #   s3transfer
@@ -39,7 +39,7 @@ click-repl==0.3.0
     # via celery
 coverage==7.16.0
     # via pytest-cov
-django==6.1
+django==6.1.1
     # via
     #   django-cors-headers
     #   django-storages
@@ -57,7 +57,7 @@ execnet==2.1.2
     # via pytest-xdist
 factory-boy==3.3.3
     # via inspectre (pyproject.toml)
-faker==40.37.0
+faker==40.38.0
     # via factory-boy
 freezegun==1.5.5
     # via inspectre (pyproject.toml)
@@ -117,7 +117,7 @@ python-json-logger==4.2.0
     # via inspectre (pyproject.toml)
 redis==6.4.0
     # via kombu
-ruff==0.16.5
+ruff==0.16.6
     # via inspectre (pyproject.toml)
 s3transfer==0.19.2
     # via boto3
