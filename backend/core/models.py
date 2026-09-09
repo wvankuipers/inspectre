@@ -210,7 +210,8 @@ class Test(models.Model):
 
     def _compute_key(self) -> str:
         suite = self.run.suite
-        return slugify(f"{suite.project.name} {suite.name} {self.name} {self.browser} {self.size}")[:512]
+        parts = (suite.project.name, suite.name, self.name, self.browser, self.size)
+        return "--".join(slugify(part) for part in parts)[:512]
 
 
 class ProcessingQueueTest(Test):

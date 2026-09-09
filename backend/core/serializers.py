@@ -226,6 +226,9 @@ class TestHistoryEntrySerializer(serializers.ModelSerializer):
     run_sequential_id = serializers.SerializerMethodField()
     run_created_at = serializers.SerializerMethodField()
     screenshot_thumb_url = serializers.SerializerMethodField()
+    screenshot_url = serializers.SerializerMethodField()
+    baseline_url = serializers.SerializerMethodField()
+    diff_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Test
@@ -237,7 +240,11 @@ class TestHistoryEntrySerializer(serializers.ModelSerializer):
             "original_passed",
             "is_new_baseline",
             "status",
+            "diff",
             "screenshot_thumb_url",
+            "screenshot_url",
+            "baseline_url",
+            "diff_url",
         ]
 
     def get_run_sequential_id(self, obj):
@@ -248,6 +255,15 @@ class TestHistoryEntrySerializer(serializers.ModelSerializer):
 
     def get_screenshot_thumb_url(self, obj):
         return _file_url(obj.screenshot_thumb)
+
+    def get_screenshot_url(self, obj):
+        return _file_url(obj.screenshot)
+
+    def get_baseline_url(self, obj):
+        return _file_url(obj.screenshot_baseline)
+
+    def get_diff_url(self, obj):
+        return _file_url(obj.screenshot_diff)
 
 
 def serialize_test_history(tests, key):

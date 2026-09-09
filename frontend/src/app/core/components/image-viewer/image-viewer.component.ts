@@ -1,12 +1,22 @@
 import { Component, HostListener, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
-import { TestRow } from '../../models/api';
 
 export type ImageSlot = 'baseline' | 'comparison' | 'diff' | 'compare';
 
+export interface ImageViewerTest {
+  name: string;
+  browser: string;
+  size: string;
+  diff: number;
+  passed: boolean;
+  screenshot_url: string | null;
+  baseline_url: string | null;
+  diff_url: string | null;
+}
+
 export interface ImageViewerData {
-  tests: TestRow[];
+  tests: ImageViewerTest[];
   index: number;
   slot: ImageSlot;
 }

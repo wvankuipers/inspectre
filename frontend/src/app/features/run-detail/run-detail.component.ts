@@ -15,6 +15,7 @@ import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb
 import {
   ImageSlot,
   ImageViewerComponent,
+  ImageViewerData,
 } from '../../core/components/image-viewer/image-viewer.component';
 import { SearchFieldComponent } from '../../core/components/search-field/search-field.component';
 import { RunDetail, TestRow } from '../../core/models/api';
@@ -294,7 +295,7 @@ export class RunDetailComponent {
   openViewer(test: TestRow, slot: ImageSlot): void {
     const tests = this.visibleTests();
     const index = tests.indexOf(test);
-    this.dialog.open(ImageViewerComponent, {
+    this.dialog.open<ImageViewerComponent, ImageViewerData>(ImageViewerComponent, {
       data: { tests, index, slot },
       maxWidth: '100vw',
       maxHeight: '100vh',

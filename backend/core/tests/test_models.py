@@ -103,7 +103,7 @@ class TestKeyFormula:
         run = run_factory(suite=suite)
         test = test_factory(run=run, name="Homepage", browser="Chrome", size="1024")
 
-        assert test.key == "acme-site-desktop-homepage-chrome-1024"
+        assert test.key == "acme-site--desktop--homepage--chrome--1024"
 
     def test_key_recomputes_on_re_save_after_rename(
         self,
@@ -125,16 +125,16 @@ class TestKeyFormula:
         test.save()
         test.refresh_from_db()
         assert test.key != original_key
-        assert test.key.startswith("acme-inc-")
+        assert test.key.startswith("acme-inc--")
 
     @pytest.mark.parametrize(
         "inputs,expected",
         [
             # (project, suite, name, browser, size) → key
-            (("Acme", "Desktop", "Homepage", "Chrome", "1024"), "acme-desktop-homepage-chrome-1024"),
-            (("Acme X", "Desk", "Home page", "Chrome", "1024"), "acme-x-desk-home-page-chrome-1024"),
-            (("Café", "Desk", "Login", "Chrome", "1024"), "cafe-desk-login-chrome-1024"),
-            (("Acme!", "Desk", "Page/X", "Chrome", "1024"), "acme-desk-pagex-chrome-1024"),
+            (("Acme", "Desktop", "Homepage", "Chrome", "1024"), "acme--desktop--homepage--chrome--1024"),
+            (("Acme X", "Desk", "Home page", "Chrome", "1024"), "acme-x--desk--home-page--chrome--1024"),
+            (("Café", "Desk", "Login", "Chrome", "1024"), "cafe--desk--login--chrome--1024"),
+            (("Acme!", "Desk", "Page/X", "Chrome", "1024"), "acme--desk--pagex--chrome--1024"),
         ],
     )
     def test_key_handles_punctuation_and_whitespace(
@@ -153,6 +153,27 @@ class TestKeyFormula:
         run = run_factory(suite=suite)
         test = test_factory(run=run, name=name, browser=browser, size=size)
         assert test.key == expected
+
+    def test_key_does_not_collide_across_different_browser_size_splits(
+        self,
+        project_factory,
+        suite_factory,
+        run_factory,
+        test_factory,
+    ):
+        """Regression: joining fields with plain spaces before a single slugify()
+        call collapses all word boundaries uniformly, so browser="Chrome Mobile",
+        size="" and browser="Chrome", size="Mobile" used to produce the identical
+        key. Slugifying each field independently before joining with "--" fixes it.
+        """
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run = run_factory(suite=suite)
+
+        test_a = test_factory(run=run, name="Homepage", browser="Chrome Mobile", size="")
+        test_b = test_factory(run=run, name="Homepage", browser="Chrome", size="Mobile")
+
+        assert test_a.key != test_b.key
 
 
 # =============================================================================
