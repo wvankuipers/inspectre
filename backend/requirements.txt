@@ -46,7 +46,7 @@ django-environ==0.14.0
     # via inspectre (pyproject.toml)
 django-storages[s3]==1.14.6
     # via inspectre (pyproject.toml)
-djangorestframework==3.18.0
+djangorestframework==3.18.1
     # via inspectre (pyproject.toml)
 gunicorn==26.2.0
     # via inspectre (pyproject.toml)
