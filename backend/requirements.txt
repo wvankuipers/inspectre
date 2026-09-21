@@ -10,13 +10,13 @@ asgiref==3.12.1
     # via
     #   django
     #   django-cors-headers
-billiard==4.2.4
+billiard==4.3.0
     # via celery
-boto3==1.43.94
+boto3==1.43.97
     # via
     #   django-storages
     #   inspectre (pyproject.toml)
-botocore==1.43.94
+botocore==1.43.97
     # via
     #   boto3
     #   s3transfer
@@ -32,7 +32,7 @@ click-didyoumean==0.3.1
     # via celery
 click-plugins==1.1.1.2
     # via celery
-click-repl==0.3.0
+click-repl==0.4.0
     # via celery
 django==6.1.1
     # via
@@ -62,9 +62,9 @@ packaging==26.3
     #   kombu
 prompt-toolkit==3.0.53
     # via click-repl
-psycopg[binary]==3.3.5
+psycopg[binary]==3.3.6
     # via inspectre (pyproject.toml)
-psycopg-binary==3.3.5
+psycopg-binary==3.3.6
     # via psycopg
 python-dateutil==2.9.0.post0
     # via
@@ -84,7 +84,7 @@ tzdata==2026.4
     # via kombu
 tzlocal==5.4.4
     # via celery
-urllib3==2.7.0
+urllib3==2.8.0
     # via botocore
 valkey==6.1.1
     # via inspectre (pyproject.toml)
@@ -93,7 +93,7 @@ vine==5.1.0
     #   amqp
     #   celery
     #   kombu
-wcwidth==0.8.3
+wcwidth==0.8.4
     # via prompt-toolkit
 whitenoise==6.12.0
     # via inspectre (pyproject.toml)
