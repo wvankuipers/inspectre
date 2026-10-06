@@ -50,7 +50,7 @@ def _current(test_factory, run_factory, suite, image_hash=BAD, name="Homepage", 
     )
 
 
-def test_no_prior_runs_is_not_flaky(history, test_factory, run_factory, suite_factory):
+def test_no_prior_runs_is_not_flaky(test_factory, run_factory, suite_factory):
     current = _current(test_factory, run_factory, suite_factory())
     assert is_flaky(current) is False
 
@@ -86,9 +86,17 @@ def test_prior_first_upload_with_same_image_does_not_count(history, test_factory
     assert is_flaky(current) is False
 
 
-def test_prior_processing_failure_is_ignored(history, test_factory, run_factory):
+def test_prior_pipeline_failure_is_ignored(history, test_factory, run_factory):
     rows = history([("fail", BAD), ("pass", GOOD)])
     rows[0].status = Test.STATUS_FAILED
+    rows[0].save(update_fields=["status"])
+    current = _current(test_factory, run_factory, rows[0].run.suite)
+    assert is_flaky(current) is False
+
+
+def test_prior_still_processing_run_is_ignored(history, test_factory, run_factory):
+    rows = history([("fail", BAD), ("pass", GOOD)])
+    rows[0].status = Test.STATUS_PROCESSING
     rows[0].save(update_fields=["status"])
     current = _current(test_factory, run_factory, rows[0].run.suite)
     assert is_flaky(current) is False
