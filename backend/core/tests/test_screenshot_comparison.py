@@ -567,8 +567,14 @@ def test_pixel_hash_ignores_png_metadata(tmp_path, run1, run2):
     assert hash_a != ScreenshotComparison._hash_pixels(run2)
 
 
+def test_pixel_hash_uses_first_frame_only(tmp_path, run1, run2):
+    multi = tmp_path / "multi.gif"
+    subprocess.run(["convert", str(run1), str(run2), str(multi)], check=True)
+    assert len(ScreenshotComparison._hash_pixels(multi)) == 64
+
+
 def test_first_upload_stores_hash_and_is_not_flaky(test_factory, upload, testcard):
-    test = test_factory()
+    test = test_factory(is_flaky=True)  # stale flag from an earlier attempt
     ScreenshotComparison(test, upload(testcard)).run()
 
     test.refresh_from_db()

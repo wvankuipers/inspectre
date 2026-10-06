@@ -116,13 +116,14 @@ class ScreenshotComparison:
 
     @staticmethod
     def _hash_pixels(src: Path) -> str:
-        """SHA-256 of the decoded pixel data (ImageMagick `%#`), so two uploads
+        """SHA-256 of the decoded pixel data of the first frame (ImageMagick `%#`;
+        `[0]` keeps multi-frame GIF/TIFF uploads to one 64-char signature), so two uploads
         that render identically match even when their PNG metadata differs.
         Feeds flake detection (see flake_detection.py).
         """
         try:
             result = subprocess.run(
-                ["identify", "-format", "%#", str(src)],
+                ["identify", "-format", "%#", f"{src}[0]"],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -177,6 +178,7 @@ class ScreenshotComparison:
         self.test.diff = 0
         self.test.passed = False
         self.test.original_passed = False
+        self.test.is_flaky = False
         uploaded_fields = []
         try:
             with screenshot_in.open("rb") as fh:
@@ -186,7 +188,15 @@ class ScreenshotComparison:
                 self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
             uploaded_fields.append(self.test.screenshot_thumb)
             self.test.save(
-                update_fields=["diff", "passed", "original_passed", "image_hash", "screenshot", "screenshot_thumb"]
+                update_fields=[
+                    "diff",
+                    "passed",
+                    "original_passed",
+                    "is_flaky",
+                    "image_hash",
+                    "screenshot",
+                    "screenshot_thumb",
+                ]
             )
         except Exception:
             for field in uploaded_fields:
