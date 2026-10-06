@@ -1,7 +1,7 @@
 <main class="page">
   <app-breadcrumb [segments]="[
     { label: 'Projects', link: '/projects' },
-    { label: run()?.project_name ?? projectSlug() },
+    { label: run()?.project_name ?? projectSlug(), link: ['/projects', projectSlug()] },
     { label: suiteSlug(), link: ['/projects', projectSlug(), 'suites', suiteSlug()] },
     { label: '#' + seqId() }
   ]" />

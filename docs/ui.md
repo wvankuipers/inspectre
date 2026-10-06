@@ -100,7 +100,7 @@ Top navigation bar (slate-900 background). Contains the Inspectre logo/wordmark 
 
 ### `BreadcrumbComponent`
 
-Dumb presentational component with a single `segments = input<BreadcrumbSegment[]>([])` input — it does not compute anything or resolve names itself. Callers (route components) build the `BreadcrumbSegment[]` array from the current route params and API response and pass it in. Renders the segments separated by `›`.
+Dumb presentational component with a single `segments = input<BreadcrumbSegment[]>([])` input — it does not compute anything or resolve names itself. Callers (route components) build the `BreadcrumbSegment[]` array from the current route params and API response and pass it in. Renders the segments separated by `›`. On the suite, run and test detail pages the project segment links to `/projects/:projectSlug` (the project's suites overview).
 
 ### `PageFooterComponent`
 

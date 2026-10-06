@@ -134,8 +134,8 @@ describe('TestDetailComponent happy path', () => {
     const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const links = Array.from(el.querySelectorAll('tbody tr a')) as HTMLAnchorElement[];
-    expect(links[0].textContent).toContain('#1');
-    expect(links[1].textContent).toContain('#2');
+    expect(links[0].textContent).toContain('Run 1');
+    expect(links[1].textContent).toContain('Run 2');
   });
 
   it('renders the formatted date for each row', async () => {
@@ -289,9 +289,7 @@ describe('TestDetailComponent error state', () => {
       apiSpy: vi.fn().mockReturnValue(throwError(() => new Error('network'))),
     });
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('.load-error')?.textContent).toContain(
-      'Failed to load test history',
-    );
+    expect(el.querySelector('.load-error')?.textContent).toContain('Failed to load test history');
   });
 
   it('does not render the header when the API call fails', async () => {
@@ -314,6 +312,17 @@ describe('TestDetailComponent breadcrumb', () => {
     expect(nav?.textContent).toContain('Acme Corp');
     expect(nav?.textContent).toContain('main-suite');
     expect(nav?.textContent).toContain('Home page (chrome, 1280x800)');
+  });
+
+  it('links the project name to the project suites overview', async () => {
+    const { fixture } = await setup();
+    const breadcrumb = (fixture.nativeElement as HTMLElement).querySelector('app-breadcrumb');
+    expect(breadcrumb).toBeTruthy();
+    const link = Array.from(breadcrumb!.querySelectorAll('a')).find(
+      (a) => a.textContent?.trim() === 'Acme Corp',
+    ) as HTMLAnchorElement | undefined;
+    expect(link).toBeTruthy();
+    expect(link!.getAttribute('href')).toBe('/projects/acme-corp');
   });
 
   it('renders different breadcrumb labels for tests with same name but different browser/size', async () => {

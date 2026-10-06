@@ -523,3 +523,44 @@ describe('SuiteDetailComponent query params', () => {
     );
   });
 });
+
+describe('SuiteDetailComponent breadcrumb', () => {
+  beforeEach(async () => {
+    localStorage.clear();
+    await TestBed.configureTestingModule({
+      imports: [SuiteDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
+            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
+          },
+        },
+        { provide: InspectreApiService, useValue: { suite: () => of(SUITE) } },
+        {
+          provide: SortStateService,
+          useValue: { get: vi.fn().mockReturnValue({ active: '', direction: '' }), save: vi.fn() },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  afterEach(() => localStorage.clear());
+
+  it('links the project name to the project suites overview', async () => {
+    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const breadcrumb = (fixture.nativeElement as HTMLElement).querySelector('app-breadcrumb');
+    expect(breadcrumb).toBeTruthy();
+    const link = Array.from(breadcrumb!.querySelectorAll('a')).find(
+      (a) => a.textContent?.trim() === 'Acme Corp',
+    ) as HTMLAnchorElement | undefined;
+    expect(link).toBeTruthy();
+    expect(link!.getAttribute('href')).toBe('/projects/proj');
+  });
+});
