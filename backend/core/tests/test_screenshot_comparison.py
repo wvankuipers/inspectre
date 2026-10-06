@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 from django.db.models.fields.files import FieldFile
 
-from core.models import Baseline
+from core.models import Baseline, Test
 from core.services.baseline_upsert import upsert_baseline_from_test
 from core.services.image_geometry import ImageDiffError, ImageGeometry
 from core.services.screenshot_comparison import ScreenshotComparison
@@ -550,3 +550,79 @@ def test_pass_threshold_is_configurable(
 
     second.refresh_from_db()
     assert second.passed is True  # would have been False with the default 0.1
+
+
+# ---- Pixel hash + flake detection ----------------------------------------
+
+
+def test_pixel_hash_ignores_png_metadata(tmp_path, run1, run2):
+    a, b = tmp_path / "a.png", tmp_path / "b.png"
+    subprocess.run(["convert", str(run1), "-set", "comment", "first", str(a)], check=True)
+    subprocess.run(["convert", str(run1), "-set", "comment", "second", str(b)], check=True)
+    assert a.read_bytes() != b.read_bytes()
+
+    hash_a = ScreenshotComparison._hash_pixels(a)
+    assert hash_a == ScreenshotComparison._hash_pixels(b)
+    assert len(hash_a) == 64
+    assert hash_a != ScreenshotComparison._hash_pixels(run2)
+
+
+def test_first_upload_stores_hash_and_is_not_flaky(test_factory, upload, testcard):
+    test = test_factory()
+    ScreenshotComparison(test, upload(testcard)).run()
+
+    test.refresh_from_db()
+    assert len(test.image_hash) == 64
+    assert test.is_flaky is False
+
+
+def test_hash_is_taken_after_crop(test_factory, upload, testcard):
+    cropped = test_factory(crop_area="100x100+0+0")
+    uncropped = test_factory()
+    ScreenshotComparison(cropped, upload(testcard)).run()
+    ScreenshotComparison(uncropped, upload(testcard)).run()
+
+    cropped.refresh_from_db()
+    uncropped.refresh_from_db()
+    assert cropped.image_hash != uncropped.image_hash
+
+
+def _submit(suite, run_factory, test_factory, upload, path):
+    """One run → one test through the pipeline, finalised the way process_test does."""
+    test = test_factory(run=run_factory(suite=suite), name="Homepage")
+    is_new = ScreenshotComparison(test, upload(path)).run()
+    test.status = Test.STATUS_DONE
+    test.is_new_baseline = is_new
+    test.save(update_fields=["status", "is_new_baseline"])
+    test.refresh_from_db()
+    return test
+
+
+def test_recurring_failing_image_after_a_pass_is_flagged_flaky(
+    suite_factory, run_factory, test_factory, upload, run1, run2
+):
+    suite = suite_factory()
+    first = _submit(suite, run_factory, test_factory, upload, run1)
+    _approve(first)
+
+    first_failure = _submit(suite, run_factory, test_factory, upload, run2)
+    assert first_failure.passed is False
+    assert first_failure.is_flaky is False
+
+    passing = _submit(suite, run_factory, test_factory, upload, run1)
+    assert passing.passed is True
+    assert passing.is_flaky is False
+
+    recurrence = _submit(suite, run_factory, test_factory, upload, run2)
+    assert recurrence.passed is False
+    assert recurrence.is_flaky is True
+
+
+def test_persistent_failure_is_not_flagged_flaky(suite_factory, run_factory, test_factory, upload, run1, run2):
+    suite = suite_factory()
+    _approve(_submit(suite, run_factory, test_factory, upload, run1))
+    _submit(suite, run_factory, test_factory, upload, run2)
+
+    again = _submit(suite, run_factory, test_factory, upload, run2)
+    assert again.passed is False
+    assert again.is_flaky is False
