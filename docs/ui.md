@@ -11,7 +11,7 @@ The SPA is an **Angular** application served by nginx at port 4200 in the Docker
 | Accent | `#38bdf8` (sky-400) | Links, active states, Angular Material cyan palette |
 | Cards | `.inspectre-card` class | white, 10 px radius, subtle shadow |
 | Status chips | `.chip .chip-pass` / `.chip-fail` / `.chip-new` / `.chip-none` | Test result pills |
-| Flaky chip | `.chip-flaky` (global; `#fef3c7` bg / `#92400e` text) | Amber "Flaky" pill shown next to Fail in the run-detail Result column, the image viewer header and the test-history Status column (tooltip: "This exact failing image was seen in an earlier run, and the test passed in between — likely a flaky test, not caused by this change."); "N flaky" count in `RunStatsChipsComponent` |
+| Flaky chip | `.chip-flaky` (global; `#fef3c7` bg / `#92400e` text) | Amber "Flaky" pill shown next to Fail in the run-detail Result column, the image viewer header and the test-history Status column (tooltip: "This exact failing image was seen in an earlier run, and the test passed in between."); "N flaky" count in `RunStatsChipsComponent` |
 | New baseline chip | `.chip-new-baseline` (component-scoped, `run-detail.component.scss`, not global) | Red/bold "New baseline" pill shown in `RunDetailComponent` when a test has no baseline yet |
 | Font | Roboto (bundled via Angular Material, not loaded from CDN) | All text |
 | Image skeleton | `#1e293b` with cyan shimmer sweep | Placeholder while images load |

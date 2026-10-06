@@ -1407,7 +1407,7 @@ describe('RunDetailComponent flaky', () => {
     const el = fixture.nativeElement as HTMLElement;
     const flaky = el.querySelector('.chip-flaky');
     expect(flaky?.textContent?.trim()).toBe('Flaky');
-    expect(flaky?.getAttribute('title')).toContain('likely a flaky test');
+    expect(flaky?.getAttribute('title')).toBe('This exact failing image was seen in an earlier run, and the test passed in between.');
     expect(el.querySelector('.chip-fail')).not.toBeNull();
   });
 

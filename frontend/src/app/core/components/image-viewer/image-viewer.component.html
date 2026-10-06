@@ -9,7 +9,7 @@
         {{ currentTest().passed ? 'Pass' : 'Fail' }}
       </span>
       @if (!currentTest().passed && currentTest().is_flaky) {
-        <span class="chip chip-flaky" title="This exact failing image was seen in an earlier run, and the test passed in between — likely a flaky test, not caused by this change.">Flaky</span>
+        <span class="chip chip-flaky" title="This exact failing image was seen in an earlier run, and the test passed in between.">Flaky</span>
       }
       <button mat-icon-button aria-label="Close" (click)="close()">
         <svg xmlns="http://www.w3.org/2000/svg" height="20" width="20" viewBox="0 0 24 24" fill="currentColor">

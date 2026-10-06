@@ -302,7 +302,7 @@ describe('TestDetailComponent flaky chip', () => {
     expect(row.querySelector('.chip-fail')).not.toBeNull();
     const flaky = row.querySelector('.chip-flaky');
     expect(flaky?.textContent?.trim()).toBe('Flaky');
-    expect(flaky?.getAttribute('title')).toContain('likely a flaky test');
+    expect(flaky?.getAttribute('title')).toBe('This exact failing image was seen in an earlier run, and the test passed in between.');
   });
 
   it('does not show a Flaky chip on a passing or non-flaky entry', async () => {

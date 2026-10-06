@@ -123,7 +123,7 @@
                   {{ t.passed ? 'Pass' : 'Fail' }}
                 </span>
                 @if (!t.passed && t.is_flaky) {
-                  <span class="chip chip-flaky" title="This exact failing image was seen in an earlier run, and the test passed in between — likely a flaky test, not caused by this change.">Flaky</span>
+                  <span class="chip chip-flaky" title="This exact failing image was seen in an earlier run, and the test passed in between.">Flaky</span>
                 }
                 @if (!t.passed && !pendingId().has(t.id)) {
                   <button

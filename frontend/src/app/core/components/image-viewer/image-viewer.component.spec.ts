@@ -178,6 +178,7 @@ describe('ImageViewerComponent', () => {
     });
     const header = (fixture.nativeElement as HTMLElement).querySelector('.viewer-header')!;
     expect(header.querySelector('.chip-flaky')?.textContent?.trim()).toBe('Flaky');
+    expect(header.querySelector('.chip-flaky')?.getAttribute('title')).toBe('This exact failing image was seen in an earlier run, and the test passed in between.');
   });
 
   it('hides the Flaky chip for a passing test even if is_flaky', async () => {
