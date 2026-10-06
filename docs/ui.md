@@ -11,6 +11,7 @@ The SPA is an **Angular** application served by nginx at port 4200 in the Docker
 | Accent | `#38bdf8` (sky-400) | Links, active states, Angular Material cyan palette |
 | Cards | `.inspectre-card` class | white, 10 px radius, subtle shadow |
 | Status chips | `.chip .chip-pass` / `.chip-fail` / `.chip-new` / `.chip-none` | Test result pills |
+| Flaky chip | `.chip-flaky` (global; `#fef3c7` bg / `#92400e` text) | Amber "Flaky" pill shown next to Fail in the run-detail Result column, the image viewer header and the test-history Status column (tooltip: "This exact failing image was seen in an earlier run, and the test passed in between."); "N flaky" count in `RunStatsChipsComponent` |
 | New baseline chip | `.chip-new-baseline` (component-scoped, `run-detail.component.scss`, not global) | Red/bold "New baseline" pill shown in `RunDetailComponent` when a test has no baseline yet |
 | Font | Roboto (bundled via Angular Material, not loaded from CDN) | All text |
 | Image skeleton | `#1e293b` with cyan shimmer sweep | Placeholder while images load |
@@ -44,7 +45,7 @@ Loads all projects via `GET /api/projects/`. Renders a table with one row per pr
 - **Project** — project name; links to `ProjectDetailComponent` (or directly to suite detail if the project has exactly one suite, via `single_suite_slug`)
 - **Suites** — `suite_count`
 - **Last run** — relative timestamp from `last_run_at`
-- **Status** — pass/fail/unbaselined chips from `totals`; only shown for statuses with count > 0. "No tests" pill if the project has no runs yet.
+- **Status** — pass/fail/unbaselined/flaky chips from `totals`; only shown for statuses with count > 0. "No tests" pill if the project has no runs yet.
 
 The table is sortable by column (persisted to `localStorage` via `SortStateService`). A status filter dropdown (All / Pass / Fail / New) and a search field filter by project name. Both filters apply simultaneously.
 
@@ -60,7 +61,7 @@ Route: `/projects/:projectSlug/suites/:suiteSlug`
 
 Loads via `GET /api/projects/:proj/suites/:suite/`. Two sections:
 
-**Latest runs tab** — table of up to 5 runs with run number, date, pass/fail/new chip counts. Rows link to run detail. The table is sortable.
+**Latest runs tab** — table of up to 5 runs with run number, date, pass/fail/new/flaky chip counts. Rows link to run detail. The table is sortable.
 
 **Baselines tab** — table of all current baselines for this suite (name, browser, size, thumbnail). Each thumbnail opens the image viewer modal. A search field filters by test name.
 
@@ -74,11 +75,11 @@ Loads via `GET /api/projects/:proj/suites/:suite/runs/:seq/`. Renders a test tab
 - **Baseline** — 240×240 thumbnail
 - **Comparison** — 240×240 thumbnail
 - **Diff** — 240×240 thumbnail
-- **Result** — `X% difference` + pass/fail/new chip + "Set as baseline" button
+- **Result** — `X% difference` + pass/fail/new chip (plus a Flaky chip beside Fail when `!t.passed && t.is_flaky`) + "Set as baseline" button
 
 Thumbnails are lazy-loaded (`loading="lazy"`) with shimmer skeleton placeholders while loading. Clicking any thumbnail opens the `ImageViewerComponent` modal on that slot. Missing thumbnails show a `—` dash.
 
-Filtering: a `SearchFieldComponent` filters by test name (debounced). A status chip filter (All / Pass / Fail / New) toggles inline. Both filters compose.
+Filtering: a `SearchFieldComponent` filters by test name (debounced). A status chip filter (All / Pass / Fail / New / Flaky) toggles inline; `?status=flaky` is supported, and flaky tests (which are failing) also match Fail. Both filters compose.
 
 "Set as baseline" calls `POST /api/tests/:id/set-baseline/`. On success the chip flips from fail to pass optimistically and the button disappears.
 
@@ -86,7 +87,7 @@ Filtering: a `SearchFieldComponent` filters by test name (debounced). A status c
 
 Route: `/projects/:projectSlug/suites/:suiteSlug/tests/:key`
 
-Loads via `GET /api/projects/:proj/suites/:suite/tests/:key/`, linked from the test name column in `RunDetailComponent`. Renders the cross-run pass/fail history for a single test as a table (columns: run, date, thumbnail, status), so a reviewer can see how one test has trended across runs without paging through each run individually.
+Loads via `GET /api/projects/:proj/suites/:suite/tests/:key/`, linked from the test name column in `RunDetailComponent`. Renders the cross-run pass/fail history for a single test as a table (columns: run, date, thumbnail, status; a Flaky chip appears beside Fail when `original_passed === false && is_flaky`), so a reviewer can see how one test has trended across runs without paging through each run individually.
 
 ## Core components
 
@@ -108,7 +109,7 @@ Rendered at the bottom of every page. Shows the build version (from `environment
 
 ### `RunStatsChipsComponent`
 
-Inline chip bar showing pass/fail/new counts for a run. Used in both `ProjectsListComponent` (latest run) and `SuiteDetailComponent` (run list). Renders `.chip` elements, hiding chips whose count is 0.
+Inline chip bar showing pass/fail/new/flaky counts for a run (`RunStats` incl. `flaky`). Used in `ProjectsListComponent` (latest run), `ProjectDetailComponent` and `SuiteDetailComponent` (run list). Renders `.chip` elements, hiding chips whose count is 0.
 
 ### `SearchFieldComponent`
 
@@ -116,7 +117,7 @@ Reusable search input with a clear button. Emits a debounced `valueChanges` obse
 
 ### `ImageViewerComponent`
 
-Full-screen modal (`MatDialog`) for inspecting a test's images. Receives the full test list and an initial test index and slot on open. Features:
+Full-screen modal (`MatDialog`) for inspecting a test's images. Receives the full test list and an initial test index and slot on open. The header shows a Flaky chip next to Fail when the current test has `is_flaky` and did not pass. Features:
 
 **Slots** — four views selectable via tabs in the modal footer:
 - **Baseline** — the stored reference image
@@ -232,6 +233,7 @@ export interface RunSummary {
   passing: number;
   failing: number;
   unbaselined: number;
+  flaky: number;        // failing tests flagged is_flaky
 }
 
 export interface RunDetail {
@@ -251,6 +253,7 @@ export interface TestRow {
   status: string;
   diff: number;
   passed: boolean;
+  is_flaky: boolean;   // same failing image seen in an earlier run with a pass in between
   key: string;
   is_baseline_source: boolean; // this test is the producer of the current Baseline for its key
   has_baseline: boolean;       // drives the "New baseline" chip
@@ -273,6 +276,7 @@ export interface TestHistoryEntry {
   run_created_at: string;
   original_passed: boolean | null;
   is_new_baseline: boolean | null;
+  is_flaky: boolean;
   status: string;
   screenshot_thumb_url: string | null;
 }

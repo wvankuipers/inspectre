@@ -18,6 +18,7 @@ from core.models import Baseline
 
 from .baseline_upsert import upsert_baseline_from_test
 from .canvas import Canvas
+from .flake_detection import is_flaky
 from .image_geometry import ImageDiffError, ImageGeometry
 from .thumbnails import attach_test_thumbnails, render_thumbnail
 
@@ -45,6 +46,7 @@ class ScreenshotComparison:
             screenshot_in = self._stage_upload(tmp)
             if self.test.crop_area:
                 self._crop_in_place(screenshot_in)
+            self.test.image_hash = self._hash_pixels(screenshot_in)
 
             baseline_in = self._stage_baseline(tmp)
             if baseline_in is None:
@@ -62,6 +64,7 @@ class ScreenshotComparison:
             )
             diff_pixels = self._compare(canvas, screenshot_in, baseline_in, paths)
             self._record_result(canvas, diff_pixels)
+            self.test.is_flaky = is_flaky(self.test)
             self._persist_files(paths)
             attach_test_thumbnails(
                 self.test,
@@ -111,6 +114,27 @@ class ScreenshotComparison:
             )
             raise ImageDiffError(f"crop failed: {result.stderr.strip()}")
 
+    @staticmethod
+    def _hash_pixels(src: Path) -> str:
+        """SHA-256 of the decoded pixel data of the first frame (ImageMagick `%#`;
+        `[0]` keeps multi-frame GIF/TIFF uploads to one 64-char signature), so two uploads
+        that render identically match even when their PNG metadata differs.
+        Feeds flake detection (see flake_detection.py).
+        """
+        try:
+            result = subprocess.run(
+                ["identify", "-format", "%#", f"{src}[0]"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=settings.IMAGEMAGICK_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ImageDiffError("ImageMagick timed out") from exc
+        if result.returncode != 0:
+            raise ImageDiffError(f"pixel hash failed: {result.stderr.strip()}")
+        return result.stdout.strip()
+
     def _stage_baseline(self, tmp: Path) -> Path | None:
         """Download the current Baseline for this test's key, if one exists in storage.
 
@@ -154,6 +178,7 @@ class ScreenshotComparison:
         self.test.diff = 0
         self.test.passed = False
         self.test.original_passed = False
+        self.test.is_flaky = False
         uploaded_fields = []
         try:
             with screenshot_in.open("rb") as fh:
@@ -162,7 +187,17 @@ class ScreenshotComparison:
             with thumb_path.open("rb") as fh:
                 self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
             uploaded_fields.append(self.test.screenshot_thumb)
-            self.test.save(update_fields=["diff", "passed", "original_passed", "screenshot", "screenshot_thumb"])
+            self.test.save(
+                update_fields=[
+                    "diff",
+                    "passed",
+                    "original_passed",
+                    "is_flaky",
+                    "image_hash",
+                    "screenshot",
+                    "screenshot_thumb",
+                ]
+            )
         except Exception:
             for field in uploaded_fields:
                 try:
@@ -256,5 +291,14 @@ class ScreenshotComparison:
         with paths["diff"].open("rb") as fh:
             self.test.screenshot_diff.save("diff.png", File(fh), save=False)
         self.test.save(
-            update_fields=["diff", "passed", "original_passed", "screenshot", "screenshot_baseline", "screenshot_diff"]
+            update_fields=[
+                "diff",
+                "passed",
+                "original_passed",
+                "image_hash",
+                "is_flaky",
+                "screenshot",
+                "screenshot_baseline",
+                "screenshot_diff",
+            ]
         )

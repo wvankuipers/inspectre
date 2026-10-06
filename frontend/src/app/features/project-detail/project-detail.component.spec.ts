@@ -25,6 +25,7 @@ const PROJECT: ProjectDetail = {
         passing: 5,
         failing: 0,
         unbaselined: 0,
+        flaky: 0,
       },
     },
     {
@@ -44,6 +45,7 @@ const PROJECT: ProjectDetail = {
         passing: 2,
         failing: 3,
         unbaselined: 0,
+        flaky: 0,
       },
     },
     {
@@ -57,6 +59,7 @@ const PROJECT: ProjectDetail = {
         passing: 0,
         failing: 0,
         unbaselined: 2,
+        flaky: 0,
       },
     },
   ],

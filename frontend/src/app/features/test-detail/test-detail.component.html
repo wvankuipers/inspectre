@@ -81,6 +81,9 @@
                 <span [class]="entry.original_passed ? 'chip chip-pass' : 'chip chip-fail'">
                   {{ entry.original_passed ? 'Pass' : 'Fail' }}
                 </span>
+                @if (entry.original_passed === false && entry.is_flaky) {
+                  <span class="chip chip-flaky" title="This exact failing image was seen in an earlier run, and the test passed in between.">Flaky</span>
+                }
               }
             </td>
           </ng-container>

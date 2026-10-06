@@ -6,6 +6,7 @@ export interface RunStats {
   passing: number;
   failing: number;
   unbaselined: number;
+  flaky: number; // failing (unpromoted) tests whose failing image recurred after a pass
 }
 
 export interface ProjectSummary {
@@ -65,6 +66,7 @@ export interface TestRow {
   diff: number;
   // SPA wire format uses `passed`. Legacy Client API uses `pass`. Don't conflate.
   passed: boolean;
+  is_flaky: boolean; // same failing image seen in an earlier run with a pass in between
   key: string;
   is_baseline_source: boolean; // this test is the producer of the current Baseline for its key
   has_baseline: boolean; // drives the "new baseline" chip — supersession-proof: does a Baseline exist for this key at all
@@ -87,6 +89,7 @@ export interface TestHistoryEntry {
   run_created_at: string;
   original_passed: boolean | null;
   is_new_baseline: boolean | null;
+  is_flaky: boolean;
   status: string;
   diff: number;
   screenshot_thumb_url: string | null;

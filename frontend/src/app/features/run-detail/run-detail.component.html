@@ -20,6 +20,7 @@
               <mat-select multiple [value]="activeStatusesList()" (selectionChange)="onStatusSelectionChange($event)">
                 <mat-option value="pass">Pass</mat-option>
                 <mat-option value="fail">Fail</mat-option>
+                <mat-option value="flaky">Flaky</mat-option>
                 <mat-option value="new">New</mat-option>
               </mat-select>
             </mat-form-field>
@@ -121,6 +122,9 @@
                 <span [class]="t.passed ? 'chip chip-pass' : 'chip chip-fail'">
                   {{ t.passed ? 'Pass' : 'Fail' }}
                 </span>
+                @if (!t.passed && t.is_flaky) {
+                  <span class="chip chip-flaky" title="This exact failing image was seen in an earlier run, and the test passed in between.">Flaky</span>
+                }
                 @if (!t.passed && !pendingId().has(t.id)) {
                   <button
                     mat-stroked-button

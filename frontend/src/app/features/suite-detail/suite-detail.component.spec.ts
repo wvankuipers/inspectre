@@ -21,6 +21,7 @@ const SUITE: SuiteDetail = {
       passing: 5,
       failing: 0,
       unbaselined: 0,
+      flaky: 0,
     },
     {
       id: 2,
@@ -29,6 +30,7 @@ const SUITE: SuiteDetail = {
       passing: 3,
       failing: 2,
       unbaselined: 2,
+      flaky: 0,
     },
     {
       id: 3,
@@ -37,6 +39,7 @@ const SUITE: SuiteDetail = {
       passing: 4,
       failing: 1,
       unbaselined: 0,
+      flaky: 0,
     },
   ],
   baselines: [

@@ -21,6 +21,8 @@ import { SearchFieldComponent } from '../../core/components/search-field/search-
 import { RunDetail, TestRow } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
 
+type StatusFilter = 'pass' | 'fail' | 'new' | 'flaky';
+
 @Component({
   selector: 'app-run-detail',
   standalone: true,
@@ -203,8 +205,8 @@ export class RunDetailComponent {
 
   readonly pendingId = signal<Set<number>>(new Set());
   readonly searchTerm = signal<string>(this.initialQueryParams.get('q') ?? '');
-  readonly activeStatuses = signal<Set<'pass' | 'fail' | 'new'>>(
-    this.readInitialSet('status') as Set<'pass' | 'fail' | 'new'>,
+  readonly activeStatuses = signal<Set<StatusFilter>>(
+    this.readInitialSet('status') as Set<StatusFilter>,
   );
   readonly activeBrowsers = signal<Set<string>>(this.readInitialSet('browser'));
   readonly activeSizes = signal<Set<string>>(this.readInitialSet('size'));
@@ -253,6 +255,7 @@ export class RunDetailComponent {
       .filter((testRow) => {
         if (statuses.size === 0) return true;
         const cls = this.classifyTest(testRow);
+        if (statuses.has('flaky') && !testRow.passed && testRow.is_flaky) return true;
         return statuses.has(cls) || (cls === 'new' && statuses.has('fail'));
       })
       .filter((testRow) => browsers.size === 0 || browsers.has(testRow.browser))
@@ -275,7 +278,7 @@ export class RunDetailComponent {
   }
 
   onStatusSelectionChange(event: MatSelectChange): void {
-    const values = event.value as ('pass' | 'fail' | 'new')[];
+    const values = event.value as StatusFilter[];
     this.activeStatuses.set(new Set(values));
     this.writeQueryParams({ status: values.length ? values.join(',') : null });
   }

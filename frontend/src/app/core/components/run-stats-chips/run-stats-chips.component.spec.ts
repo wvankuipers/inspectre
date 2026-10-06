@@ -5,7 +5,7 @@ import { RunStats, RunSummary } from '../../models/api';
 
 const base: RunSummary = {
   id: 1, sequential_id: 1, created_at: '2026-01-01T00:00:00Z',
-  passing: 0, failing: 0, unbaselined: 0,
+  passing: 0, failing: 0, unbaselined: 0, flaky: 0,
 };
 
 describe('RunStatsChipsComponent', () => {
@@ -37,7 +37,7 @@ describe('RunStatsChipsComponent', () => {
   });
 
   it('shows chip-new with count when unbaselined > 0', () => {
-    fixture.componentRef.setInput('stats', { ...base, unbaselined: 1 });
+    fixture.componentRef.setInput('stats', { ...base, unbaselined: 1, flaky: 0 });
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
     const chip = el.querySelector('.chip-new');
@@ -53,7 +53,7 @@ describe('RunStatsChipsComponent', () => {
   });
 
   it('shows multiple chips simultaneously when multiple counts are non-zero', () => {
-    fixture.componentRef.setInput('stats', { ...base, passing: 2, failing: 1, unbaselined: 3 });
+    fixture.componentRef.setInput('stats', { ...base, passing: 2, failing: 1, unbaselined: 3, flaky: 0 });
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('.chip-pass')).not.toBeNull();
@@ -63,7 +63,7 @@ describe('RunStatsChipsComponent', () => {
   });
 
   it('accepts bare RunStats object (no id/sequential_id/created_at)', () => {
-    const bareStats: RunStats = { passing: 1, failing: 2, unbaselined: 3 };
+    const bareStats: RunStats = { passing: 1, failing: 2, unbaselined: 3, flaky: 0 };
     fixture.componentRef.setInput('stats', bareStats);
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
@@ -73,5 +73,19 @@ describe('RunStatsChipsComponent', () => {
     expect(el.querySelector('.chip-fail')!.textContent).toContain('2');
     expect(el.querySelector('.chip-new')).not.toBeNull();
     expect(el.querySelector('.chip-new')!.textContent).toContain('3');
+  });
+
+  it('shows chip-flaky with count when flaky > 0', () => {
+    fixture.componentRef.setInput('stats', { ...base, failing: 2, flaky: 1 });
+    fixture.detectChanges();
+    const chip = (fixture.nativeElement as HTMLElement).querySelector('.chip-flaky');
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toContain('1 flaky');
+  });
+
+  it('hides chip-flaky when flaky is 0', () => {
+    fixture.componentRef.setInput('stats', { ...base, failing: 2 });
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.chip-flaky')).toBeNull();
   });
 });

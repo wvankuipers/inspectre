@@ -28,6 +28,7 @@ const RUN: RunDetail = {
       key: 'z',
       is_baseline_source: false,
       has_baseline: true,
+      is_flaky: false,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -51,6 +52,7 @@ const RUN: RunDetail = {
       key: 'a',
       is_baseline_source: false,
       has_baseline: true,
+      is_flaky: false,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -74,6 +76,7 @@ const RUN: RunDetail = {
       key: 'b',
       is_baseline_source: false,
       has_baseline: false,
+      is_flaky: false,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -106,6 +109,7 @@ const RUN_WITH_BASELINE_SOURCE: RunDetail = {
       key: 'approved',
       is_baseline_source: true,
       has_baseline: true,
+      is_flaky: false,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -129,6 +133,7 @@ const RUN_WITH_BASELINE_SOURCE: RunDetail = {
       key: 'awaiting',
       is_baseline_source: false,
       has_baseline: false,
+      is_flaky: false,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -155,6 +160,7 @@ const RUN_WITH_BASELINE_SOURCE: RunDetail = {
       key: 'superseded',
       is_baseline_source: false,
       has_baseline: true,
+      is_flaky: false,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -195,6 +201,7 @@ const RUN_WITH_THUMBS: RunDetail = {
       key: 'h',
       is_baseline_source: false,
       has_baseline: true,
+      is_flaky: false,
       fuzz_level: '0',
       highlight_colour: 'red',
       crop_area: '',
@@ -1375,5 +1382,70 @@ describe('RunDetailComponent breadcrumb', () => {
     ) as HTMLAnchorElement | undefined;
     expect(link).toBeTruthy();
     expect(link!.getAttribute('href')).toBe('/projects/test');
+  });
+});
+
+const RUN_FLAKY: RunDetail = {
+  ...RUN,
+  tests: [
+    { ...RUN.tests[0], id: 201, name: 'flaky-fail', passed: false, is_flaky: true },
+    { ...RUN.tests[0], id: 202, name: 'plain-fail', passed: false, is_flaky: false },
+    { ...RUN.tests[1], id: 203, name: 'pass', passed: true, is_flaky: false },
+  ],
+};
+
+describe('RunDetailComponent flaky', () => {
+  afterEach(() => {
+    localStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('shows a Flaky chip next to Fail for a flaky failing test', async () => {
+    const fixture = await setupWithQueryParams({
+      apiSpy: vi.fn().mockReturnValue(of({ ...RUN_FLAKY, tests: [RUN_FLAKY.tests[0]] })),
+    });
+    const el = fixture.nativeElement as HTMLElement;
+    const flaky = el.querySelector('.chip-flaky');
+    expect(flaky?.textContent?.trim()).toBe('Flaky');
+    expect(flaky?.getAttribute('title')).toBe('This exact failing image was seen in an earlier run, and the test passed in between.');
+    expect(el.querySelector('.chip-fail')).not.toBeNull();
+  });
+
+  it('hides flaky chip once promoted', async () => {
+    const fixture = await setupWithQueryParams({
+      apiSpy: vi
+        .fn()
+        .mockReturnValue(of({ ...RUN_FLAKY, tests: [{ ...RUN_FLAKY.tests[0], passed: true }] })),
+    });
+    expect((fixture.nativeElement as HTMLElement).querySelector('.chip-flaky')).toBeNull();
+  });
+
+  it('status=flaky shows only flaky failing tests', async () => {
+    const fixture = await setupWithQueryParams({
+      queryParams: { status: 'flaky' },
+      apiSpy: vi.fn().mockReturnValue(of(RUN_FLAKY)),
+    });
+    expect(fixture.componentInstance.visibleTests().map((t) => t.name)).toEqual(['flaky-fail']);
+  });
+
+  it('status=fail still includes flaky failing tests', async () => {
+    const fixture = await setupWithQueryParams({
+      queryParams: { status: 'fail' },
+      apiSpy: vi.fn().mockReturnValue(of(RUN_FLAKY)),
+    });
+    expect(fixture.componentInstance.visibleTests().map((t) => t.name)).toEqual([
+      'flaky-fail',
+      'plain-fail',
+    ]);
+  });
+
+  it('writes status=flaky to the query string on selection', async () => {
+    const navigateSpy = vi.fn();
+    const fixture = await setupWithQueryParams({ navigateSpy });
+    fixture.componentInstance.onStatusSelectionChange({ value: ['flaky'] } as MatSelectChange);
+    expect(navigateSpy).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { status: 'flaky' } }),
+    );
   });
 });

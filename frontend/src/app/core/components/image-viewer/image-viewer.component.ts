@@ -10,6 +10,7 @@ export interface ImageViewerTest {
   size: string;
   diff: number;
   passed: boolean;
+  is_flaky?: boolean;
   screenshot_url: string | null;
   baseline_url: string | null;
   diff_url: string | null;

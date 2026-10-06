@@ -14,6 +14,7 @@ from core.serializers import (
     TestRowSerializer,
     build_project_aggregates,
     build_run_counts,
+    compute_run_verdict,
     serialize_test_history,
 )
 
@@ -367,7 +368,7 @@ def test_build_project_aggregates_zero_suite_project(project_factory):
     assert aggregates[project.id]["suite_count"] == 0
     assert aggregates[project.id]["single_suite_slug"] is None
     assert aggregates[project.id]["last_run_at"] is None
-    assert aggregates[project.id]["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0}
+    assert aggregates[project.id]["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0, "flaky": 0}
 
 
 def test_build_project_aggregates_no_suite_has_ever_run(project_factory, suite_factory):
@@ -382,7 +383,7 @@ def test_build_project_aggregates_no_suite_has_ever_run(project_factory, suite_f
     assert aggregates[project.id]["suite_count"] == 2
     assert aggregates[project.id]["single_suite_slug"] is None
     assert aggregates[project.id]["last_run_at"] is None
-    assert aggregates[project.id]["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0}
+    assert aggregates[project.id]["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0, "flaky": 0}
 
 
 def test_build_project_aggregates_single_suite_slug_only_when_suite_count_is_one(project_factory, suite_factory):
@@ -451,7 +452,7 @@ def test_build_project_aggregates_totals_sum_each_suites_latest_run_counts(
     aggregates = build_project_aggregates(projects)
 
     totals = aggregates[project.id]["totals"]
-    assert totals == {"passing": 2, "failing": 1, "unbaselined": 2}
+    assert totals == {"passing": 2, "failing": 1, "unbaselined": 2, "flaky": 0}
 
 
 def test_build_project_aggregates_ignores_older_runs_not_just_latest(
@@ -469,7 +470,7 @@ def test_build_project_aggregates_ignores_older_runs_not_just_latest(
     projects = _projects_with_prefetch(project.id)
     aggregates = build_project_aggregates(projects)
 
-    assert aggregates[project.id]["totals"] == {"passing": 1, "failing": 0, "unbaselined": 1}
+    assert aggregates[project.id]["totals"] == {"passing": 1, "failing": 0, "unbaselined": 1, "flaky": 0}
 
 
 def test_build_project_aggregates_batches_across_all_projects_in_one_pass(
@@ -514,7 +515,7 @@ def test_project_serializer_exposes_aggregate_fields(project_factory, suite_fact
     assert body["suite_count"] == 1
     assert body["single_suite_slug"] == suite.slug
     assert body["last_run_at"] is not None
-    assert body["totals"] == {"passing": 1, "failing": 0, "unbaselined": 1}
+    assert body["totals"] == {"passing": 1, "failing": 0, "unbaselined": 1, "flaky": 0}
 
 
 def test_project_serializer_zero_suite_project(project_factory):
@@ -525,7 +526,7 @@ def test_project_serializer_zero_suite_project(project_factory):
     assert body["suite_count"] == 0
     assert body["single_suite_slug"] is None
     assert body["last_run_at"] is None
-    assert body["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0}
+    assert body["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0, "flaky": 0}
 
 
 def test_project_serializer_multi_suite_mixed_runs(project_factory, suite_factory, run_factory, test_factory):
@@ -543,7 +544,7 @@ def test_project_serializer_multi_suite_mixed_runs(project_factory, suite_factor
     assert body["suite_count"] == 2
     assert body["single_suite_slug"] is None
     assert body["last_run_at"] is not None
-    assert body["totals"] == {"passing": 1, "failing": 1, "unbaselined": 2}
+    assert body["totals"] == {"passing": 1, "failing": 1, "unbaselined": 2, "flaky": 0}
 
 
 def test_project_serializer_many_uses_shared_context(project_factory, suite_factory, run_factory, test_factory):
@@ -686,7 +687,7 @@ def test_run_summary_uses_run_counts_context_without_extra_queries(
     # Now serialize with fake counts in context
     with django_assert_num_queries(0):
         body = RunSummarySerializer(
-            run, context={"run_counts": {run.id: {"passing": 11, "failing": 22, "unbaselined": 33}}}
+            run, context={"run_counts": {run.id: {"passing": 11, "failing": 22, "unbaselined": 33, "flaky": 0}}}
         ).data
 
     # Verify it reads from context, not the database
@@ -862,4 +863,37 @@ def test_project_detail_serializer_suite_with_runs_includes_latest_run_summary(
     body = ProjectDetailSerializer(project).data
     latest_run = body["suites"][0]["latest_run"]
     assert latest_run["sequential_id"] == 2
-    assert set(latest_run.keys()) == {"id", "sequential_id", "created_at", "passing", "failing", "unbaselined"}
+    assert set(latest_run.keys()) == {"id", "sequential_id", "created_at", "passing", "failing", "unbaselined", "flaky"}
+
+
+class TestFlakySerialization:
+    def test_test_row_includes_is_flaky(self, test_factory):
+        test = test_factory(is_flaky=True)
+        assert TestRowSerializer(test, context={"baselined_keys": set()}).data["is_flaky"] is True
+
+    def test_history_entry_includes_is_flaky(self, test_factory):
+        test = test_factory(is_flaky=True)
+        assert TestHistoryEntrySerializer(test).data["is_flaky"] is True
+
+    def test_build_run_counts_counts_unpromoted_flaky_failures(self, run_factory, test_factory):
+        run = run_factory()
+        test_factory(run=run, passed=False, is_flaky=True)
+        test_factory(run=run, passed=False, is_flaky=False)
+        test_factory(run=run, passed=True)
+        counts = build_run_counts([run.id], set())[run.id]
+        assert counts["flaky"] == 1
+        assert counts["failing"] == 2
+
+    def test_promoted_flaky_test_not_counted(self, run_factory, test_factory):
+        run = run_factory()
+        test_factory(run=run, passed=True, is_flaky=True)
+        assert build_run_counts([run.id], set())[run.id]["flaky"] == 0
+
+    def test_run_summary_fallback_includes_flaky(self, run_factory, test_factory):
+        run = run_factory()
+        test_factory(run=run, passed=False, is_flaky=True)
+        assert RunSummarySerializer(run).data["flaky"] == 1
+
+    def test_flaky_only_run_still_fails_ci_verdict(self):
+        verdict = compute_run_verdict([("done", False)])
+        assert verdict["status"] == "failed"

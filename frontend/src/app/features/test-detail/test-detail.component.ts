@@ -74,6 +74,7 @@ export class TestDetailComponent {
       size: h.size,
       diff: r.diff,
       passed: r.original_passed ?? false,
+      is_flaky: r.is_flaky,
       screenshot_url: r.screenshot_url,
       baseline_url: r.baseline_url,
       diff_url: r.diff_url,
