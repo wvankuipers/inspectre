@@ -1358,3 +1358,22 @@ describe('RunDetailComponent query param sync', () => {
     vi.useRealTimers();
   });
 });
+
+describe('RunDetailComponent breadcrumb', () => {
+  afterEach(() => {
+    localStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('links the project name to the project suites overview', async () => {
+    const fixture = await setup();
+    fixture.detectChanges();
+    const breadcrumb = (fixture.nativeElement as HTMLElement).querySelector('app-breadcrumb');
+    expect(breadcrumb).toBeTruthy();
+    const link = Array.from(breadcrumb!.querySelectorAll('a')).find(
+      (a) => a.textContent?.trim() === 'Acme Corp',
+    ) as HTMLAnchorElement | undefined;
+    expect(link).toBeTruthy();
+    expect(link!.getAttribute('href')).toBe('/projects/test');
+  });
+});
