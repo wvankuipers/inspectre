@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.6.0](https://github.com/wvankuipers/inspectre/compare/1.5.0...1.6.0) - 2026-10-06
+
+- chore(deps-dev): bump the frontend-npm group across 1 directory with 2 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/128
+- chore(deps): bump djangorestframework from 3.18.0 to 3.18.1 in /backend in the backend-pip group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/129
+- chore(deps): bump the backend-pip group in /backend with 4 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/131
+- chore(deps): bump the frontend-npm group in /frontend with 12 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/130
+- chore(deps): bump the backend-pip group in /backend with 3 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/132
+- chore(deps-dev): bump coverage from 7.16.0 to 7.16.1 in /backend in the backend-pip group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/133
+- chore(deps): bump the backend-pip group in /backend with 3 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/136
+- chore(deps): bump the frontend-npm group in /frontend with 12 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/137
+- chore(deps): bump the backend-pip group in /backend with 10 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/138
+- chore(deps-dev): bump eslint from 10.10.0 to 10.11.0 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/139
+- chore(deps): bump the backend-pip group in /backend with 3 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/140
+- chore(deps-dev): bump vitest from 4.1.11 to 5.0.1 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/134
+- chore(deps): bump the frontend-npm group across 1 directory with 17 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/145
+- chore(deps): bump the backend-pip group across 1 directory with 5 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/146
+- chore(deps): bump the backend-pip group in /backend with 3 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/147
+- chore(deps-dev): bump typescript-eslint from 8.70.1 to 8.71.0 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/148
+- chore(deps): bump the backend-pip group in /backend with 3 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/149
+- chore(deps-dev): bump source-map-js from 1.2.1 to 1.2.2 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/152
+- chore(deps): bump the frontend-npm group in /frontend with 14 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/150
+- Feat/breadcrumb project link by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/151
+- Feat/flaky test detection by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/153
+- chore: add initial configuration for Coderabbit with Dependabot  by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/154
+
 ## [1.5.0](https://github.com/wvankuipers/inspectre/compare/1.4.2...1.5.0) - 2026-09-09
 
 - chore(deps-dev): bump typescript-eslint from 8.68.0 to 8.69.0 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/112
