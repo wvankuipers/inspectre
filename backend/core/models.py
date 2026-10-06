@@ -159,6 +159,13 @@ class Test(models.Model):
     passed = models.BooleanField(default=False)
     # Set once by the diff pipeline; never mutated by baseline promotion (unlike `passed`).
     original_passed = models.BooleanField(null=True, default=None)
+    # ImageMagick pixel signature (`identify -format %#`) of the cropped upload —
+    # identical renders match regardless of PNG metadata. Empty for rows created
+    # before flake detection existed.
+    image_hash = models.CharField(max_length=64, blank=True, default="")
+    # Set once by the diff pipeline: this failure's exact image already failed in an
+    # earlier run of the same key, with a pass in between. See core/services/flake_detection.py.
+    is_flaky = models.BooleanField(default=False)
     key = models.CharField(max_length=512, db_index=True, blank=True)
 
     screenshot = models.FileField(

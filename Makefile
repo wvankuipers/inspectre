@@ -21,6 +21,7 @@ PYTEST_FAST_PACKS := \
     core/tests/test_migrations.py \
     core/tests/test_models.py \
     core/tests/test_settings.py \
+    core/tests/test_flake_detection.py \
     core/tests/test_tasks.py
 # Slow tests: real `convert`/`compare` shell-outs.
 PYTEST_SLOW_PACKS := \
