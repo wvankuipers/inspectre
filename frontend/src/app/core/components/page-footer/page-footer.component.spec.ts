@@ -29,4 +29,25 @@ describe('PageFooterComponent', () => {
       /rendered \d{1,2} \w{3,4} \d{4}, \d{2}:\d{2} \S+/,
     );
   });
+
+  it('links to the GitHub repo with a safe, labelled external anchor', () => {
+    const fixture = TestBed.createComponent(PageFooterComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const link = el.querySelector('a.footer-repo') as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    expect(link.getAttribute('href')).toBe('https://github.com/wvankuipers/inspectre');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(link.getAttribute('aria-label')).toBe('Inspectre on GitHub');
+  });
+
+  it('renders the GitHub mark as a decorative inline svg', () => {
+    const fixture = TestBed.createComponent(PageFooterComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const svg = el.querySelector('a.footer-repo svg');
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute('aria-hidden')).toBe('true');
+  });
 });

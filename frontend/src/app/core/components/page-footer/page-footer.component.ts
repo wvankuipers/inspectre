@@ -9,6 +9,7 @@ import { BUILD_VERSION } from '../../../build-info';
 })
 export class PageFooterComponent {
   readonly version = BUILD_VERSION;
+  readonly repoUrl = 'https://github.com/wvankuipers/inspectre';
   readonly renderedAt = new Date().toLocaleString('en-GB', {
     day: 'numeric',
     month: 'short',
