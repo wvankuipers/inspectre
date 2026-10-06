@@ -4,6 +4,9 @@
 @if (stats().failing > 0) {
   <span class="chip chip-fail">{{ stats().failing }} fail</span>
 }
+@if (stats().flaky > 0) {
+  <span class="chip chip-flaky">{{ stats().flaky }} flaky</span>
+}
 @if (stats().unbaselined > 0) {
   <span class="chip chip-new">{{ stats().unbaselined }} new</span>
 }

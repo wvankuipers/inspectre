@@ -18,7 +18,7 @@ const PROJECTS: ProjectSummary[] = [
     suite_count: 1,
     single_suite_slug: 's1',
     last_run_at: '2026-01-01T00:00:00Z',
-    totals: { passing: 0, failing: 3, unbaselined: 3 },
+    totals: { passing: 0, failing: 3, unbaselined: 3, flaky: 0 },
   },
   {
     id: 2,
@@ -27,7 +27,7 @@ const PROJECTS: ProjectSummary[] = [
     suite_count: 1,
     single_suite_slug: 's2',
     last_run_at: '2026-01-05T00:00:00Z',
-    totals: { passing: 6, failing: 0, unbaselined: 0 },
+    totals: { passing: 6, failing: 0, unbaselined: 0, flaky: 0 },
   },
   {
     id: 3,
@@ -36,7 +36,7 @@ const PROJECTS: ProjectSummary[] = [
     suite_count: 2,
     single_suite_slug: null,
     last_run_at: '2026-01-03T00:00:00Z',
-    totals: { passing: 2, failing: 3, unbaselined: 0 },
+    totals: { passing: 2, failing: 3, unbaselined: 0, flaky: 0 },
   },
   {
     id: 4,
@@ -45,7 +45,7 @@ const PROJECTS: ProjectSummary[] = [
     suite_count: 1,
     single_suite_slug: 's4',
     last_run_at: null,
-    totals: { passing: 0, failing: 0, unbaselined: 0 },
+    totals: { passing: 0, failing: 0, unbaselined: 0, flaky: 0 },
   },
 ];
 

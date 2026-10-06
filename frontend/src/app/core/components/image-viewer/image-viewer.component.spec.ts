@@ -7,7 +7,7 @@ import { TestRow } from '../../models/api';
 
 const makeTest = (overrides: Partial<TestRow> = {}): TestRow => ({
   id: 1, name: 'about', browser: 'Chrome', size: '1024', source_url: '', status: 'done', diff: 2.3,
-  passed: false, key: 'a', is_baseline_source: false, has_baseline: true, fuzz_level: '0',
+  passed: false, is_flaky: false, key: 'a', is_baseline_source: false, has_baseline: true, fuzz_level: '0',
   highlight_colour: '', crop_area: '',
   screenshot_url: 'http://s3/a.png',
   baseline_url: 'http://s3/a-base.png',
@@ -170,5 +170,21 @@ describe('ImageViewerComponent', () => {
     comp.onImgLoad();
     fixture.detectChanges();
     expect(comp.viewerLoaded()).toBe(true);
+  });
+
+  it('shows a Flaky chip in the header for a failing flaky test', async () => {
+    const fixture = await setup({
+      tests: [makeTest({ passed: false, is_flaky: true })], index: 0, slot: 'comparison',
+    });
+    const header = (fixture.nativeElement as HTMLElement).querySelector('.viewer-header')!;
+    expect(header.querySelector('.chip-flaky')?.textContent?.trim()).toBe('Flaky');
+  });
+
+  it('hides the Flaky chip for a passing test even if is_flaky', async () => {
+    const fixture = await setup({
+      tests: [makeTest({ passed: true, is_flaky: true })], index: 0, slot: 'comparison',
+    });
+    const header = (fixture.nativeElement as HTMLElement).querySelector('.viewer-header')!;
+    expect(header.querySelector('.chip-flaky')).toBeNull();
   });
 });

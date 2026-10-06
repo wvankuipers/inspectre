@@ -25,6 +25,7 @@ const HISTORY: TestHistory = {
       run_created_at: '2026-01-01T00:00:00Z',
       original_passed: false,
       is_new_baseline: true,
+      is_flaky: false,
       status: 'done',
       screenshot_thumb_url: 'http://s3/thumb1.png',
       diff: 12.5,
@@ -39,6 +40,7 @@ const HISTORY: TestHistory = {
       run_created_at: '2026-01-02T00:00:00Z',
       original_passed: true,
       is_new_baseline: false,
+      is_flaky: false,
       status: 'done',
       screenshot_thumb_url: 'http://s3/thumb2.png',
       diff: 0,
@@ -53,6 +55,7 @@ const HISTORY: TestHistory = {
       run_created_at: '2026-01-03T00:00:00Z',
       original_passed: false,
       is_new_baseline: false,
+      is_flaky: false,
       status: 'done',
       screenshot_thumb_url: null,
       diff: 0,
@@ -67,6 +70,7 @@ const HISTORY: TestHistory = {
       run_created_at: '2026-01-04T00:00:00Z',
       original_passed: null,
       is_new_baseline: null,
+      is_flaky: false,
       status: 'pending',
       screenshot_thumb_url: null,
       diff: 0,
@@ -191,6 +195,7 @@ describe('TestDetailComponent happy path', () => {
         size: HISTORY.size,
         diff: r.diff,
         passed: r.original_passed ?? false,
+        is_flaky: r.is_flaky,
         screenshot_url: r.screenshot_url,
         baseline_url: r.baseline_url,
         diff_url: r.diff_url,
@@ -266,6 +271,7 @@ describe('TestDetailComponent chip precedence', () => {
           run_created_at: '2026-01-05T00:00:00Z',
           original_passed: false,
           is_new_baseline: false,
+          is_flaky: false,
           status: 'done',
           screenshot_thumb_url: null,
           diff: 0,
@@ -278,6 +284,47 @@ describe('TestDetailComponent chip precedence', () => {
     const { fixture } = await setup({ apiSpy: vi.fn().mockReturnValue(of(promotedHistory)) });
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('.chip-fail')?.textContent).toContain('Fail');
+  });
+});
+
+describe('TestDetailComponent flaky chip', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  const flakyHistory = (runs: Partial<TestHistory['runs'][number]>[]): TestHistory => ({
+    ...HISTORY,
+    runs: runs.map((r) => ({ ...HISTORY.runs[2], ...r })),
+  });
+
+  it('shows a Flaky chip next to Fail for a flaky history entry', async () => {
+    const h = flakyHistory([{ original_passed: false, is_new_baseline: false, is_flaky: true }]);
+    const { fixture } = await setup({ apiSpy: vi.fn().mockReturnValue(of(h)) });
+    const row = (fixture.nativeElement as HTMLElement).querySelector('tbody tr')!;
+    expect(row.querySelector('.chip-fail')).not.toBeNull();
+    const flaky = row.querySelector('.chip-flaky');
+    expect(flaky?.textContent?.trim()).toBe('Flaky');
+    expect(flaky?.getAttribute('title')).toContain('likely a flaky test');
+  });
+
+  it('does not show a Flaky chip on a passing or non-flaky entry', async () => {
+    const h = flakyHistory([
+      { original_passed: true, is_flaky: false },
+      { original_passed: false, is_flaky: false },
+    ]);
+    const { fixture } = await setup({ apiSpy: vi.fn().mockReturnValue(of(h)) });
+    expect((fixture.nativeElement as HTMLElement).querySelector('.chip-flaky')).toBeNull();
+  });
+
+  it('passes is_flaky to the image viewer', async () => {
+    const h = flakyHistory([
+      { original_passed: false, is_flaky: false, screenshot_thumb_url: 'http://s3/t.png' },
+      { original_passed: false, is_flaky: true, screenshot_thumb_url: 'http://s3/t.png' },
+    ]);
+    const { fixture, dialogSpy } = await setup({ apiSpy: vi.fn().mockReturnValue(of(h)) });
+    const rows = (fixture.nativeElement as HTMLElement).querySelectorAll('tbody tr');
+    (rows[1].querySelector('button.thumb-btn') as HTMLButtonElement).click();
+    const [, config] = dialogSpy.open.mock.calls[0];
+    expect(config.data.tests[1].is_flaky).toBe(true);
+    expect(config.data.tests[0].is_flaky).toBe(false);
   });
 });
 
@@ -341,6 +388,7 @@ describe('TestDetailComponent breadcrumb', () => {
           run_created_at: '2026-02-01T00:00:00Z',
           original_passed: true,
           is_new_baseline: false,
+          is_flaky: false,
           status: 'done',
           screenshot_thumb_url: 'http://s3/thumb5.png',
           diff: 0,
