@@ -381,13 +381,14 @@ class ScreenshotComparison:
 
     @staticmethod
     def _hash_pixels(src: Path) -> str:
-        """SHA-256 of the decoded pixel data (ImageMagick `%#`), so two uploads
+        """SHA-256 of the decoded pixel data of the first frame (ImageMagick `%#`;
+        `[0]` keeps multi-frame GIF/TIFF uploads to one 64-char signature), so two uploads
         that render identically match even when their PNG metadata differs.
         Feeds flake detection (see flake_detection.py).
         """
         try:
             result = subprocess.run(
-                ["identify", "-format", "%#", str(src)],
+                ["identify", "-format", "%#", f"{src}[0]"],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -442,6 +443,7 @@ class ScreenshotComparison:
         self.test.diff = 0
         self.test.passed = False
         self.test.original_passed = False
+        self.test.is_flaky = False
         uploaded_fields = []
         try:
             with screenshot_in.open("rb") as fh:
@@ -451,7 +453,15 @@ class ScreenshotComparison:
                 self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
             uploaded_fields.append(self.test.screenshot_thumb)
             self.test.save(
-                update_fields=["diff", "passed", "original_passed", "image_hash", "screenshot", "screenshot_thumb"]
+                update_fields=[
+                    "diff",
+                    "passed",
+                    "original_passed",
+                    "is_flaky",
+                    "image_hash",
+                    "screenshot",
+                    "screenshot_thumb",
+                ]
             )
         except Exception:
             for field in uploaded_fields:
@@ -526,8 +536,8 @@ class ScreenshotComparison:
             raise ImageDiffError(f"compare failed (rc={result.returncode}): {result.stderr.strip()}")
 
         try:
-            return int(result.stderr.strip().split()[0])
-        except (ValueError, IndexError) as exc:
+            return int(float(result.stderr.strip().split()[0]))
+        except (ValueError, IndexError, OverflowError) as exc:
             raise ImageDiffError(f"could not parse compare output: {result.stderr!r}") from exc
 
     def _record_result(self, canvas: Canvas, diff_pixels: int) -> None:
@@ -561,7 +571,7 @@ class ScreenshotComparison:
 
 #### Pixel hash and flake detection
 
-Right after the optional crop (so both the first-upload and compare paths get it), `_hash_pixels` runs `identify -format %#` on the cropped upload and stores the SHA-256 pixel signature in `Test.image_hash`; metadata-only PNG differences don't change it. On the compare path only, once `_record_result` has set `original_passed`, `core/services/flake_detection.py::is_flaky(test)` sets `Test.is_flaky`, persisted by `_persist_files`. A test is flaky when all hold:
+Right after the optional crop (so both the first-upload and compare paths get it), `_hash_pixels` runs `identify -format %#` on the cropped upload and stores the SHA-256 pixel signature in `Test.image_hash`; metadata-only PNG differences don't change it. On the compare path only, once `_record_result` has set `original_passed`, `core/services/flake_detection.py::is_flaky(test)` sets `Test.is_flaky`, persisted by `_persist_files`. The first-upload path always resets `is_flaky` to `False` and persists it, so a retried or stale `Test` row that ends up on the no-baseline path can't keep an old flag. A test is flaky when all hold:
 
 1. `original_passed is False` and `image_hash` is non-empty (first uploads never reach this step).
 2. An earlier run (lower `run.sequential_id`, same key and suite, `status=done`) failed (`original_passed=False`, `is_new_baseline=False`) with the same `image_hash`.
