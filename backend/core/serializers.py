@@ -111,7 +111,7 @@ def _file_url(field):
 
 
 def build_run_counts(run_ids, baselined_keys):
-    """Batch passing/failing/unbaselined counts for a set of runs into one dict.
+    """Batch passing/failing/unbaselined/flaky counts for a set of runs into one dict.
 
     Two GROUP BY queries total, regardless of len(run_ids) — replaces the
     3-queries-per-run pattern in RunSummarySerializer. Every id in `run_ids`
@@ -120,14 +120,19 @@ def build_run_counts(run_ids, baselined_keys):
     """
     if not run_ids:
         return {}
-    counts = {run_id: {"passing": 0, "failing": 0, "unbaselined": 0} for run_id in run_ids}
+    counts = {run_id: {"passing": 0, "failing": 0, "unbaselined": 0, "flaky": 0} for run_id in run_ids}
     for row in (
         Test.objects.filter(run_id__in=run_ids)
         .values("run_id")
-        .annotate(passing=Count("id", filter=Q(passed=True)), failing=Count("id", filter=Q(passed=False)))
+        .annotate(
+            passing=Count("id", filter=Q(passed=True)),
+            failing=Count("id", filter=Q(passed=False)),
+            flaky=Count("id", filter=Q(passed=False, is_flaky=True)),
+        )
     ):
         counts[row["run_id"]]["passing"] = row["passing"]
         counts[row["run_id"]]["failing"] = row["failing"]
+        counts[row["run_id"]]["flaky"] = row["flaky"]
     for row in (
         Test.objects.filter(run_id__in=run_ids).exclude(key__in=baselined_keys).values("run_id").annotate(n=Count("id"))
     ):
@@ -196,6 +201,7 @@ class TestRowSerializer(serializers.ModelSerializer):
             "source_url",
             "diff",
             "passed",
+            "is_flaky",
             "key",
             "is_baseline_source",
             "has_baseline",
@@ -267,6 +273,7 @@ class TestHistoryEntrySerializer(serializers.ModelSerializer):
             "run_created_at",
             "original_passed",
             "is_new_baseline",
+            "is_flaky",
             "status",
             "diff",
             "screenshot_thumb_url",
@@ -333,10 +340,11 @@ class RunSummarySerializer(serializers.ModelSerializer):
     passing = serializers.SerializerMethodField()
     failing = serializers.SerializerMethodField()
     unbaselined = serializers.SerializerMethodField()
+    flaky = serializers.SerializerMethodField()
 
     class Meta:
         model = Run
-        fields = ["id", "sequential_id", "created_at", "passing", "failing", "unbaselined"]
+        fields = ["id", "sequential_id", "created_at", "passing", "failing", "unbaselined", "flaky"]
 
     def to_representation(self, instance):
         # Fast path: counts were pre-batched across many runs by SuiteDetailSerializer /
@@ -355,9 +363,11 @@ class RunSummarySerializer(serializers.ModelSerializer):
             baselined_keys = self.context.get("baselined_keys")
             if baselined_keys is None:
                 baselined_keys = set(Baseline.objects.filter(suite_id=instance.suite_id).values_list("key", flat=True))
-            counts = {"passing": 0, "failing": 0, "unbaselined": 0}
-            for passed, key in instance.tests.order_by().values_list("passed", "key"):
+            counts = {"passing": 0, "failing": 0, "unbaselined": 0, "flaky": 0}
+            for passed, is_flaky, key in instance.tests.order_by().values_list("passed", "is_flaky", "key"):
                 counts["passing" if passed else "failing"] += 1
+                if not passed and is_flaky:
+                    counts["flaky"] += 1
                 if key not in baselined_keys:
                     counts["unbaselined"] += 1
             self._counts = counts
@@ -371,6 +381,9 @@ class RunSummarySerializer(serializers.ModelSerializer):
 
     def get_unbaselined(self, obj):
         return self._counts["unbaselined"]
+
+    def get_flaky(self, obj):
+        return self._counts["flaky"]
 
 
 class RunDetailSerializer(serializers.ModelSerializer):
@@ -435,7 +448,7 @@ class SuiteDetailSerializer(serializers.ModelSerializer):
         # Pre-fetch baseline keys once for the suite so RunSummarySerializer.get_unbaselined
         # doesn't issue one Baseline query per run (same pattern as RunDetailSerializer).
         baselined_keys = set(Baseline.objects.filter(suite_id=obj.pk).values_list("key", flat=True))
-        # Batch passing/failing/unbaselined counts for these runs into two GROUP BY queries
+        # Batch passing/failing/unbaselined/flaky counts for these runs into two GROUP BY queries
         # total, instead of 3 raw .count() queries per run (same pattern as
         # build_project_aggregates).
         run_counts = build_run_counts([run.id for run in runs], baselined_keys)
@@ -451,7 +464,7 @@ def build_project_aggregates(projects):
     view). For each project: `suite_count`, `single_suite_slug` (the one suite's slug
     when there's exactly one, else None), `last_run_at` (max `created_at` across each
     suite's *current* latest run, or None if no suite has ever run), and `totals`
-    (summed passing/failing/unbaselined across each suite's current latest-run counts;
+    (summed passing/failing/unbaselined/flaky across each suite's current latest-run counts;
     a suite with no runs contributes zero to each).
 
     Batching discipline mirrors `build_run_counts`: one query for baselined_keys across
@@ -482,17 +495,18 @@ def build_project_aggregates(projects):
     for project in projects:
         suites = suites_by_project[project.id]
         last_run_at = None
-        totals = {"passing": 0, "failing": 0, "unbaselined": 0}
+        totals = {"passing": 0, "failing": 0, "unbaselined": 0, "flaky": 0}
         for suite in suites:
             latest = latest_run_by_suite[suite.id]
             if latest is None:
                 continue
             if last_run_at is None or latest.created_at > last_run_at:
                 last_run_at = latest.created_at
-            counts = run_counts.get(latest.id, {"passing": 0, "failing": 0, "unbaselined": 0})
+            counts = run_counts.get(latest.id, {"passing": 0, "failing": 0, "unbaselined": 0, "flaky": 0})
             totals["passing"] += counts["passing"]
             totals["failing"] += counts["failing"]
             totals["unbaselined"] += counts["unbaselined"]
+            totals["flaky"] += counts["flaky"]
         aggregates[project.id] = {
             "suite_count": len(suites),
             "single_suite_slug": suites[0].slug if len(suites) == 1 else None,
@@ -561,7 +575,7 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
         # SuiteDetailSerializer.get_latest_runs / RunDetailSerializer.get_tests).
         suite_ids = [suite.id for suite in suites]
         baselined_keys = set(Baseline.objects.filter(suite_id__in=suite_ids).values_list("key", flat=True))
-        # Batch passing/failing/unbaselined counts for every suite's latest run into two
+        # Batch passing/failing/unbaselined/flaky counts for every suite's latest run into two
         # GROUP BY queries total, instead of 3 raw .count() queries per suite.
         latest_by_suite = {}
         for suite in suites:

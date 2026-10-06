@@ -74,7 +74,7 @@ class TestProjectsList:
         assert payload["suite_count"] == 0
         assert payload["single_suite_slug"] is None
         assert payload["last_run_at"] is None
-        assert payload["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0}
+        assert payload["totals"] == {"passing": 0, "failing": 0, "unbaselined": 0, "flaky": 0}
 
     def test_multi_suite_project_has_null_single_suite_slug(
         self,
@@ -122,7 +122,7 @@ class TestProjectsList:
         body = api.get("/api/projects/").json()
         payload = body[0]
         assert payload["last_run_at"] is not None
-        assert payload["totals"] == {"passing": 1, "failing": 1, "unbaselined": 1}
+        assert payload["totals"] == {"passing": 1, "failing": 1, "unbaselined": 1, "flaky": 0}
 
     def test_empty_state_returns_empty_array(self, api):
         assert api.get("/api/projects/").json() == []
@@ -713,6 +713,13 @@ class TestTestsBulk:
         body = response.json()
         assert {t["name"] for t in body} == {"Homepage", "About"}
         assert {t["id"] for t in body} == {t1.id, t2.id}
+
+    def test_includes_is_flaky(self, api, test_factory):
+        t1 = test_factory(name="Homepage", is_flaky=True)
+
+        body = api.post("/api/tests/bulk/", {"ids": [t1.id]}, format="json").json()
+
+        assert body[0]["is_flaky"] is True
 
     def test_test_row_uses_passed_not_pass(self, api, test_factory):
         t1 = test_factory(name="Homepage")
