@@ -134,8 +134,8 @@ describe('TestDetailComponent happy path', () => {
     const { fixture } = await setup();
     const el = fixture.nativeElement as HTMLElement;
     const links = Array.from(el.querySelectorAll('tbody tr a')) as HTMLAnchorElement[];
-    expect(links[0].textContent).toContain('Run 1');
-    expect(links[1].textContent).toContain('Run 2');
+    expect(links[0].textContent).toContain('#1');
+    expect(links[1].textContent).toContain('#2');
   });
 
   it('renders the formatted date for each row', async () => {
@@ -289,7 +289,9 @@ describe('TestDetailComponent error state', () => {
       apiSpy: vi.fn().mockReturnValue(throwError(() => new Error('network'))),
     });
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('.load-error')?.textContent).toContain('Failed to load test history');
+    expect(el.querySelector('.load-error')?.textContent).toContain(
+      'Failed to load test history',
+    );
   });
 
   it('does not render the header when the API call fails', async () => {
