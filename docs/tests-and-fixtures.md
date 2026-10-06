@@ -33,6 +33,7 @@ backend/
     ├── test_screenshot_comparison.py     # diff pipeline (slow — real ImageMagick)
     ├── test_tasks.py                     # Celery task: locking, fencing, retries
     ├── test_baseline_upsert.py           # baseline_upsert error handling (slow)
+    ├── test_flake_detection.py           # is_flaky() rule against seeded run history (fast)
     ├── test_serializers.py               # wire-format contracts
     ├── test_legacy_api.py                # un-prefixed CI-client endpoints
     ├── test_spa_api.py                   # /api/* endpoints
@@ -116,6 +117,10 @@ Module-level `pytestmark = [pytest.mark.django_db, pytest.mark.slow]` — every 
 
 No `slow` marker — everything here mocks `ScreenshotComparison`, `_download_staged_file`, and `_delete_staged_file`, so there's no real ImageMagick or S3 I/O. The lock-contention tests spin up a real second thread with its own Postgres connection, so they do exercise real advisory-lock semantics; still fast in practice (sub-second per test).
 
+## `test_flake_detection.py` — flaky-test rule
+
+Fast pack (listed in the Makefile's `PYTEST_FAST_PACKS`, no ImageMagick): seeds multi-run histories directly with the factories and asserts `core.services.flake_detection.is_flaky`. Covers: fail→pass→fail with the same `image_hash` is flaky (also when an earlier pass precedes a recurrence); persistent fail→fail with no pass in between, a different failing image, no prior runs, a prior first upload (`is_new_baseline=True`), a prior pipeline-failed row, another key, another suite, a passing current test, an empty `image_hash`, and later runs are all not flaky; a prior failure that was since promoted (`passed=True`, `original_passed=False`) still counts. The real hash-and-detect path is covered by slow tests in `test_screenshot_comparison.py` (pixel hash set on both paths, `is_flaky` set only on the compare path); serializer/API coverage of `is_flaky` and the `flaky` counts lives in `test_serializers.py` and `test_spa_api.py`.
+
 ## `test_baseline_upsert.py` — baseline upsert edge cases
 
 Two focused, slow-marked regression tests for `core.services.baseline_upsert.upsert_baseline_from_test`:
@@ -138,7 +143,7 @@ The serializers are the wire-format contract. Legacy CI clients expect the `Lega
 - **URL shape survives renames** — `test_legacy_run_url_uses_current_slug_after_rename` (the URL follows the *current* project slug, not the slug at run-creation time) and `test_legacy_test_url_includes_anchor`.
 - **`status` field presence** on both the legacy and SPA test-row serializers (`test_legacy_test_serializer_includes_status`, `test_spa_test_row_serializer_includes_status`) — both assert the freshly-created test's status is `"pending"`, pinning the async design.
 - **Presigned URLs, not raw storage paths**, for every file field on both the legacy and SPA sides, and `None` (not `/` or a broken path) when the field is empty — `test_legacy_test_serializer_uid_fields_are_none_when_no_file` / `_are_presigned`, `test_spa_test_row_url_fields_are_none_when_no_file` (parametrized over all six SPA URL fields), `test_spa_test_row_screenshot_url_is_presigned`, `test_legacy_baseline_serializer_screenshot_url_is_presigned`.
-- **`build_run_counts`** — the batching helper behind every list endpoint's passing/failing/unbaselined counts: correct per-run counts, runs with zero tests still present (not sparse), empty-input short-circuit with zero queries.
+- **`build_run_counts`** — the batching helper behind every list endpoint's passing/failing/unbaselined/flaky counts: correct per-run counts, runs with zero tests still present (not sparse), empty-input short-circuit with zero queries.
 - **`RunSummarySerializer`** query-count discipline: `test_run_summary_serializer_uses_one_test_query_per_run` (`django_assert_num_queries(2)`), plus the specific regression guard `test_run_summary_unbaselined_reads_empty_baselined_keys_set_from_context_without_extra_query` — a legitimately empty `baselined_keys` set (a suite with zero baselines) must be read as-is from context, not treated as falsy and trigger a redundant fallback query. This distinction (`is None` vs. truthiness) is exactly the kind of one-character regression that's easy to reintroduce.
 - **`TestHistoryEntrySerializer` / `serialize_test_history`** — the cross-run history endpoint's payload: exposes the immutable `original_passed`, never the mutable `passed` (`test_test_history_entry_serializer_uses_original_passed_not_passed`); includes run metadata (`run_id`, `run_sequential_id`, `run_created_at`); `serialize_test_history` returns key/name/browser/size/project_name/suite_slug plus runs ordered as given (newest-first, by convention of the caller).
 - **`SuiteDetailSerializer`/`RunDetailSerializer`/`ProjectSerializer`** basics — 5-run cap surfaced, `project_name` denormalization, `ProjectSerializer` flattening suites and returning `null` (not an error) for a suite with no runs.

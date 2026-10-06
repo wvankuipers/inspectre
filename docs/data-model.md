@@ -114,7 +114,7 @@ Methods of note:
 - `baseline` → returns the Baseline matching this key, regardless of source test.
 - `url` → URL of the test's run page with `#test_<id>` anchor.
 - `screenshot_thumbnail`, `screenshot_baseline_thumbnail`, `screenshot_diff_thumbnail` → `Thumbnail` objects (300px wide JPGs cached on local disk in `public/system/dragonfly/<env>/thumbnails`, keyed by SHA1 of `<key>_test_<id>_screenshot[ _baseline | _diff ]`).
-- `five_consecutive_failures` → `true` if the last 5 tests with this key are all `pass: false`. (The view that surfaces this is currently commented out.)
+- `five_consecutive_failures` → `true` if the last 5 tests with this key are all `pass: false`. (The view that surfaces this is currently commented out, and the Django port does not carry it over; it is superseded by `Test.is_flaky` — see [Flaky detection](#flaky-detection-image_hash--is_flaky).)
 
 #### Key formula
 
@@ -213,6 +213,7 @@ The `db/migrate/` history shows the schema's evolution; for the rebuild, work fr
   ```
   Django doesn't allow `.delete()` on a sliced queryset directly — materialize to a PK list first.
 - **"New baseline" signal** — when a Test's async processing upserts a Baseline that did not previously exist for the key, record this as `is_new_baseline` (nullable `BooleanField`, `None` until processing completes). Surface as a Material chip in the SPA. This is persisted as a real column on the Test row (see [Full model implementation](#full-model-implementation)) rather than kept as an ephemeral per-run signal — it needs to survive across the async diff pipeline (staged → Celery task → result written back), and polling clients (`GET /tests/<id>/status`, `POST /api/tests/bulk/`) need to read it back after the fact, which a response-only field can't support.
+- <a id="flaky-detection-image_hash--is_flaky"></a>**Flaky detection** (migration `0013_test_image_hash_is_flaky`) — `Test.image_hash` (`CharField(64)`, `blank`, default `""`) is the SHA-256 pixel signature of the cropped upload, computed on both pipeline paths. `Test.is_flaky` (`BooleanField`, default `False`) is set once on the compare path when the test failed (`original_passed=False`), an earlier done run of the same key + suite (lower `run.sequential_id`) failed with the same `image_hash` (first uploads excluded), and some run of that key passed after that earliest matching failure. Persistent fail→fail stays a plain Fail. Rows from before the migration have `image_hash=""` and `is_flaky=False` (no backfill); the lookback is bounded by `RUN_RETENTION_PER_SUITE`. See [image-diffing.md](image-diffing.md) and [decisions.md](decisions.md).
 - **`dependent: :destroy`** → Django `on_delete=models.CASCADE` on the FK fields.
 - **Field rename**: Rails has `pass` (boolean) on `Test`; `pass` is a Python keyword. Use `passed` on the model. The API still serializes the field as `"pass"` for CI client compatibility — set the DRF serializer's source mapping accordingly.
 - Drop the `friendly_id_slugs` table.
@@ -385,6 +386,11 @@ class Test(models.Model):
     # None = processing not yet complete; True = this submission established
     # a new baseline; False = a baseline already existed for this key.
     is_new_baseline = models.BooleanField(null=True, default=None)
+    # ImageMagick pixel signature (`identify -format %#`) of the cropped upload.
+    # Empty for rows created before flake detection existed (no backfill).
+    image_hash = models.CharField(max_length=64, blank=True, default='')
+    # Set once by the diff pipeline; see core/services/flake_detection.py.
+    is_flaky = models.BooleanField(default=False)
     key = models.CharField(max_length=512, db_index=True, blank=True)
 
     screenshot          = models.FileField(upload_to=test_screenshot_path,        null=True, blank=True)

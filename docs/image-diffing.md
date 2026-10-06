@@ -283,6 +283,7 @@ from core.models import Baseline
 
 from .baseline_upsert import upsert_baseline_from_test
 from .canvas import Canvas
+from .flake_detection import is_flaky
 from .image_geometry import ImageDiffError, ImageGeometry
 from .thumbnails import attach_test_thumbnails, render_thumbnail
 
@@ -310,6 +311,7 @@ class ScreenshotComparison:
             screenshot_in = self._stage_upload(tmp)
             if self.test.crop_area:
                 self._crop_in_place(screenshot_in)
+            self.test.image_hash = self._hash_pixels(screenshot_in)
 
             baseline_in = self._stage_baseline(tmp)
             if baseline_in is None:
@@ -327,6 +329,7 @@ class ScreenshotComparison:
             )
             diff_pixels = self._compare(canvas, screenshot_in, baseline_in, paths)
             self._record_result(canvas, diff_pixels)
+            self.test.is_flaky = is_flaky(self.test)
             self._persist_files(paths)
             attach_test_thumbnails(
                 self.test,
@@ -375,6 +378,26 @@ class ScreenshotComparison:
                 },
             )
             raise ImageDiffError(f"crop failed: {result.stderr.strip()}")
+
+    @staticmethod
+    def _hash_pixels(src: Path) -> str:
+        """SHA-256 of the decoded pixel data (ImageMagick `%#`), so two uploads
+        that render identically match even when their PNG metadata differs.
+        Feeds flake detection (see flake_detection.py).
+        """
+        try:
+            result = subprocess.run(
+                ["identify", "-format", "%#", str(src)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=settings.IMAGEMAGICK_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ImageDiffError("ImageMagick timed out") from exc
+        if result.returncode != 0:
+            raise ImageDiffError(f"pixel hash failed: {result.stderr.strip()}")
+        return result.stdout.strip()
 
     def _stage_baseline(self, tmp: Path) -> Path | None:
         """Download the current Baseline for this test's key, if one exists in storage.
@@ -427,7 +450,9 @@ class ScreenshotComparison:
             with thumb_path.open("rb") as fh:
                 self.test.screenshot_thumb.save("thumb-300.jpg", File(fh), save=False)
             uploaded_fields.append(self.test.screenshot_thumb)
-            self.test.save(update_fields=["diff", "passed", "original_passed", "screenshot", "screenshot_thumb"])
+            self.test.save(
+                update_fields=["diff", "passed", "original_passed", "image_hash", "screenshot", "screenshot_thumb"]
+            )
         except Exception:
             for field in uploaded_fields:
                 try:
@@ -521,9 +546,28 @@ class ScreenshotComparison:
         with paths["diff"].open("rb") as fh:
             self.test.screenshot_diff.save("diff.png", File(fh), save=False)
         self.test.save(
-            update_fields=["diff", "passed", "original_passed", "screenshot", "screenshot_baseline", "screenshot_diff"]
+            update_fields=[
+                "diff",
+                "passed",
+                "original_passed",
+                "image_hash",
+                "is_flaky",
+                "screenshot",
+                "screenshot_baseline",
+                "screenshot_diff",
+            ]
         )
 ```
+
+#### Pixel hash and flake detection
+
+Right after the optional crop (so both the first-upload and compare paths get it), `_hash_pixels` runs `identify -format %#` on the cropped upload and stores the SHA-256 pixel signature in `Test.image_hash`; metadata-only PNG differences don't change it. On the compare path only, once `_record_result` has set `original_passed`, `core/services/flake_detection.py::is_flaky(test)` sets `Test.is_flaky`, persisted by `_persist_files`. A test is flaky when all hold:
+
+1. `original_passed is False` and `image_hash` is non-empty (first uploads never reach this step).
+2. An earlier run (lower `run.sequential_id`, same key and suite, `status=done`) failed (`original_passed=False`, `is_new_baseline=False`) with the same `image_hash`.
+3. Some run of that key passed (`original_passed=True`) after the earliest such failure.
+
+A persistent fail→fail with the same image and no pass in between stays a plain Fail. Detection is one-shot at diff time: no backfill of older rows, and the lookback is limited to the runs still retained (`RUN_RETENTION_PER_SUITE`, default 5). `is_flaky` does not affect `passed`, `compute_run_verdict` or the legacy endpoints — flaky tests still fail CI.
 
 `_record_first_upload` wraps its two S3 saves in a `try`/`except`: if the `Test.save()` call itself raises (e.g. a DB error after the files are already uploaded), the `except` block deletes whichever of the just-uploaded `screenshot`/`screenshot_thumb` files did get written, so a failed save never leaves an orphaned object behind in S3 — then re-raises.
 
@@ -566,5 +610,6 @@ This module is the highest-leverage place to test in the rebuild ([tests-and-fix
 - Different dimensions → padded canvas works, `passed=False`.
 - `crop_area` valid → cropped image is what gets compared (assert by re-running `identify` on the staged file).
 - Shell-injection probe in `fuzz_level` (e.g. `"30%; touch /tmp/pwn"`) → 400 from the view, file does not exist after the call.
+- Flake detection: pixel hash set on both paths; `is_flaky` only when a prior same-hash failure is followed by a pass (`test_flake_detection.py`, plus slow end-to-end cases in `test_screenshot_comparison.py`); persistent fail→fail and first uploads are not flaky.
 - Orphan baseline UID → logs a warning, treats it as a first upload (no comparison images, not passed), `is_new_baseline=True`.
 - Concurrent `run()` calls for the same key with no existing Baseline → both are recorded as unbaselined first uploads (`passed=False`), since neither branch upserts a Baseline; no Baseline row is created until a human approves one of them via "Set as baseline".

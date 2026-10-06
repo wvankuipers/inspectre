@@ -20,6 +20,7 @@ The user opted for **"parity + flag obvious improvements"**. Below: parity choic
 | 8 | Data migration                                      | **No migration.** Rebuild starts empty. Old install runs in parallel until decommissioned.          |
 | 9 | Visual identity                                     | **Full redesign with Angular Material 3.** Drop Merriweather, deep-blue masthead, bouncing logo. Use Material 3 defaults. |
 | 10| Legacy security fixes (shell-injection, exit codes) | **Not back-ported.** Legacy is decommissioned at cutover. Fix in the rebuild only.                  |
+| 11| Flaky test detection                                | **Same pixel hash + a pass in between.** A failing test is flagged `is_flaky` when an earlier run of the same key failed with the identical image (SHA-256 of pixel data via ImageMagick `%#`) and the key passed after that failure; persistent fail→fail stays a plain Fail. Display-only: flaky tests **still fail CI** (`compute_run_verdict` and legacy endpoints unchanged). **No backfill** — older rows keep `image_hash=""`/`is_flaky=False` — and lookback is bounded by `RUN_RETENTION_PER_SUITE`. Supersedes the unported legacy `five_consecutive_failures`. |
 
 ---
 

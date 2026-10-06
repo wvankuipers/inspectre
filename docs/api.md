@@ -280,6 +280,7 @@ These back the Angular frontend and are free to evolve — see the [route table]
         "run_created_at": "...",
         "original_passed": false,
         "is_new_baseline": true,
+        "is_flaky": false,
         "status": "done",
         "screenshot_thumb_url": "https://..."
       }
@@ -287,7 +288,7 @@ These back the Angular frontend and are free to evolve — see the [route table]
   }
   ```
 
-  Each entry in `runs` is a `TestHistoryEntrySerializer` row. It deliberately serializes `original_passed` — the tamper-proof snapshot of the test's first-ever pass/fail result — rather than the mutable `passed` field, since baseline promotion can flip `passed` after the fact and the history view is meant to show what actually happened at each run.
+  Each entry in `runs` is a `TestHistoryEntrySerializer` row. It deliberately serializes `original_passed` — the tamper-proof snapshot of the test's first-ever pass/fail result — rather than the mutable `passed` field, since baseline promotion can flip `passed` after the fact and the history view is meant to show what actually happened at each run. `is_flaky` is the pipeline-set flag (see [image-diffing.md](image-diffing.md#pixel-hash-and-flake-detection)); it is only ever true on a row whose `original_passed` is false.
 
 - **`POST /api/tests/bulk/`** (`tests_bulk`) — fetches fresh `TestRow` data for a set of ids in one request, used by the SPA's polling loop while tests are still `pending`/`processing`. Request body: `{"ids": [1234, 1235, ...]}`. Behaviour (`backend/core/views/api.py`):
   - Non-list `ids`, or a missing key, is treated as `[]`.
@@ -719,7 +720,7 @@ class TestRowSerializer(serializers.ModelSerializer):
         model = Test
         fields = [
             'id', 'name', 'browser', 'size', 'source_url',
-            'diff', 'passed', 'key', 'is_baseline_source', 'has_baseline',
+            'diff', 'passed', 'is_flaky', 'key', 'is_baseline_source', 'has_baseline',
             'fuzz_level', 'highlight_colour', 'crop_area',
             'screenshot_url', 'baseline_url', 'diff_url',
             'screenshot_thumb_url', 'baseline_thumb_url', 'diff_thumb_url',
@@ -732,10 +733,11 @@ class RunSummarySerializer(serializers.ModelSerializer):
     passing     = serializers.IntegerField(read_only=True)
     failing     = serializers.IntegerField(read_only=True)
     unbaselined = serializers.IntegerField(read_only=True)
+    flaky       = serializers.IntegerField(read_only=True)   # failing tests with is_flaky=True; a subset of `failing`
 
     class Meta:
         model = Run
-        fields = ['id', 'sequential_id', 'created_at', 'passing', 'failing', 'unbaselined']
+        fields = ['id', 'sequential_id', 'created_at', 'passing', 'failing', 'unbaselined', 'flaky']
 
 
 class RunDetailSerializer(serializers.ModelSerializer):
@@ -789,7 +791,7 @@ class TestHistoryEntrySerializer(serializers.ModelSerializer):
         model = Test
         fields = [
             'id', 'run_id', 'run_sequential_id', 'run_created_at',
-            'original_passed', 'is_new_baseline', 'status', 'screenshot_thumb_url',
+            'original_passed', 'is_new_baseline', 'is_flaky', 'status', 'screenshot_thumb_url',
         ]
 
 
@@ -892,6 +894,7 @@ This module is the second-highest-leverage place to test, after `screenshot_comp
 - `LegacyTestSerializer` output **always** has the key `"pass"`, never `"passed"` or `"pass_field"`. This is the single-line check that catches every wire-format regression.
 - `LegacyTestSerializer` field set is exactly the legacy set (assert against a frozen list — adding a field to the model must not silently appear in the legacy response).
 - `LegacyRunSerializer.url` matches the slug-based path even after a project rename ([decisions.md](decisions.md) #4).
+- `flaky` count: `build_run_counts`, `RunSummarySerializer` and project `totals` count only `passed=False AND is_flaky=True` tests (a flaky test that was later promoted to passing is not counted). Flaky is display-only: `compute_run_verdict`, `LegacyTestSerializer` and the legacy endpoints are unchanged, so flaky tests still fail CI.
 - `TestRowSerializer` URLs are `None` when the underlying `FileField` is unset (i.e. mid-comparison).
 - `SuiteDetailSerializer.latest_runs` returns at most 5 entries.
 
