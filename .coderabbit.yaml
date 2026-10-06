@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Merge with the repository/organization UI settings instead of replacing them.
+inheritance: true
+
+reviews:
+  auto_review:
+    # Skip automatic reviews on Dependabot PRs. A review can still be requested
+    # manually with `@coderabbitai review`.
+    ignore_usernames:
+      - "dependabot[bot]"
