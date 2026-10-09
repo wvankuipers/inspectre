@@ -66,6 +66,22 @@ a {
 .chip-flaky { background: #fef3c7; color: #92400e; }
 .chip-none { background: #f1f5f9; color: #64748b; }
 
+// Clickable chip variant (rendered as <a>); keeps the chip colours.
+a.chip-link {
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover {
+    filter: brightness(0.93);
+    box-shadow: 0 0 0 1px currentColor;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: 2px;
+  }
+}
+
 // Breadcrumb navigation used on detail pages.
 .breadcrumb {
   display: flex;
