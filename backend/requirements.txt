@@ -34,7 +34,7 @@ click-plugins==1.1.1.2
     # via celery
 click-repl==0.4.1
     # via celery
-django==6.1.1
+django==6.1.2
     # via
     #   django-cors-headers
     #   django-storages
