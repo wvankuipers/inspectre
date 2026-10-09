@@ -45,7 +45,7 @@ Loads all projects via `GET /api/projects/`. Renders a table with one row per pr
 - **Project** — project name; links to `ProjectDetailComponent` (or directly to suite detail if the project has exactly one suite, via `single_suite_slug`)
 - **Suites** — `suite_count`
 - **Last run** — relative timestamp from `last_run_at`
-- **Status** — pass/fail/unbaselined/flaky chips from `totals`; only shown for statuses with count > 0. "No tests" pill if the project has no runs yet.
+- **Status** — pass/fail/unbaselined/flaky chips from `totals`; only shown for statuses with count > 0. "No tests" pill if the project has no runs yet. Pills are links: multi-suite projects go to `/projects/:proj?status=<pill>` (flaky has no project-level filter, so it links without a query); single-suite projects go to the suite's latest run (`single_suite_latest_run_seq`) with `?status=<pill>`, or to the suite page without a status when it has never run.
 
 The table is sortable by column (persisted to `localStorage` via `SortStateService`). A status filter dropdown (All / Pass / Fail / New) and a search field filter by project name. Both filters apply simultaneously.
 

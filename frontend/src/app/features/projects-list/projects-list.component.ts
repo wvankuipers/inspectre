@@ -16,7 +16,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subject, catchError, debounceTime, of } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
-import { RunStatsChipsComponent } from '../../core/components/run-stats-chips/run-stats-chips.component';
+import { ChipLinkCache } from '../../core/components/run-stats-chips/chip-link-cache';
+import { ChipLinkFn, RunStatsChipsComponent } from '../../core/components/run-stats-chips/run-stats-chips.component';
 import { SearchFieldComponent } from '../../core/components/search-field/search-field.component';
 import { ProjectSummary } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
@@ -73,6 +74,15 @@ export class ProjectsListComponent {
   readonly searchTerm = signal<string>(this.initialQueryParams.get('q') ?? '');
   readonly activeStatuses = signal<Set<Status>>(this.readInitialStatuses());
   readonly dataSource = new MatTableDataSource<ProjectSummary>();
+
+  private readonly chipLinks = new ChipLinkCache();
+
+  chipLinkFor(row: ProjectSummary): ChipLinkFn {
+    if (!row.single_suite_slug) return this.chipLinks.get(['/projects', row.slug], 'except-flaky');
+    const suite = ['/projects', row.slug, 'suites', row.single_suite_slug];
+    const seq = row.single_suite_latest_run_seq;
+    return seq == null ? this.chipLinks.get(suite, 'none') : this.chipLinks.get([...suite, 'runs', seq]);
+  }
 
   private readonly searchWrite$ = new Subject<string>();
 

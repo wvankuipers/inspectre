@@ -32,6 +32,7 @@ describe('InspectreApiService', () => {
           slug: 'acme',
           suite_count: 3,
           single_suite_slug: null,
+          single_suite_latest_run_seq: null,
           last_run_at: '2026-09-08T12:00:00Z',
           totals: { passing: 10, failing: 2, unbaselined: 1, flaky: 0 },
         },
