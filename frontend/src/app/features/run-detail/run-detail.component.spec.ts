@@ -2,10 +2,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSelectChange } from '@angular/material/select';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
-import { RunDetail } from '../../core/models/api';
+import { RunDetail, TestRow } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
 import { RunDetailComponent } from './run-detail.component';
 
@@ -779,6 +779,18 @@ describe('RunDetailComponent API failure', () => {
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
     expect(h1).toBeNull();
   });
+
+  it('exposes loadError() true and run() null on API error without throwing', async () => {
+    const fixture = TestBed.createComponent(RunDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    expect(component.loadError()).toBe(true);
+    expect(() => component.run()).not.toThrow();
+    expect(component.run()).toBeNull();
+    expect(component.hasPendingTests()).toBe(false);
+    expect(component.visibleTests()).toEqual([]);
+  });
 });
 
 async function setup({
@@ -1202,6 +1214,136 @@ describe('RunDetailComponent pending-test polling', () => {
 
     await vi.advanceTimersByTimeAsync(20000);
     expect(testsBulkSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('RunDetailComponent switching runs while polling', () => {
+  const paramsFor = (seqId: number) => ({
+    get: (k: string) => (k === 'seqId' ? String(seqId) : 'test'),
+  });
+
+  const RUN_ONE: RunDetail = {
+    ...PENDING_RUN,
+    id: 10,
+    sequential_id: 1,
+    tests: [{ ...PENDING_RUN.tests[0], id: 501, name: 'Run one page' }],
+  };
+  const RUN_TWO: RunDetail = {
+    ...PENDING_RUN,
+    id: 20,
+    sequential_id: 2,
+    tests: [{ ...PENDING_RUN.tests[0], id: 601, name: 'Run two page' }],
+  };
+
+  async function setupSwitchable(testsBulkSpy: ReturnType<typeof vi.fn>) {
+    localStorage.clear();
+    const paramMap$ = new BehaviorSubject(paramsFor(1));
+    const runSpy = vi.fn((_p: string, _s: string, seq: number) => of(seq === 1 ? RUN_ONE : RUN_TWO));
+
+    await TestBed.configureTestingModule({
+      imports: [RunDetailComponent],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { paramMap: paramsFor(1), queryParamMap: { get: () => null } },
+            paramMap: paramMap$,
+          },
+        },
+        {
+          provide: InspectreApiService,
+          useValue: { run: runSpy, setBaseline: () => of({}), testsBulk: testsBulkSpy },
+        },
+        {
+          provide: SortStateService,
+          useValue: { get: vi.fn().mockReturnValue({ active: '', direction: '' }), save: vi.fn() },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(RunDetailComponent);
+    fixture.detectChanges();
+    const stable = fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(0);
+    await stable;
+
+    const switchTo = async (seqId: number) => {
+      paramMap$.next(paramsFor(seqId));
+      fixture.detectChanges();
+      const switched = fixture.whenStable();
+      await vi.advanceTimersByTimeAsync(0);
+      await switched;
+    };
+    return { fixture, runSpy, switchTo };
+  }
+
+  afterEach(() => {
+    localStorage.clear();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
+
+  it('restarts the 10s poll from run 2 load and never polls run 1 ids afterwards', async () => {
+    vi.useFakeTimers();
+    const testsBulkSpy = vi.fn().mockReturnValue(of([]));
+    const { fixture, runSpy, switchTo } = await setupSwitchable(testsBulkSpy);
+
+    await vi.advanceTimersByTimeAsync(5000); // run 1's poll is pending (due at 10s)
+    await switchTo(2);
+    expect(runSpy).toHaveBeenLastCalledWith('test', 'test', 2);
+    expect(fixture.componentInstance.run()?.id).toBe(RUN_TWO.id);
+
+    await vi.advanceTimersByTimeAsync(5000); // t=10s: run 1's original deadline
+    expect(testsBulkSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(5000); // t=15s: 10s after run 2 loaded
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).toHaveBeenCalledWith([601]);
+    expect(testsBulkSpy).not.toHaveBeenCalledWith([501]);
+  });
+
+  it('does not let a late run 1 testsBulk response overwrite run 2 tests', async () => {
+    vi.useFakeTimers();
+    const runOneBulk$ = new Subject<TestRow[]>();
+    const testsBulkSpy = vi.fn((ids: number[]) => (ids.includes(501) ? runOneBulk$ : of([])));
+    const { fixture, switchTo } = await setupSwitchable(testsBulkSpy);
+
+    await vi.advanceTimersByTimeAsync(10000); // run 1's poll fires; response still in flight
+    expect(testsBulkSpy).toHaveBeenCalledWith([501]);
+
+    await switchTo(2);
+    runOneBulk$.next([{ ...RUN_ONE.tests[0], status: 'done', passed: true, name: 'Stale' }]);
+    runOneBulk$.complete();
+
+    const component = fixture.componentInstance;
+    expect(component.run()?.id).toBe(RUN_TWO.id);
+    expect(component.run()?.tests).toEqual(RUN_TWO.tests);
+
+    testsBulkSpy.mockClear();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).toHaveBeenCalledWith([601]);
+  });
+
+  it('gives run 2 a fresh unproductive-poll budget after run 1 used part of it', async () => {
+    vi.useFakeTimers();
+    const testsBulkSpy = vi.fn().mockReturnValue(of([]));
+    const { switchTo } = await setupSwitchable(testsBulkSpy);
+
+    await vi.advanceTimersByTimeAsync(20000); // run 1: two unproductive polls
+    expect(testsBulkSpy).toHaveBeenCalledTimes(2);
+
+    await switchTo(2);
+    testsBulkSpy.mockClear();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3);
+    expect(testsBulkSpy.mock.calls.every(([ids]) => ids.length === 1 && ids[0] === 601)).toBe(
+      true,
+    );
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3); // capped at 3 for run 2
   });
 });
 

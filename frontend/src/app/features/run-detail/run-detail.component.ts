@@ -1,6 +1,6 @@
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
+import { rxResource, takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -8,7 +8,7 @@ import { MatSelectChange, MatSelectModule } from '@angular/material/select';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
+import { Subject, debounceTime } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -99,20 +99,22 @@ export class RunDetailComponent {
   readonly suiteSlug = computed(() => this.params().get('suiteSlug') ?? '');
   readonly seqId = computed(() => Number(this.params().get('seqId') ?? 0));
 
-  readonly loadError = signal<boolean>(false);
+  private readonly runResource = rxResource({
+    params: () => ({ project: this.projectSlug(), suite: this.suiteSlug(), seq: this.seqId() }),
+    stream: ({ params }) => this.api.run(params.project, params.suite, params.seq),
+  });
 
-  private runData = signal<RunDetail | undefined>(undefined);
+  readonly loadError = computed(() => this.runResource.status() === 'error');
+  readonly run = computed<RunDetail | null>(() =>
+    this.runResource.hasValue() ? this.runResource.value() : null,
+  );
 
   private mergeTests(updated: TestRow[]): void {
-    if (updated.length === 0) return;
+    if (updated.length === 0 || !this.runResource.hasValue()) return;
     const byId = new Map(updated.map((t) => [t.id, t]));
-    this.runData.update((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        tests: current.tests.map((t) => byId.get(t.id) ?? t),
-      };
-    });
+    this.runResource.update((current) =>
+      current ? { ...current, tests: current.tests.map((t) => byId.get(t.id) ?? t) } : current,
+    );
   }
 
   readonly thumbLoaded = signal<Set<string>>(new Set<string>());
@@ -120,8 +122,6 @@ export class RunDetailComponent {
   onImgLoad(src: string): void {
     this.thumbLoaded.update((previouslyLoaded) => new Set(previouslyLoaded).add(src));
   }
-
-  readonly run = computed(() => this.runData() ?? null);
 
   readonly hasPendingTests = computed(() => {
     const runData = this.run();
@@ -140,26 +140,19 @@ export class RunDetailComponent {
   private static readonly MAX_UNPRODUCTIVE_POLLS = 3;
 
   constructor() {
-    this.route.paramMap
-      .pipe(
-        switchMap((params) => {
-          this.loadError.set(false);
-          return this.api
-            .run(params.get('projectSlug')!, params.get('suiteSlug')!, Number(params.get('seqId')))
-            .pipe(
-              catchError(() => {
-                this.loadError.set(true);
-                return of<RunDetail | null>(null);
-              }),
-            );
-        }),
-        takeUntilDestroyed(),
-      )
-      .subscribe((runData) => {
-        this.runData.set(runData ?? undefined);
+    // Fires only when a load resolves: merges via update() move the resource
+    // to 'local', so they return before value() is read and do not retrigger
+    // this. value() is tracked too because rxResource can resolve
+    // synchronously (status goes resolved -> loading -> resolved inside one
+    // run), in which case status() alone never changes.
+    effect(() => {
+      if (this.runResource.status() !== 'resolved') return;
+      this.runResource.value();
+      untracked(() => {
         this.unproductivePollCount = 0;
         this.schedulePollIfNeeded();
       });
+    });
 
     this.destroyRef.onDestroy(() => clearTimeout(this.pollTimer));
 
