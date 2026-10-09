@@ -9,9 +9,9 @@ import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
+import { ChipLinkCache } from '../../core/components/run-stats-chips/chip-link-cache';
 import {
   ChipLinkFn,
-  ChipStatus,
   RunStatsChipsComponent,
 } from '../../core/components/run-stats-chips/run-stats-chips.component';
 import { SearchFieldComponent } from '../../core/components/search-field/search-field.component';
@@ -118,25 +118,17 @@ export class SuiteDetailComponent {
   readonly projectSlug = computed(() => this.params().get('projectSlug') ?? '');
   readonly suiteSlug = computed(() => this.params().get('suiteSlug') ?? '');
 
-  private readonly chipLinkCache = new Map<string, ChipLinkFn>();
+  private readonly chipLinks = new ChipLinkCache();
 
-  /** Stable per-run link fn (new identity each CD would trigger NG0100). */
   chipLinkFor(run: RunSummary): ChipLinkFn {
-    const key = `${this.projectSlug()}/${this.suiteSlug()}/${run.sequential_id}`;
-    let fn = this.chipLinkCache.get(key);
-    if (!fn) {
-      const commands = [
-        '/projects',
-        this.projectSlug(),
-        'suites',
-        this.suiteSlug(),
-        'runs',
-        run.sequential_id,
-      ];
-      fn = (status: ChipStatus) => ({ commands, queryParams: { status } });
-      this.chipLinkCache.set(key, fn);
-    }
-    return fn;
+    return this.chipLinks.get([
+      '/projects',
+      this.projectSlug(),
+      'suites',
+      this.suiteSlug(),
+      'runs',
+      run.sequential_id,
+    ]);
   }
 
   private suiteData = toSignal(
