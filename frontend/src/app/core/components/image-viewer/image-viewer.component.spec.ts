@@ -1,5 +1,4 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { describe, it, expect, vi } from 'vitest';
 import { ImageViewerComponent, ImageViewerData } from './image-viewer.component';
@@ -23,7 +22,6 @@ const setup = async (data: ImageViewerData): Promise<ComponentFixture<ImageViewe
   await TestBed.configureTestingModule({
     imports: [ImageViewerComponent],
     providers: [
-      provideNoopAnimations(),
       { provide: MAT_DIALOG_DATA, useValue: data },
       { provide: MatDialogRef, useValue: { close: vi.fn() } },
     ],
@@ -85,6 +83,13 @@ describe('ImageViewerComponent', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).querySelector('.viewer-slot-label')?.textContent?.trim()).toBe('Comparison');
+  });
+
+  it('ArrowLeft key moves to the previous slot', async () => {
+    const fixture = await setup({ tests: [makeTest()], index: 0, slot: 'comparison' });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.viewer-slot-label')?.textContent?.trim()).toBe('Baseline');
   });
 
   it('availableSlots includes compare when baseline_url is non-null', async () => {

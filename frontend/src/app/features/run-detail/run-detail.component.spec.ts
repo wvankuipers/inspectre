@@ -1,12 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSelectChange } from '@angular/material/select';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
-import { RunDetail } from '../../core/models/api';
+import { RunDetail, TestRow } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
 import { RunDetailComponent } from './run-detail.component';
 
@@ -216,6 +215,14 @@ const RUN_WITH_THUMBS: RunDetail = {
   ],
 };
 
+function createRun(seqId = 1) {
+  const fixture = TestBed.createComponent(RunDetailComponent);
+  fixture.componentRef.setInput('projectSlug', 'test');
+  fixture.componentRef.setInput('suiteSlug', 'test');
+  fixture.componentRef.setInput('seqId', seqId);
+  return fixture;
+}
+
 describe('RunDetailComponent sorting', () => {
   let sortServiceGet: ReturnType<typeof vi.fn>;
   let sortServiceSave: ReturnType<typeof vi.fn>;
@@ -228,13 +235,11 @@ describe('RunDetailComponent sorting', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -249,14 +254,14 @@ describe('RunDetailComponent sorting', () => {
   afterEach(() => localStorage.clear());
 
   it('restores sort from SortStateService on init', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(sortServiceGet).toHaveBeenCalledWith('run-tests');
   });
 
   it('sortedTests() returns tests sorted by name asc', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -266,7 +271,7 @@ describe('RunDetailComponent sorting', () => {
   });
 
   it('sortedTests() returns passing tests first when sorted by result asc', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -277,7 +282,7 @@ describe('RunDetailComponent sorting', () => {
   });
 
   it('saves sort on change', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -289,7 +294,7 @@ describe('RunDetailComponent sorting', () => {
   });
 
   it('renders project name in h1 heading', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
@@ -307,13 +312,11 @@ describe('RunDetailComponent filtering', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -327,7 +330,7 @@ describe('RunDetailComponent filtering', () => {
       ],
     }).compileComponents();
 
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     component = fixture.componentInstance;
@@ -379,7 +382,7 @@ describe('RunDetailComponent filtering', () => {
 
   it('status filter Pass includes passed tests without a baseline, which also match New', () => {
     const base = RUN.tests[2];
-    component['runData'].set({
+    component['runResource'].set({
       ...RUN,
       tests: [...RUN.tests, { ...base, id: 9, name: 'Gamma passed new', passed: true }],
     });
@@ -417,13 +420,11 @@ describe('RunDetailComponent browser/size filtering', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '4' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '4' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -441,7 +442,7 @@ describe('RunDetailComponent browser/size filtering', () => {
       ],
     }).compileComponents();
 
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun(4);
     fixture.detectChanges();
     await fixture.whenStable();
     component = fixture.componentInstance;
@@ -507,13 +508,11 @@ describe('RunDetailComponent empty run', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '2' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '2' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -535,7 +534,7 @@ describe('RunDetailComponent empty run', () => {
   afterEach(() => localStorage.clear());
 
   it('does not show filter empty-state when run has no tests', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun(2);
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -555,13 +554,11 @@ describe('RunDetailComponent onImgError guard', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -575,7 +572,7 @@ describe('RunDetailComponent onImgError guard', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(RunDetailComponent);
+    fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     component = fixture.componentInstance;
@@ -620,13 +617,11 @@ describe('RunDetailComponent rebaseline refresh', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -640,7 +635,7 @@ describe('RunDetailComponent rebaseline refresh', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(RunDetailComponent);
+    fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     component = fixture.componentInstance;
@@ -684,13 +679,11 @@ describe('RunDetailComponent image viewer', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '3' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '3' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -710,7 +703,7 @@ describe('RunDetailComponent image viewer', () => {
       .overrideProvider(MatDialog, { useValue: { open: dialogOpen } })
       .compileComponents();
 
-    fixture = TestBed.createComponent(RunDetailComponent);
+    fixture = createRun(3);
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -749,13 +742,11 @@ describe('RunDetailComponent API failure', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -775,18 +766,30 @@ describe('RunDetailComponent API failure', () => {
   });
 
   it('renders without crashing when api.run() errors', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance).toBeTruthy();
   });
 
   it('does not render the page h1 when api.run() errors (run is null)', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
     expect(h1).toBeNull();
+  });
+
+  it('exposes loadError() true and run() null on API error without throwing', async () => {
+    const fixture = createRun();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    expect(component.loadError()).toBe(true);
+    expect(() => component.run()).not.toThrow();
+    expect(component.run()).toBeNull();
+    expect(component.hasPendingTests()).toBe(false);
+    expect(component.visibleTests()).toEqual([]);
   });
 });
 
@@ -799,13 +802,11 @@ async function setup({
   await TestBed.configureTestingModule({
     imports: [RunDetailComponent],
     providers: [
-      provideNoopAnimations(),
       provideRouter([]),
       {
         provide: ActivatedRoute,
         useValue: {
-          snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-          paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+          snapshot: { queryParamMap: { get: () => null } },
         },
       },
       {
@@ -819,7 +820,7 @@ async function setup({
     ],
   }).compileComponents();
 
-  const fixture = TestBed.createComponent(RunDetailComponent);
+  const fixture = createRun();
   fixture.detectChanges();
   await fixture.whenStable();
   return fixture;
@@ -957,13 +958,11 @@ describe('RunDetailComponent thumbnail skeleton', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -981,7 +980,7 @@ describe('RunDetailComponent thumbnail skeleton', () => {
   afterEach(() => localStorage.clear());
 
   it('thumbnail wrapper has img-skeleton class before load fires', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -990,7 +989,7 @@ describe('RunDetailComponent thumbnail skeleton', () => {
   });
 
   it('thumbnail wrapper switches to img-loaded after load event fires', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     const comp = fixture.componentInstance;
     fixture.detectChanges();
     await fixture.whenStable();
@@ -1216,6 +1215,157 @@ describe('RunDetailComponent pending-test polling', () => {
   });
 });
 
+describe('RunDetailComponent switching runs while polling', () => {
+  const RUN_ONE: RunDetail = {
+    ...PENDING_RUN,
+    id: 10,
+    sequential_id: 1,
+    tests: [{ ...PENDING_RUN.tests[0], id: 501, name: 'Run one page' }],
+  };
+  const RUN_TWO: RunDetail = {
+    ...PENDING_RUN,
+    id: 20,
+    sequential_id: 2,
+    tests: [{ ...PENDING_RUN.tests[0], id: 601, name: 'Run two page' }],
+  };
+
+  async function setupSwitchable(testsBulkSpy: ReturnType<typeof vi.fn>) {
+    localStorage.clear();
+    const runSpy = vi.fn((_p: string, _s: string, seq: number) => of(seq === 1 ? RUN_ONE : RUN_TWO));
+
+    await TestBed.configureTestingModule({
+      imports: [RunDetailComponent],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { queryParamMap: { get: () => null } },
+          },
+        },
+        {
+          provide: InspectreApiService,
+          useValue: { run: runSpy, setBaseline: () => of({}), testsBulk: testsBulkSpy },
+        },
+        {
+          provide: SortStateService,
+          useValue: { get: vi.fn().mockReturnValue({ active: '', direction: '' }), save: vi.fn() },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = createRun();
+    fixture.detectChanges();
+    const stable = fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(0);
+    await stable;
+
+    const switchTo = async (seqId: number) => {
+      fixture.componentRef.setInput('seqId', seqId);
+      fixture.detectChanges();
+      const switched = fixture.whenStable();
+      await vi.advanceTimersByTimeAsync(0);
+      await switched;
+    };
+    return { fixture, runSpy, switchTo };
+  }
+
+  afterEach(() => {
+    localStorage.clear();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
+
+  it('restarts the 10s poll from run 2 load and never polls run 1 ids afterwards', async () => {
+    vi.useFakeTimers();
+    const testsBulkSpy = vi.fn().mockReturnValue(of([]));
+    const { fixture, runSpy, switchTo } = await setupSwitchable(testsBulkSpy);
+
+    await vi.advanceTimersByTimeAsync(5000); // run 1's poll is pending (due at 10s)
+    await switchTo(2);
+    expect(runSpy).toHaveBeenLastCalledWith('test', 'test', 2);
+    expect(fixture.componentInstance.run()?.id).toBe(RUN_TWO.id);
+
+    await vi.advanceTimersByTimeAsync(5000); // t=10s: run 1's original deadline
+    expect(testsBulkSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(5000); // t=15s: 10s after run 2 loaded
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).toHaveBeenCalledWith([601]);
+    expect(testsBulkSpy).not.toHaveBeenCalledWith([501]);
+  });
+
+  it('does not let a late run 1 testsBulk response overwrite run 2 tests', async () => {
+    vi.useFakeTimers();
+    const runOneBulk$ = new Subject<TestRow[]>();
+    const testsBulkSpy = vi.fn((ids: number[]) => (ids.includes(501) ? runOneBulk$ : of([])));
+    const { fixture, switchTo } = await setupSwitchable(testsBulkSpy);
+
+    await vi.advanceTimersByTimeAsync(10000); // run 1's poll fires; response still in flight
+    expect(testsBulkSpy).toHaveBeenCalledWith([501]);
+
+    await switchTo(2);
+    runOneBulk$.next([{ ...RUN_ONE.tests[0], status: 'done', passed: true, name: 'Stale' }]);
+    runOneBulk$.complete();
+
+    const component = fixture.componentInstance;
+    expect(component.run()?.id).toBe(RUN_TWO.id);
+    expect(component.run()?.tests).toEqual(RUN_TWO.tests);
+
+    testsBulkSpy.mockClear();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).toHaveBeenCalledWith([601]);
+  });
+
+  it('gives run 2 a fresh unproductive-poll budget after run 1 used part of it', async () => {
+    vi.useFakeTimers();
+    const testsBulkSpy = vi.fn().mockReturnValue(of([]));
+    const { switchTo } = await setupSwitchable(testsBulkSpy);
+
+    await vi.advanceTimersByTimeAsync(20000); // run 1: two unproductive polls
+    expect(testsBulkSpy).toHaveBeenCalledTimes(2);
+
+    await switchTo(2);
+    testsBulkSpy.mockClear();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3);
+    expect(testsBulkSpy.mock.calls.every(([ids]) => ids.length === 1 && ids[0] === 601)).toBe(
+      true,
+    );
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3); // capped at 3 for run 2
+  });
+
+  it.each([
+    ['empty response', (s$: Subject<TestRow[]>) => s$.next([])],
+    ['error', (s$: Subject<TestRow[]>) => s$.error(new Error('network'))],
+  ])('ignores a late run 1 %s so run 2 keeps its full retry budget', async (_name, finish) => {
+    vi.useFakeTimers();
+    const runOneBulk$ = new Subject<TestRow[]>();
+    const testsBulkSpy = vi.fn((ids: number[]) => (ids.includes(501) ? runOneBulk$ : of([])));
+    const { switchTo } = await setupSwitchable(testsBulkSpy);
+
+    await vi.advanceTimersByTimeAsync(10000); // run 1's poll fires; response still in flight
+    await switchTo(2);
+    await vi.advanceTimersByTimeAsync(4000); // run 2's timer is 4s into its 10s wait
+    testsBulkSpy.mockClear();
+
+    finish(runOneBulk$); // late callback from the superseded request
+
+    await vi.advanceTimersByTimeAsync(6000); // run 2's original deadline is untouched
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).toHaveBeenCalledWith([601]);
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3); // full budget of 3 for run 2
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3);
+  });
+});
+
 function buildQueryParamMap(params: Record<string, string>) {
   return { get: (key: string) => params[key] ?? null };
 }
@@ -1238,16 +1388,13 @@ async function setupWithQueryParams({
   await TestBed.configureTestingModule({
     imports: [RunDetailComponent],
     providers: [
-      provideNoopAnimations(),
       provideRouter([]),
       {
         provide: ActivatedRoute,
         useValue: {
           snapshot: {
-            paramMap: { get: () => '1' },
             queryParamMap: buildQueryParamMap(queryParams),
           },
-          paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
         },
       },
       {
@@ -1260,7 +1407,7 @@ async function setupWithQueryParams({
     .overrideProvider(Router, { useValue: { navigate: navigateSpy } })
     .compileComponents();
 
-  const fixture = TestBed.createComponent(RunDetailComponent);
+  const fixture = createRun();
   fixture.detectChanges();
   await fixture.whenStable();
   return fixture;

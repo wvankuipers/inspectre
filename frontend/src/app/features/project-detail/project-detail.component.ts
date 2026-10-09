@@ -1,11 +1,11 @@
 import { DatePipe } from '@angular/common';
-import { Component, DestroyRef, ViewChild, computed, effect, inject, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, computed, effect, inject, input, signal, viewChild } from '@angular/core';
+import { rxResource, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
+import { Subject, debounceTime } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -44,25 +44,7 @@ export class ProjectDetailComponent {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
-  private _sort: MatSort | undefined;
-
-  private get sort(): MatSort | undefined {
-    return this._sort;
-  }
-
-  @ViewChild(MatSort)
-  private set sort(sort: MatSort | undefined) {
-    if (!sort) return;
-    this._sort = sort;
-    this.dataSource.sort = sort;
-    sort.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s: Sort) => {
-      this.sortState.set(s);
-      this.sortService.save('project-detail', s);
-      this.writeQueryParams(
-        s.active && s.direction ? { sort: s.active, dir: s.direction } : { sort: null, dir: null },
-      );
-    });
-  }
+  private readonly matSort = viewChild(MatSort);
 
   private readonly initialQueryParams = this.route.snapshot.queryParamMap;
 
@@ -98,11 +80,7 @@ export class ProjectDetailComponent {
     });
   }
 
-  private params = toSignal(this.route.paramMap, {
-    initialValue: this.route.snapshot.paramMap,
-  });
-
-  readonly projectSlug = computed(() => this.params().get('projectSlug') ?? '');
+  readonly projectSlug = input('');
 
   private readonly chipLinks = new ChipLinkCache();
 
@@ -112,19 +90,16 @@ export class ProjectDetailComponent {
     return this.chipLinks.get(['/projects', this.projectSlug(), 'suites', row.slug, 'runs', run.sequential_id]);
   }
 
-  private projectData = toSignal(
-    this.route.paramMap.pipe(
-      switchMap((p) =>
-        this.api.projectDetail(p.get('projectSlug')!).pipe(catchError(() => of<ProjectDetail | null>(null))),
-      ),
-      takeUntilDestroyed(),
-    ),
-    { initialValue: undefined },
+  private readonly projectResource = rxResource({
+    params: () => this.projectSlug(),
+    stream: ({ params }) => this.api.projectDetail(params),
+  });
+
+  readonly loading = computed(() => this.projectResource.isLoading());
+
+  readonly project = computed<ProjectDetail | null>(() =>
+    this.projectResource.hasValue() ? this.projectResource.value() : null,
   );
-
-  readonly loading = computed(() => this.projectData() === undefined);
-
-  readonly project = computed(() => this.projectData() ?? null);
 
   readonly rows = computed<SuiteSummary[]>(() => this.project()?.suites ?? []);
 
@@ -168,6 +143,20 @@ export class ProjectDetailComponent {
           return '';
       }
     };
+
+    effect((onCleanup) => {
+      const sort = this.matSort();
+      if (!sort) return;
+      this.dataSource.sort = sort;
+      const sub = sort.sortChange.subscribe((s: Sort) => {
+        this.sortState.set(s);
+        this.sortService.save('project-detail', s);
+        this.writeQueryParams(
+          s.active && s.direction ? { sort: s.active, dir: s.direction } : { sort: null, dir: null },
+        );
+      });
+      onCleanup(() => sub.unsubscribe());
+    });
 
     effect(() => {
       this.dataSource.data = this.visibleRows();
