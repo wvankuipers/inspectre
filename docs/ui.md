@@ -324,7 +324,7 @@ export const appConfig: ApplicationConfig = {
 
 `provideZonelessChangeDetection()` — Angular zoneless mode. Change detection is signal-driven; there is no `NgZone` and no `zone.js` in the bundle.
 
-`withComponentInputBinding({ queryParams: false })` — path params are bound to component `input()`s; query params are deliberately not bound (components read and write `?status=`, `?q=`, `?sort=`/`?dir=` themselves via the router). There is no `withFetch()` (HttpClient uses its default XHR backend) and no `@angular/animations` / `provideAnimations*` — Material components used here do not need it.
+`withComponentInputBinding({ queryParams: false })` — path params are bound to component `input()`s; query params are deliberately not bound (components read and write `?status=`, `?q=`, `?sort=`/`?dir=` themselves via the router). There is no explicit `withFetch()` (the Angular 22 `HttpClient` already uses the fetch backend by default; verified in the browser: requests go through `window.fetch`, not `XMLHttpRequest`) and no `@angular/animations` / `provideAnimations*` — Material components used here do not need it.
 
 ## Data loading and route params
 
