@@ -4,13 +4,13 @@
 #
 #    pip-compile --output-file=requirements.txt pyproject.toml
 #
-amqp==5.4.0
+amqp==5.4.1
     # via kombu
 asgiref==3.12.1
     # via
     #   django
     #   django-cors-headers
-billiard==4.3.0
+billiard==4.3.1
     # via celery
 boto3==1.43.108
     # via
@@ -32,7 +32,7 @@ click-didyoumean==0.3.1
     # via celery
 click-plugins==1.1.1.2
     # via celery
-click-repl==0.4.0
+click-repl==0.4.1
     # via celery
 django==6.1.1
     # via
@@ -93,7 +93,7 @@ vine==5.1.0
     #   amqp
     #   celery
     #   kombu
-wcwidth==0.9.1
+wcwidth==0.9.2
     # via prompt-toolkit
 whitenoise==6.12.0
     # via inspectre (pyproject.toml)
