@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.1](https://github.com/wvankuipers/inspectre/compare/1.6.0...1.6.1) - 2026-10-09
+
+- Feat/footer GitHub link by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/155
+- chore(deps-dev): bump eslint from 10.11.0 to 10.12.0 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/157
+- chore(deps): bump the backend-pip group across 1 directory with 3 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/158
+- chore(deps-dev): bump jsdom from 30.1.1 to 30.1.2 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/159
+- chore(deps): bump the backend-pip group in /backend with 4 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/160
+- Feat/clickable status pills by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/161
+
 ## [1.6.0](https://github.com/wvankuipers/inspectre/compare/1.5.0...1.6.0) - 2026-10-06
 
 - chore(deps-dev): bump the frontend-npm group across 1 directory with 2 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/128
