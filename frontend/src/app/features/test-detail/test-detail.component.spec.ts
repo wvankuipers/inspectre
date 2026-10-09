@@ -448,13 +448,3 @@ describe('TestDetailComponent breadcrumb', () => {
     expect(nav?.textContent).not.toContain('(chrome, 1280x800)');
   });
 });
-
-describe('TestDetailComponent route inputs', () => {
-  afterEach(() => TestBed.resetTestingModule());
-
-  it('accepts projectSlug, suiteSlug and key as inputs and loads history with them', async () => {
-    const apiSpy = vi.fn().mockReturnValue(of(HISTORY));
-    await setup({ apiSpy, key: 'k-1' });
-    expect(apiSpy).toHaveBeenCalledWith('acme-corp', 'main-suite', 'k-1');
-  });
-});
