@@ -265,7 +265,7 @@ describe('SuiteDetailComponent unbaselined chip', () => {
     const fixture = TestBed.createComponent(SuiteDetailComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-    const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('span.chip');
+    const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('.chip');
     const texts = Array.from(chips).map((c) => c.textContent?.trim());
     expect(texts).toContain('2 new');
   });
@@ -274,10 +274,62 @@ describe('SuiteDetailComponent unbaselined chip', () => {
     const fixture = TestBed.createComponent(SuiteDetailComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-    const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('span.chip');
+    const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('.chip');
     const texts = Array.from(chips).map((c) => c.textContent?.trim());
     // Only run with sequential_id=3 has unbaselined=2, so exactly one "new" chip
     expect(texts.filter((t) => t?.includes('new')).length).toBe(1);
+  });
+});
+
+describe('SuiteDetailComponent status chip links', () => {
+  afterEach(() => localStorage.clear());
+
+  it('links each pill to the run detail page filtered by that status', async () => {
+    localStorage.clear();
+    const suite: SuiteDetail = {
+      ...SUITE,
+      latest_runs: [
+        {
+          id: 1,
+          sequential_id: 5,
+          created_at: '2026-01-01T00:00:00Z',
+          passing: 1,
+          failing: 2,
+          unbaselined: 3,
+          flaky: 4,
+        },
+      ],
+    };
+    await TestBed.configureTestingModule({
+      imports: [SuiteDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
+            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
+          },
+        },
+        { provide: InspectreApiService, useValue: { suite: () => of(suite) } },
+        {
+          provide: SortStateService,
+          useValue: { get: vi.fn().mockReturnValue({ active: '', direction: '' }), save: vi.fn() },
+        },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const hrefOf = (cls: string) =>
+      el.querySelector(`app-run-stats-chips a.${cls}`)?.getAttribute('href');
+    const base = '/projects/proj/suites/web/runs/5?status=';
+    expect(hrefOf('chip-pass')).toBe(base + 'pass');
+    expect(hrefOf('chip-fail')).toBe(base + 'fail');
+    expect(hrefOf('chip-new')).toBe(base + 'new');
+    expect(hrefOf('chip-flaky')).toBe(base + 'flaky');
   });
 });
 

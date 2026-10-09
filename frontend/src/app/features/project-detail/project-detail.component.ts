@@ -9,7 +9,11 @@ import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
-import { RunStatsChipsComponent } from '../../core/components/run-stats-chips/run-stats-chips.component';
+import {
+  ChipLinkFn,
+  ChipStatus,
+  RunStatsChipsComponent,
+} from '../../core/components/run-stats-chips/run-stats-chips.component';
 import { SearchFieldComponent } from '../../core/components/search-field/search-field.component';
 import { ProjectDetail, SuiteSummary } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
@@ -99,6 +103,22 @@ export class ProjectDetailComponent {
   });
 
   readonly projectSlug = computed(() => this.params().get('projectSlug') ?? '');
+
+  private readonly chipLinkCache = new Map<string, ChipLinkFn>();
+
+  /** Stable per-run link fn (new identity each CD would trigger NG0100). */
+  chipLinkFor(row: SuiteSummary): ChipLinkFn | undefined {
+    const run = row.latest_run;
+    if (!run) return undefined;
+    const key = `${this.projectSlug()}/${row.slug}/${run.sequential_id}`;
+    let fn = this.chipLinkCache.get(key);
+    if (!fn) {
+      const commands = ['/projects', this.projectSlug(), 'suites', row.slug, 'runs', run.sequential_id];
+      fn = (status: ChipStatus) => ({ commands, queryParams: { status } });
+      this.chipLinkCache.set(key, fn);
+    }
+    return fn;
+  }
 
   private projectData = toSignal(
     this.route.paramMap.pipe(
