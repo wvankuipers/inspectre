@@ -1,5 +1,4 @@
 import { TestBed } from '@angular/core/testing';
-import { MatSort } from '@angular/material/sort';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -285,7 +284,7 @@ describe('ProjectDetailComponent sorting', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
-    (component as unknown as { sort: MatSort }).sort.sort({
+    component['matSort']()!.sort({
       id: 'suite',
       start: 'asc',
       disableClear: false,
@@ -424,7 +423,7 @@ describe('ProjectDetailComponent query params', () => {
     await fixture.whenStable();
     const router = TestBed.inject(Router);
     const navigateSpy = vi.spyOn(router, 'navigate');
-    (fixture.componentInstance as unknown as { sort: MatSort }).sort.sort({
+    fixture.componentInstance['matSort']()!.sort({
       id: 'suite',
       start: 'asc',
       disableClear: false,

@@ -2,7 +2,7 @@ import { By } from '@angular/platform-browser';
 import { TestBed } from '@angular/core/testing';
 import { MatSort } from '@angular/material/sort';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
-import { delay, of, throwError } from 'rxjs';
+import { BehaviorSubject, delay, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { ProjectSummary } from '../../core/models/api';
@@ -86,7 +86,7 @@ describe('ProjectsListComponent sorting', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
-    (component as unknown as { sort: MatSort }).sort.sort({
+    component['matSort']()!.sort({
       id: 'project',
       start: 'asc',
       disableClear: false,
@@ -95,6 +95,32 @@ describe('ProjectsListComponent sorting', () => {
       'projects',
       expect.objectContaining({ active: 'project' }),
     );
+  });
+
+  it('saves sort state once per click even after the table is recreated', async () => {
+    const projects$ = new BehaviorSubject<ProjectSummary[]>(PROJECTS);
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ProjectsListComponent],
+      providers: [
+        provideRouter([]),
+        { provide: InspectreApiService, useValue: { projects: () => projects$ } },
+        { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // Empty data removes the table from the DOM; new data recreates it.
+    projects$.next([]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    projects$.next(PROJECTS);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    saveSpy.mockClear();
+    fixture.componentInstance['matSort']()!.sort({ id: 'project', start: 'asc', disableClear: false });
+    expect(saveSpy).toHaveBeenCalledTimes(1);
   });
 
   it('sortingDataAccessor returns project name and suite count for their columns', async () => {
@@ -486,7 +512,7 @@ describe('ProjectsListComponent query params', () => {
     const router = TestBed.inject(Router);
     const navigateSpy = vi.spyOn(router, 'navigate');
     const component = fixture.componentInstance;
-    (component as unknown as { sort: MatSort }).sort.sort({
+    component['matSort']()!.sort({
       id: 'project',
       start: 'asc',
       disableClear: false,

@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, DestroyRef, ViewChild, computed, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
@@ -41,27 +41,7 @@ export class SuiteDetailComponent {
   private sortService = inject(SortStateService);
   private destroyRef = inject(DestroyRef);
 
-  private _baselinesSort: MatSort | undefined;
-
-  get baselinesSort(): MatSort | undefined {
-    return this._baselinesSort;
-  }
-
-  @ViewChild('baselinesSort')
-  set baselinesSort(sort: MatSort | undefined) {
-    if (!sort) return;
-    this._baselinesSort = sort;
-    this.baselinesDataSource.sort = sort;
-    sort.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s: Sort) => {
-      this.baselineSortState.set(s);
-      this.sortService.save('suite-baselines', s);
-      this.writeQueryParams(
-        s.active && s.direction
-          ? { baselinesSort: s.active, baselinesDir: s.direction }
-          : { baselinesSort: null, baselinesDir: null },
-      );
-    });
-  }
+  readonly baselinesSort = viewChild<MatSort>('baselinesSort');
 
   readonly runColumns = ['seq', 'when', 'status'];
   readonly baselineColumns = ['name', 'browser', 'size', 'thumb'];
@@ -165,6 +145,22 @@ export class SuiteDetailComponent {
   constructor() {
     this.baselinesDataSource.filterPredicate = (baseline: Baseline, filter: string) =>
       baseline.name.toLowerCase().includes(filter);
+
+    effect((onCleanup) => {
+      const sort = this.baselinesSort();
+      if (!sort) return;
+      this.baselinesDataSource.sort = sort;
+      const sub = sort.sortChange.subscribe((s: Sort) => {
+        this.baselineSortState.set(s);
+        this.sortService.save('suite-baselines', s);
+        this.writeQueryParams(
+          s.active && s.direction
+            ? { baselinesSort: s.active, baselinesDir: s.direction }
+            : { baselinesSort: null, baselinesDir: null },
+        );
+      });
+      onCleanup(() => sub.unsubscribe());
+    });
 
     effect(() => {
       this.baselinesDataSource.data = this.suite()?.baselines ?? [];

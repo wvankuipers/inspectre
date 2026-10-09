@@ -148,7 +148,7 @@ describe('SuiteDetailComponent sorting', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
-    component.baselinesSort!.sort({ id: 'browser', start: 'asc', disableClear: false });
+    component.baselinesSort()!.sort({ id: 'browser', start: 'asc', disableClear: false });
     expect(sortServiceSave).toHaveBeenCalledWith(
       'suite-baselines',
       expect.objectContaining({ active: 'browser' }),
@@ -535,7 +535,7 @@ describe('SuiteDetailComponent query params', () => {
     const router = TestBed.inject(Router);
     const navigateSpy = vi.spyOn(router, 'navigate');
     const component = fixture.componentInstance;
-    component.baselinesSort!.sort({ id: 'browser', start: 'asc', disableClear: false });
+    component.baselinesSort()!.sort({ id: 'browser', start: 'asc', disableClear: false });
     expect(navigateSpy).toHaveBeenCalledWith(
       [],
       expect.objectContaining({
