@@ -1,5 +1,4 @@
 import { TestBed } from '@angular/core/testing';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { describe, expect, it } from 'vitest';
@@ -20,7 +19,6 @@ describe('AppShellComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AppShellComponent],
       providers: [
-        provideNoopAnimations(),
         {
           provide: Router,
           useValue: { events: routerEvents$.asObservable() },

@@ -1,7 +1,6 @@
 import { By } from '@angular/platform-browser';
 import { TestBed } from '@angular/core/testing';
 import { MatSort } from '@angular/material/sort';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { delay, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,7 +64,6 @@ describe('ProjectsListComponent sorting', () => {
     await TestBed.configureTestingModule({
       imports: [ProjectsListComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS) } },
         { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
@@ -133,7 +131,6 @@ describe('ProjectsListComponent sorting', () => {
       .configureTestingModule({
         imports: [ProjectsListComponent],
         providers: [
-          provideNoopAnimations(),
           provideRouter([]),
           { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS).pipe(delay(0)) } },
           { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
@@ -180,7 +177,6 @@ describe('ProjectsListComponent sorting', () => {
       .configureTestingModule({
         imports: [ProjectsListComponent],
         providers: [
-          provideNoopAnimations(),
           provideRouter([]),
           { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS).pipe(delay(0)) } },
           { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
@@ -228,7 +224,6 @@ describe('ProjectsListComponent sorting', () => {
       .configureTestingModule({
         imports: [ProjectsListComponent],
         providers: [
-          provideNoopAnimations(),
           provideRouter([]),
           { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS).pipe(delay(0)) } },
           { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
@@ -267,7 +262,6 @@ describe('ProjectsListComponent search', () => {
     await TestBed.configureTestingModule({
       imports: [ProjectsListComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS) } },
         { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
@@ -312,7 +306,6 @@ describe('ProjectsListComponent unbaselined chip', () => {
     await TestBed.configureTestingModule({
       imports: [ProjectsListComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS) } },
         { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
@@ -350,7 +343,6 @@ describe('ProjectsListComponent status filter', () => {
     await TestBed.configureTestingModule({
       imports: [ProjectsListComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS) } },
         { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
@@ -453,7 +445,6 @@ describe('ProjectsListComponent query params', () => {
     return TestBed.configureTestingModule({
       imports: [ProjectsListComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS) } },
         { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
@@ -584,7 +575,6 @@ describe('ProjectsListComponent API failure', () => {
     await TestBed.configureTestingModule({
       imports: [ProjectsListComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: InspectreApiService,
@@ -622,7 +612,6 @@ describe('ProjectsListComponent project name link target', () => {
     await TestBed.configureTestingModule({
       imports: [ProjectsListComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         { provide: InspectreApiService, useValue: { projects: () => of(PROJECTS) } },
         { provide: SortStateService, useValue: { get: getSpy, save: saveSpy } },
@@ -696,7 +685,6 @@ describe('ProjectsListComponent chip links', () => {
     await TestBed.configureTestingModule({
       imports: [ProjectsListComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         { provide: InspectreApiService, useValue: { projects: () => of(ROWS) } },
         {

@@ -1,7 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSelectChange } from '@angular/material/select';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
@@ -228,7 +227,6 @@ describe('RunDetailComponent sorting', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -307,7 +305,6 @@ describe('RunDetailComponent filtering', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -417,7 +414,6 @@ describe('RunDetailComponent browser/size filtering', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -507,7 +503,6 @@ describe('RunDetailComponent empty run', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -555,7 +550,6 @@ describe('RunDetailComponent onImgError guard', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -620,7 +614,6 @@ describe('RunDetailComponent rebaseline refresh', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -684,7 +677,6 @@ describe('RunDetailComponent image viewer', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -749,7 +741,6 @@ describe('RunDetailComponent API failure', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -799,7 +790,6 @@ async function setup({
   await TestBed.configureTestingModule({
     imports: [RunDetailComponent],
     providers: [
-      provideNoopAnimations(),
       provideRouter([]),
       {
         provide: ActivatedRoute,
@@ -957,7 +947,6 @@ describe('RunDetailComponent thumbnail skeleton', () => {
     await TestBed.configureTestingModule({
       imports: [RunDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -1238,7 +1227,6 @@ async function setupWithQueryParams({
   await TestBed.configureTestingModule({
     imports: [RunDetailComponent],
     providers: [
-      provideNoopAnimations(),
       provideRouter([]),
       {
         provide: ActivatedRoute,

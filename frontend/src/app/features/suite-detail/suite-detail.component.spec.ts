@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -82,7 +82,6 @@ describe('SuiteDetailComponent sorting', () => {
     await TestBed.configureTestingModule({
       imports: [SuiteDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -190,7 +189,6 @@ describe('SuiteDetailComponent baselines search', () => {
     await TestBed.configureTestingModule({
       imports: [SuiteDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -246,7 +244,6 @@ describe('SuiteDetailComponent unbaselined chip', () => {
     await TestBed.configureTestingModule({
       imports: [SuiteDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -303,7 +300,6 @@ describe('SuiteDetailComponent status chip links', () => {
     await TestBed.configureTestingModule({
       imports: [SuiteDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -348,7 +344,8 @@ describe('SuiteDetailComponent tabs', () => {
     await TestBed.configureTestingModule({
       imports: [SuiteDetailComponent],
       providers: [
-        provideNoopAnimations(),
+        // Tab bodies attach on transition end, which never fires in the test DOM.
+        { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -406,7 +403,6 @@ describe('SuiteDetailComponent API failure', () => {
     await TestBed.configureTestingModule({
       imports: [SuiteDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -461,7 +457,6 @@ describe('SuiteDetailComponent query params', () => {
     return TestBed.configureTestingModule({
       imports: [SuiteDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -585,7 +580,6 @@ describe('SuiteDetailComponent breadcrumb', () => {
     await TestBed.configureTestingModule({
       imports: [SuiteDetailComponent],
       providers: [
-        provideNoopAnimations(),
         provideRouter([]),
         {
           provide: ActivatedRoute,

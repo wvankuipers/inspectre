@@ -1,6 +1,5 @@
 import { TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
@@ -89,7 +88,6 @@ async function setup({
   await TestBed.configureTestingModule({
     imports: [TestDetailComponent],
     providers: [
-      provideNoopAnimations(),
       provideRouter([]),
       {
         provide: ActivatedRoute,

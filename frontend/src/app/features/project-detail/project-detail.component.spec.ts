@@ -1,6 +1,5 @@
 import { TestBed } from '@angular/core/testing';
 import { MatSort } from '@angular/material/sort';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -85,7 +84,6 @@ function configureModule(opts: {
   return TestBed.configureTestingModule({
     imports: [ProjectDetailComponent],
     providers: [
-      provideNoopAnimations(),
       provideRouter([]),
       {
         provide: InspectreApiService,

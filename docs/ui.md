@@ -317,8 +317,7 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideZonelessChangeDetection(),
     provideRouter(routes),
-    provideHttpClient(withFetch(), withInterceptors([errorInterceptor, loadingInterceptor])),
-    provideAnimationsAsync(),
+    provideHttpClient(withInterceptors([errorInterceptor, loadingInterceptor])),
   ],
 };
 ```

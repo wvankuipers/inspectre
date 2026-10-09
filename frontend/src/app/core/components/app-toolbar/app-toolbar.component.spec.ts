@@ -1,6 +1,5 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { AppToolbarComponent } from './app-toolbar.component';
 
@@ -8,7 +7,7 @@ describe('AppToolbarComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [AppToolbarComponent],
-      providers: [provideNoopAnimations(), provideRouter([])],
+      providers: [provideRouter([])],
     }).compileComponents();
   });
 
