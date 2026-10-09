@@ -18,7 +18,7 @@ import { MatSelectChange, MatSelectModule } from '@angular/material/select';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Subject, debounceTime } from 'rxjs';
+import { Subject, Subscription, debounceTime } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -136,6 +136,9 @@ export class RunDetailComponent {
   });
 
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
+  // In-flight testsBulk poll; cancelled on a run switch so its late callbacks
+  // cannot consume the new run's retry budget or reschedule its timer.
+  private pollSub: Subscription | undefined;
 
   // Consecutive polls where testsBulk returned none of the requested ids, or
   // errored outright. Caps runaway polling if the pending tests are never
@@ -155,6 +158,7 @@ export class RunDetailComponent {
       if (this.runResource.status() !== 'resolved') return;
       this.runResource.value();
       untracked(() => {
+        this.pollSub?.unsubscribe();
         this.unproductivePollCount = 0;
         this.schedulePollIfNeeded();
       });
@@ -180,7 +184,8 @@ export class RunDetailComponent {
       .filter((t) => t.status !== 'done' && t.status !== 'failed')
       .map((t) => t.id);
     if (pendingIds.length === 0) return;
-    this.api
+    this.pollSub?.unsubscribe();
+    this.pollSub = this.api
       .testsBulk(pendingIds)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({

@@ -382,7 +382,7 @@ describe('RunDetailComponent filtering', () => {
 
   it('status filter Pass includes passed tests without a baseline, which also match New', () => {
     const base = RUN.tests[2];
-    component['runData'].set({
+    component['runResource'].set({
       ...RUN,
       tests: [...RUN.tests, { ...base, id: 9, name: 'Gamma passed new', passed: true }],
     });
@@ -1336,6 +1336,33 @@ describe('RunDetailComponent switching runs while polling', () => {
 
     await vi.advanceTimersByTimeAsync(20000);
     expect(testsBulkSpy).toHaveBeenCalledTimes(3); // capped at 3 for run 2
+  });
+
+  it.each([
+    ['empty response', (s$: Subject<TestRow[]>) => s$.next([])],
+    ['error', (s$: Subject<TestRow[]>) => s$.error(new Error('network'))],
+  ])('ignores a late run 1 %s so run 2 keeps its full retry budget', async (_name, finish) => {
+    vi.useFakeTimers();
+    const runOneBulk$ = new Subject<TestRow[]>();
+    const testsBulkSpy = vi.fn((ids: number[]) => (ids.includes(501) ? runOneBulk$ : of([])));
+    const { switchTo } = await setupSwitchable(testsBulkSpy);
+
+    await vi.advanceTimersByTimeAsync(10000); // run 1's poll fires; response still in flight
+    await switchTo(2);
+    await vi.advanceTimersByTimeAsync(4000); // run 2's timer is 4s into its 10s wait
+    testsBulkSpy.mockClear();
+
+    finish(runOneBulk$); // late callback from the superseded request
+
+    await vi.advanceTimersByTimeAsync(6000); // run 2's original deadline is untouched
+    expect(testsBulkSpy).toHaveBeenCalledTimes(1);
+    expect(testsBulkSpy).toHaveBeenCalledWith([601]);
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3); // full budget of 3 for run 2
+
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(testsBulkSpy).toHaveBeenCalledTimes(3);
   });
 });
 
