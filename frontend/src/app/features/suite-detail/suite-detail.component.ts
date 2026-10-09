@@ -1,11 +1,11 @@
 import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { rxResource, takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatTabsModule } from '@angular/material/tabs';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
+import { Subject, debounceTime } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -111,19 +111,14 @@ export class SuiteDetailComponent {
     ]);
   }
 
-  private suiteData = toSignal(
-    this.route.paramMap.pipe(
-      switchMap((p) =>
-        this.api
-          .suite(p.get('projectSlug')!, p.get('suiteSlug')!)
-          .pipe(catchError(() => of<SuiteDetail | null>(null))),
-      ),
-      takeUntilDestroyed(),
-    ),
-    { initialValue: undefined },
-  );
+  private readonly suiteResource = rxResource({
+    params: () => ({ project: this.projectSlug(), suite: this.suiteSlug() }),
+    stream: ({ params }) => this.api.suite(params.project, params.suite),
+  });
 
-  readonly suite = computed(() => this.suiteData() ?? null);
+  readonly suite = computed<SuiteDetail | null>(() =>
+    this.suiteResource.hasValue() ? this.suiteResource.value() : null,
+  );
 
   readonly sortedRuns = computed<RunSummary[]>(() => {
     const { active, direction } = this.runSortState();

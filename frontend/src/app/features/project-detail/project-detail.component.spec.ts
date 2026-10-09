@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { ProjectDetail } from '../../core/models/api';
@@ -539,5 +539,42 @@ describe('ProjectDetailComponent API failure', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('h1')).toBeNull();
     expect(el.textContent).toContain('Unable to load this project');
+  });
+  it('exposes project() null and loading() false on API error without throwing', async () => {
+    await configureModule({ projectDetail: () => throwError(() => new Error('x')) });
+    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    expect(() => component.project()).not.toThrow();
+    expect(component.project()).toBeNull();
+    expect(component.loading()).toBe(false);
+    expect(component.rows()).toEqual([]);
+  });
+});
+
+describe('ProjectDetailComponent loading', () => {
+  afterEach(() => localStorage.clear());
+
+  it('is loading until the first response arrives, without the not-found message', async () => {
+    const response$ = new Subject<ProjectDetail>();
+    await configureModule({ projectDetail: () => response$ });
+    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    // No whenStable() here: the in-flight request keeps the app unstable.
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(component.loading()).toBe(true);
+    expect(component.project()).toBeNull();
+    expect(el.textContent).not.toContain('Unable to load this project');
+
+    response$.next(PROJECT);
+    response$.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.loading()).toBe(false);
+    expect(component.project()).toEqual(PROJECT);
   });
 });

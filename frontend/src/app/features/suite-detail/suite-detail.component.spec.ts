@@ -434,6 +434,17 @@ describe('SuiteDetailComponent API failure', () => {
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
     expect(h1).toBeNull();
   });
+
+  it('exposes suite() null on API error without throwing', async () => {
+    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    expect(() => component.suite()).not.toThrow();
+    expect(component.suite()).toBeNull();
+    expect(component.sortedRuns()).toEqual([]);
+    expect(component.baselinesDataSource.data).toEqual([]);
+  });
 });
 
 describe('SuiteDetailComponent query params', () => {

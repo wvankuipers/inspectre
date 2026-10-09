@@ -1,11 +1,11 @@
 import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { rxResource, takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
+import { Subject, debounceTime } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -94,19 +94,16 @@ export class ProjectDetailComponent {
     return this.chipLinks.get(['/projects', this.projectSlug(), 'suites', row.slug, 'runs', run.sequential_id]);
   }
 
-  private projectData = toSignal(
-    this.route.paramMap.pipe(
-      switchMap((p) =>
-        this.api.projectDetail(p.get('projectSlug')!).pipe(catchError(() => of<ProjectDetail | null>(null))),
-      ),
-      takeUntilDestroyed(),
-    ),
-    { initialValue: undefined },
+  private readonly projectResource = rxResource({
+    params: () => this.projectSlug(),
+    stream: ({ params }) => this.api.projectDetail(params),
+  });
+
+  readonly loading = computed(() => this.projectResource.isLoading());
+
+  readonly project = computed<ProjectDetail | null>(() =>
+    this.projectResource.hasValue() ? this.projectResource.value() : null,
   );
-
-  readonly loading = computed(() => this.projectData() === undefined);
-
-  readonly project = computed(() => this.projectData() ?? null);
 
   readonly rows = computed<SuiteSummary[]>(() => this.project()?.suites ?? []);
 
