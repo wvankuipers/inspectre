@@ -128,26 +128,30 @@ export class ProjectDetailComponent {
 
   readonly rows = computed<SuiteSummary[]>(() => this.project()?.suites ?? []);
 
-  // A suite with no runs yet (`latest_run: null`) has no pass/fail/new signal
-  // of its own. We classify it as "pass" for filtering purposes so it stays
-  // neutral, mirroring the "all-zero totals -> pass" convention the main
-  // projects list already uses for projects with no runs yet, rather than
-  // inventing a fourth filter bucket or hiding the row entirely.
-  private classifyRow(row: SuiteSummary): 'pass' | 'fail' | 'new' {
+  // Count-based matching: a suite can match several statuses at once (e.g.
+  // passing and failing tests show under both Pass and Fail). Fail also
+  // matches unbaselined suites. A suite with no runs yet (`latest_run: null`)
+  // has no signal of its own and counts as "pass" so it stays neutral rather
+  // than inventing a fourth bucket or hiding the row.
+  private matches(row: SuiteSummary, status: Status): boolean {
     const stats = row.latest_run;
-    if (!stats) return 'pass';
-    if (stats.unbaselined > 0) return 'new';
-    if (stats.failing > 0) return 'fail';
-    return 'pass';
+    if (!stats) return status === 'pass';
+    switch (status) {
+      case 'pass':
+        return stats.passing > 0 || (stats.failing === 0 && stats.unbaselined === 0);
+      case 'fail':
+        return stats.failing > 0 || stats.unbaselined > 0;
+      case 'new':
+        return stats.unbaselined > 0;
+      default:
+        return false;
+    }
   }
 
   readonly visibleRows = computed<SuiteSummary[]>(() => {
     const statuses = this.activeStatuses();
     if (statuses.size === 0) return this.rows();
-    return this.rows().filter((row) => {
-      const cls = this.classifyRow(row);
-      return statuses.has(cls) || (cls === 'new' && statuses.has('fail'));
-    });
+    return this.rows().filter((row) => [...statuses].some((st) => this.matches(row, st)));
   });
 
   constructor() {
