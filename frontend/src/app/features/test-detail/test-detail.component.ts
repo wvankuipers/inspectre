@@ -1,10 +1,9 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { rxResource, toSignal } from '@angular/core/rxjs-interop';
 import { MatDialog } from '@angular/material/dialog';
 import { MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { catchError, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -37,11 +36,15 @@ export class TestDetailComponent {
   readonly suiteSlug = computed(() => this.params().get('suiteSlug') ?? '');
   readonly key = computed(() => this.params().get('key') ?? '');
 
-  readonly loadError = signal<boolean>(false);
+  private readonly historyResource = rxResource({
+    params: () => ({ project: this.projectSlug(), suite: this.suiteSlug(), key: this.key() }),
+    stream: ({ params }) => this.api.testHistory(params.project, params.suite, params.key),
+  });
 
-  private historyData = signal<TestHistory | undefined>(undefined);
-
-  readonly history = computed(() => this.historyData() ?? null);
+  readonly loadError = computed(() => this.historyResource.status() === 'error');
+  readonly history = computed<TestHistory | null>(() =>
+    this.historyResource.hasValue() ? this.historyResource.value() : null,
+  );
 
   readonly breadcrumbLabel = computed(() => {
     const h = this.history();
@@ -88,26 +91,5 @@ export class TestDetailComponent {
       height: '100vh',
       panelClass: 'image-viewer-panel',
     });
-  }
-
-  constructor() {
-    this.route.paramMap
-      .pipe(
-        switchMap((params) => {
-          this.loadError.set(false);
-          return this.api
-            .testHistory(params.get('projectSlug')!, params.get('suiteSlug')!, params.get('key')!)
-            .pipe(
-              catchError(() => {
-                this.loadError.set(true);
-                return of<TestHistory | null>(null);
-              }),
-            );
-        }),
-        takeUntilDestroyed(),
-      )
-      .subscribe((historyData) => {
-        this.historyData.set(historyData ?? undefined);
-      });
   }
 }

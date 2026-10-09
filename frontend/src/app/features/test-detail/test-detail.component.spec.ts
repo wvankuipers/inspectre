@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { BehaviorSubject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
@@ -343,6 +343,68 @@ describe('TestDetailComponent error state', () => {
     });
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('h1')).toBeNull();
+  });
+
+  it('exposes loadError() true and history() null on API error without throwing', async () => {
+    const { fixture } = await setup({
+      apiSpy: vi.fn().mockReturnValue(throwError(() => new Error('x'))),
+    });
+    const component = fixture.componentInstance;
+    expect(component.loadError()).toBe(true);
+    expect(() => component.history()).not.toThrow();
+    expect(component.history()).toBeNull();
+    expect(component.breadcrumbLabel()).toBe('home-page-chrome-1280x800');
+  });
+});
+
+describe('TestDetailComponent route param change', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  const paramsFor = (key: string) => ({
+    get: (k: string) => {
+      if (k === 'projectSlug') return 'acme-corp';
+      if (k === 'suiteSlug') return 'main-suite';
+      if (k === 'key') return key;
+      return null;
+    },
+  });
+
+  it('refetches history for the new key and clears a previous load error', async () => {
+    const paramMap$ = new BehaviorSubject(paramsFor('first-key'));
+    const apiSpy = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new Error('x')))
+      .mockReturnValue(of(HISTORY));
+
+    await TestBed.configureTestingModule({
+      imports: [TestDetailComponent],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: paramsFor('first-key') }, paramMap: paramMap$ },
+        },
+        { provide: InspectreApiService, useValue: { testHistory: apiSpy } },
+        { provide: MatDialog, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(TestDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+
+    expect(apiSpy).toHaveBeenLastCalledWith('acme-corp', 'main-suite', 'first-key');
+    expect(component.loadError()).toBe(true);
+
+    paramMap$.next(paramsFor('second-key'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(apiSpy).toHaveBeenCalledTimes(2);
+    expect(apiSpy).toHaveBeenLastCalledWith('acme-corp', 'main-suite', 'second-key');
+    expect(component.loadError()).toBe(false);
+    expect(component.history()).toEqual(HISTORY);
   });
 });
 
