@@ -27,7 +27,7 @@ Defined in `backend/core/urls/spa.py`. Consumed only by the Angular frontend; no
 
 | Method | Path                                                                       | View            | Notes |
 | ------ | --------------------------------------------------------------------------- | --------------- | ----- |
-| GET    | `/api/projects/`                                                            | `projects_list` | One row per project, with aggregate totals (`suite_count`, `single_suite_slug`, `last_run_at`, `totals`) |
+| GET    | `/api/projects/`                                                            | `projects_list` | One row per project, with aggregate totals (`suite_count`, `single_suite_slug`, `single_suite_latest_run_seq`, `last_run_at`, `totals`) |
 | GET    | `/api/projects/<slug>/`                                                     | `project_detail` | Project detail: suite list for one project |
 | GET    | `/api/projects/<slug>/validate/`                                            | `project_validate` | Pass/fail/pending verdict for every suite's latest run |
 | GET    | `/api/projects/<slug>/suites/<slug>/`                                       | `suite_detail`  | Latest 5 runs + baselines |
@@ -838,12 +838,14 @@ class ProjectSerializer(serializers.ModelSerializer):
     """
     suite_count = serializers.SerializerMethodField()
     single_suite_slug = serializers.SerializerMethodField()
+    single_suite_latest_run_seq = serializers.SerializerMethodField()
     last_run_at = serializers.SerializerMethodField()
     totals = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
-        fields = ['id', 'name', 'slug', 'suite_count', 'single_suite_slug', 'last_run_at', 'totals']
+        fields = ['id', 'name', 'slug', 'suite_count', 'single_suite_slug',
+                  'single_suite_latest_run_seq', 'last_run_at', 'totals']
 
     def _aggregate(self, obj):
         return self.context['project_aggregates'][obj.id]

@@ -462,7 +462,8 @@ def build_project_aggregates(projects):
 
     Expects `Project` instances with `suites__runs` prefetched (see `projects_list`
     view). For each project: `suite_count`, `single_suite_slug` (the one suite's slug
-    when there's exactly one, else None), `last_run_at` (max `created_at` across each
+    when there's exactly one, else None), `single_suite_latest_run_seq` (that suite's latest
+    run `sequential_id`, None if multi-suite or never run), `last_run_at` (max `created_at` across each
     suite's *current* latest run, or None if no suite has ever run), and `totals`
     (summed passing/failing/unbaselined/flaky across each suite's current latest-run counts;
     a suite with no runs contributes zero to each).
@@ -507,9 +508,11 @@ def build_project_aggregates(projects):
             totals["failing"] += counts["failing"]
             totals["unbaselined"] += counts["unbaselined"]
             totals["flaky"] += counts["flaky"]
+        single_latest = latest_run_by_suite[suites[0].id] if len(suites) == 1 else None
         aggregates[project.id] = {
             "suite_count": len(suites),
             "single_suite_slug": suites[0].slug if len(suites) == 1 else None,
+            "single_suite_latest_run_seq": single_latest.sequential_id if single_latest else None,
             "last_run_at": last_run_at,
             "totals": totals,
         }
@@ -524,12 +527,22 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     suite_count = serializers.SerializerMethodField()
     single_suite_slug = serializers.SerializerMethodField()
+    single_suite_latest_run_seq = serializers.SerializerMethodField()
     last_run_at = serializers.SerializerMethodField()
     totals = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
-        fields = ["id", "name", "slug", "suite_count", "single_suite_slug", "last_run_at", "totals"]
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "suite_count",
+            "single_suite_slug",
+            "single_suite_latest_run_seq",
+            "last_run_at",
+            "totals",
+        ]
 
     def _aggregate(self, obj):
         # No silent-zero fallback here by design: this serializer is not usable without
@@ -544,6 +557,9 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     def get_single_suite_slug(self, obj):
         return self._aggregate(obj)["single_suite_slug"]
+
+    def get_single_suite_latest_run_seq(self, obj):
+        return self._aggregate(obj)["single_suite_latest_run_seq"]
 
     def get_last_run_at(self, obj):
         last_run_at = self._aggregate(obj)["last_run_at"]

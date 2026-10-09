@@ -397,6 +397,35 @@ def test_build_project_aggregates_single_suite_slug_only_when_suite_count_is_one
     assert aggregates[project.id]["single_suite_slug"] == "desktop"
 
 
+def test_build_project_aggregates_single_suite_latest_run_seq(project_factory, suite_factory, run_factory):
+    project = project_factory()
+    suite = suite_factory(project=project, name="Desktop")
+    run_factory(suite=suite)
+    latest = run_factory(suite=suite)
+    projects = _projects_with_prefetch(project.id)
+
+    aggregates = build_project_aggregates(projects)
+
+    assert aggregates[project.id]["single_suite_latest_run_seq"] == latest.sequential_id
+
+
+def test_build_project_aggregates_single_suite_latest_run_seq_is_null_without_runs_or_multi_suite(
+    project_factory, suite_factory, run_factory
+):
+    no_runs = project_factory()
+    suite_factory(project=no_runs, name="Desktop")
+    multi = project_factory()
+    multi_suite = suite_factory(project=multi, name="Desktop")
+    suite_factory(project=multi, name="Mobile")
+    run_factory(suite=multi_suite)
+    projects = _projects_with_prefetch(no_runs.id, multi.id)
+
+    aggregates = build_project_aggregates(projects)
+
+    assert aggregates[no_runs.id]["single_suite_latest_run_seq"] is None
+    assert aggregates[multi.id]["single_suite_latest_run_seq"] is None
+
+
 def test_build_project_aggregates_single_suite_slug_is_null_when_multiple_suites(project_factory, suite_factory):
     project = project_factory()
     suite_factory(project=project, name="Desktop")
