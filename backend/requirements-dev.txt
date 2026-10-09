@@ -39,7 +39,7 @@ click-repl==0.4.1
     # via celery
 coverage==7.16.2
     # via pytest-cov
-django==6.1.1
+django==6.1.2
     # via
     #   django-cors-headers
     #   django-storages
@@ -57,7 +57,7 @@ execnet==2.1.2
     # via pytest-xdist
 factory-boy==3.3.3
     # via inspectre (pyproject.toml)
-faker==40.40.0
+faker==40.41.0
     # via factory-boy
 freezegun==1.5.5
     # via inspectre (pyproject.toml)
