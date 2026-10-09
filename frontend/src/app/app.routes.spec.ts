@@ -58,6 +58,7 @@ describe('router input binding (real appConfig and routes)', () => {
     const cmp = await navigateTo('/projects/p1', ProjectDetailComponent);
     expect(cmp.projectSlug()).toBe('p1');
     expect(api.projectDetail).toHaveBeenCalledWith('p1');
+    expect(api.projectDetail).toHaveBeenCalledTimes(1);
   });
 
   it('binds project and suite path params on the suite route', async () => {
@@ -65,6 +66,7 @@ describe('router input binding (real appConfig and routes)', () => {
     expect(cmp.projectSlug()).toBe('p1');
     expect(cmp.suiteSlug()).toBe('s1');
     expect(api.suite).toHaveBeenCalledWith('p1', 's1');
+    expect(api.suite).toHaveBeenCalledTimes(1);
   });
 
   it('binds slugs and a numeric seqId on the run route', async () => {
@@ -73,6 +75,7 @@ describe('router input binding (real appConfig and routes)', () => {
     expect(cmp.suiteSlug()).toBe('s1');
     expect(cmp.seqId()).toBe(7);
     expect(api.run).toHaveBeenCalledWith('p1', 's1', 7);
+    expect(api.run).toHaveBeenCalledTimes(1);
   });
 
   it('binds slugs and key on the test route', async () => {
@@ -81,6 +84,7 @@ describe('router input binding (real appConfig and routes)', () => {
     expect(cmp.suiteSlug()).toBe('s1');
     expect(cmp.key()).toBe('k1');
     expect(api.testHistory).toHaveBeenCalledWith('p1', 's1', 'k1');
+    expect(api.testHistory).toHaveBeenCalledTimes(1);
   });
 
   it('takes the load-error path for a non-numeric run id', async () => {
