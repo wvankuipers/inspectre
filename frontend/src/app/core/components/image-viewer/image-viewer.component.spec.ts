@@ -85,6 +85,13 @@ describe('ImageViewerComponent', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('.viewer-slot-label')?.textContent?.trim()).toBe('Comparison');
   });
 
+  it('ArrowLeft key moves to the previous slot', async () => {
+    const fixture = await setup({ tests: [makeTest()], index: 0, slot: 'comparison' });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.viewer-slot-label')?.textContent?.trim()).toBe('Baseline');
+  });
+
   it('availableSlots includes compare when baseline_url is non-null', async () => {
     const fixture = await setup({ tests: [makeTest()], index: 0, slot: 'comparison' });
     expect(fixture.componentInstance.availableSlots()).toContain('compare');

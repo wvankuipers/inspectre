@@ -1,4 +1,4 @@
-import { Component, HostListener, OnDestroy, computed, effect, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 
@@ -35,6 +35,7 @@ const SLOT_LABELS: Record<ImageSlot, string> = {
   imports: [MatDialogModule, MatButtonModule],
   templateUrl: './image-viewer.component.html',
   styleUrl: './image-viewer.component.scss',
+  host: { '(document:keydown)': 'onKeydown($event)' },
 })
 export class ImageViewerComponent implements OnDestroy {
   private dialogRef = inject(MatDialogRef<ImageViewerComponent>);
@@ -127,7 +128,6 @@ export class ImageViewerComponent implements OnDestroy {
     img.src = '/image_not_found.jpg';
   }
 
-  @HostListener('document:keydown', ['$event'])
   onKeydown(event: KeyboardEvent): void {
     if (event.key === 'ArrowLeft') this.prevSlot();
     if (event.key === 'ArrowRight') this.nextSlot();
