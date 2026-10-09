@@ -158,7 +158,7 @@ Full-screen modal (`MatDialog`) for inspecting a test's images. Receives the ful
 
 ### `InspectreApiService`
 
-Located at `frontend/src/app/core/api/inspectre-api.service.ts`. All HTTP calls go through this service. Returns `Observable<T>` — route components convert to signals with `toSignal()`.
+Located at `frontend/src/app/core/api/inspectre-api.service.ts`. All HTTP calls go through this service. Returns `Observable<T>`. Detail pages load through `rxResource` (see [Data loading and route params](#data-loading-and-route-params)); the projects list uses `toSignal()`.
 
 | Method | HTTP | Path |
 |--------|------|------|
@@ -316,10 +316,26 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideZonelessChangeDetection(),
-    provideRouter(routes),
+    provideRouter(routes, withComponentInputBinding({ queryParams: false })),
     provideHttpClient(withInterceptors([errorInterceptor, loadingInterceptor])),
   ],
 };
 ```
 
 `provideZonelessChangeDetection()` — Angular zoneless mode. Change detection is signal-driven; there is no `NgZone` and no `zone.js` in the bundle.
+
+`withComponentInputBinding({ queryParams: false })` — path params are bound to component `input()`s; query params are deliberately not bound (components read and write `?status=`, `?q=`, `?sort=`/`?dir=` themselves via the router). There is no `withFetch()` (HttpClient uses its default XHR backend) and no `@angular/animations` / `provideAnimations*` — Material components used here do not need it.
+
+## Data loading and route params
+
+**Route params as inputs.** `ProjectDetailComponent`, `SuiteDetailComponent`, `RunDetailComponent` and `TestDetailComponent` declare `projectSlug`, `suiteSlug`, `key` and `seqId` as `input()`s that the router fills from the path (`seqId` uses `numberAttribute`). They do not read `ActivatedRoute.paramMap`. Query params are the exception: components still read the initial `route.snapshot.queryParamMap` once and write changes back with `router.navigate(..., { queryParamsHandling: 'merge' })`.
+
+**`rxResource` for page loads.** The detail pages (project, suite, run, test) wrap their API call in `rxResource({ params, stream })`, where `params` derives from the slug inputs, so navigating to different slugs reloads the data. Rules:
+- Always guard `value()` with `hasValue()`; reading `value()` while the resource is in the error state throws. Components expose `computed(() => res.hasValue() ? res.value() : null)`.
+- Error state is `status() === 'error'` (exposed as `loadError`), and the page then renders its empty/not-found state. The `ErrorInterceptor` snackbar still fires for the HTTP error.
+- The loading flag comes from `isLoading()`.
+- `RunDetailComponent` merges polling and set-baseline updates into the resource with `update()` (status becomes `local`). Its poll-scheduling `effect` runs only when `status() === 'resolved'` and also reads `value()`, because an `rxResource` can resolve synchronously (status goes resolved -> loading -> resolved within one run), in which case `status()` alone would not change.
+
+**`MatSort` binding.** Components with sortable tables (`ProjectsListComponent`, `ProjectDetailComponent`, `SuiteDetailComponent`) get the sort via `viewChild(MatSort)` (or a template ref name) and bind it inside an `effect`, subscribing to `sortChange` and unsubscribing in `onCleanup`, so the sort is attached when the table is rendered conditionally and subscriptions do not leak.
+
+**Global key listeners.** Components use `host` metadata rather than `@HostListener`; e.g. `ImageViewerComponent` has `host: { '(document:keydown)': 'onKeydown($event)' }`. `SearchFieldComponent` and others use `viewChild()` / `viewChild.required()` signals instead of `@ViewChild`. `tsconfig` no longer sets `experimentalDecorators`, and `strictUnclaimedEventNames` is enabled in the Angular compiler options.
