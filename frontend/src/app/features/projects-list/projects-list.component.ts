@@ -122,19 +122,28 @@ export class ProjectsListComponent {
 
   readonly rows = computed<ProjectSummary[]>(() => this.projects() ?? []);
 
-  private classifyRow(row: ProjectSummary): 'pass' | 'fail' | 'new' {
-    if (row.totals.unbaselined > 0) return 'new';
-    if (row.totals.failing > 0) return 'fail';
-    return 'pass';
+  // Count-based matching: a row can match several statuses at once (e.g. a
+  // row with passing and failing tests shows under both Pass and Fail). Fail
+  // also matches unbaselined rows. A project with all-zero totals (no runs
+  // yet) stays neutral and counts as pass.
+  private matches(row: ProjectSummary, status: Status): boolean {
+    const t = row.totals;
+    switch (status) {
+      case 'pass':
+        return t.passing > 0 || (t.failing === 0 && t.unbaselined === 0);
+      case 'fail':
+        return t.failing > 0 || t.unbaselined > 0;
+      case 'new':
+        return t.unbaselined > 0;
+      default:
+        return false;
+    }
   }
 
   readonly visibleRows = computed<ProjectSummary[]>(() => {
     const statuses = this.activeStatuses();
     if (statuses.size === 0) return this.rows();
-    return this.rows().filter((row) => {
-      const cls = this.classifyRow(row);
-      return statuses.has(cls) || (cls === 'new' && statuses.has('fail'));
-    });
+    return this.rows().filter((row) => [...statuses].some((st) => this.matches(row, st)));
   });
 
   constructor() {

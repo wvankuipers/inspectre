@@ -380,7 +380,9 @@ describe('ProjectsListComponent status filter', () => {
     const names = rows.map((r) => r.name);
     expect(names).toContain('Alpha');
     expect(names).toContain('Delta');
-    expect(rows.length).toBe(2);
+    // Gamma has 2 passing + 3 failing: count-based filter keeps it under pass.
+    expect(names).toContain('Gamma');
+    expect(rows.length).toBe(3);
   });
 
   it('shows failing rows (including unbaselined ones) when fail filter is active', async () => {

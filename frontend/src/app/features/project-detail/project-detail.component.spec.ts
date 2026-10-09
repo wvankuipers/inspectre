@@ -360,7 +360,9 @@ describe('ProjectDetailComponent status filter', () => {
     const names = fixture.componentInstance.visibleRows().map((r) => r.name);
     expect(names).toContain('Desktop');
     expect(names).toContain('Mobile');
-    expect(fixture.componentInstance.visibleRows().length).toBe(2);
+    // Tablet has passing + failing tests: count-based filter keeps it under pass.
+    expect(names).toContain('Tablet');
+    expect(fixture.componentInstance.visibleRows().length).toBe(3);
   });
 
   it('shows failing rows (including unbaselined ones) when fail filter is active', async () => {

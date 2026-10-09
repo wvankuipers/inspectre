@@ -47,13 +47,17 @@ Loads all projects via `GET /api/projects/`. Renders a table with one row per pr
 - **Last run** — relative timestamp from `last_run_at`
 - **Status** — pass/fail/unbaselined/flaky chips from `totals`; only shown for statuses with count > 0. "No tests" pill if the project has no runs yet. Pills are links: multi-suite projects go to `/projects/:proj?status=<pill>` (flaky has no project-level filter, so it links without a query); single-suite projects go to the suite's latest run (`single_suite_latest_run_seq`) with `?status=<pill>`, or to the suite page without a status when it has never run.
 
-The table is sortable by column (persisted to `localStorage` via `SortStateService`). A status filter dropdown (All / Pass / Fail / New) and a search field filter by project name. Both filters apply simultaneously.
+The table is sortable by column (persisted to `localStorage` via `SortStateService`). Status toggle buttons (Pass / Fail / New; click again to clear) and a search field filter by project name. Both filters apply simultaneously. Status filters are seeded from and written to `?status=`.
+
+**Status filter semantics** (project overview and project details) are count-based, so a row can match several statuses: `pass` matches rows with passing tests > 0, `fail` matches rows with failing > 0 or unbaselined > 0, `new` matches rows with unbaselined > 0. A project or suite with nothing failing or unbaselined and no passing tests (no runs yet) counts as `pass`. This guarantees a status pill never links to a filtered view that hides its own row.
+
+**Pill drill-down**: project overview pill -> project details (`?status=<pill>`) -> run overview of the suite's latest run (`?status=<pill>`, the same `?status=` the run-detail filter reads). Special cases: flaky pills have no project/suite-level filter, so on the project overview they link without a query and on project details they go straight to the latest run with `?status=flaky`; single-suite projects skip project details and go directly to the suite's latest run; a suite without runs has no pill links.
 
 ### `ProjectDetailComponent`
 
 Route: `/projects/:projectSlug`
 
-Loads via `GET /api/projects/:proj/`. Renders a table of the project's suites (name, latest run summary), each linking to `SuiteDetailComponent`.
+Loads via `GET /api/projects/:proj/`. Renders a table of the project's suites (name, latest run summary), each linking to `SuiteDetailComponent`. The status pills in the latest-run summary link to that suite's latest run, filtered by the pill's status. Pass / Fail / New toggle buttons and a search field filter the table (see status filter semantics above).
 
 ### `SuiteDetailComponent`
 
@@ -61,7 +65,7 @@ Route: `/projects/:projectSlug/suites/:suiteSlug`
 
 Loads via `GET /api/projects/:proj/suites/:suite/`. Two sections:
 
-**Latest runs tab** — table of up to 5 runs with run number, date, pass/fail/new/flaky chip counts. Rows link to run detail. The table is sortable.
+**Latest runs tab** — table of up to 5 runs with run number, date, pass/fail/new/flaky chip counts. Rows link to run detail; each chip links to that run with `?status=<chip>`. The table is sortable.
 
 **Baselines tab** — table of all current baselines for this suite (name, browser, size, thumbnail). Each thumbnail opens the image viewer modal. A search field filters by test name.
 
