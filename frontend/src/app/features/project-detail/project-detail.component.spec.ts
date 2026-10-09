@@ -228,6 +228,46 @@ describe('ProjectDetailComponent status chips', () => {
   });
 });
 
+describe('ProjectDetailComponent status chip links', () => {
+  afterEach(() => localStorage.clear());
+
+  it('links each pill to the run detail page filtered by that status', async () => {
+    const project: ProjectDetail = {
+      id: 1,
+      name: 'Acme',
+      slug: 'acme',
+      suites: [
+        {
+          id: 1,
+          name: 'Desktop',
+          slug: 'desktop',
+          latest_run: {
+            id: 9,
+            sequential_id: 7,
+            created_at: '2026-01-01T00:00:00Z',
+            passing: 1,
+            failing: 2,
+            unbaselined: 3,
+            flaky: 4,
+          },
+        },
+      ],
+    } as ProjectDetail;
+    await configureModule({ projectDetail: () => of(project) });
+    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const hrefOf = (cls: string) =>
+      el.querySelector(`app-run-stats-chips a.${cls}`)?.getAttribute('href');
+    const base = '/projects/acme/suites/desktop/runs/7?status=';
+    expect(hrefOf('chip-pass')).toBe(base + 'pass');
+    expect(hrefOf('chip-fail')).toBe(base + 'fail');
+    expect(hrefOf('chip-new')).toBe(base + 'new');
+    expect(hrefOf('chip-flaky')).toBe(base + 'flaky');
+  });
+});
+
 describe('ProjectDetailComponent sorting', () => {
   afterEach(() => localStorage.clear());
 

@@ -22,6 +22,7 @@ import { RunDetail, TestRow } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
 
 type StatusFilter = 'pass' | 'fail' | 'new' | 'flaky';
+const STATUS_FILTERS: readonly StatusFilter[] = ['pass', 'fail', 'new', 'flaky'];
 
 @Component({
   selector: 'app-run-detail',
@@ -206,7 +207,11 @@ export class RunDetailComponent {
   readonly pendingId = signal<Set<number>>(new Set());
   readonly searchTerm = signal<string>(this.initialQueryParams.get('q') ?? '');
   readonly activeStatuses = signal<Set<StatusFilter>>(
-    this.readInitialSet('status') as Set<StatusFilter>,
+    new Set(
+      Array.from(this.readInitialSet('status')).filter((v): v is StatusFilter =>
+        STATUS_FILTERS.includes(v as StatusFilter),
+      ),
+    ),
   );
   readonly activeBrowsers = signal<Set<string>>(this.readInitialSet('browser'));
   readonly activeSizes = signal<Set<string>>(this.readInitialSet('size'));

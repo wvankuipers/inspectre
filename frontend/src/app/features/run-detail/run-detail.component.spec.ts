@@ -1260,6 +1260,13 @@ describe('RunDetailComponent query param sync', () => {
     TestBed.resetTestingModule();
   });
 
+  it('ignores unknown values in the ?status= query param', async () => {
+    const fixture = await setupWithQueryParams({
+      queryParams: { status: 'bogus,flaky,PASS,new' },
+    });
+    expect(fixture.componentInstance.activeStatuses()).toEqual(new Set(['flaky', 'new']));
+  });
+
   it('seeds search/status/browser/size/sort signals from URL query params on init', async () => {
     const fixture = await setupWithQueryParams({
       queryParams: {
