@@ -1,6 +1,16 @@
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
-import { rxResource, takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import {
+  Component,
+  DestroyRef,
+  computed,
+  effect,
+  inject,
+  input,
+  numberAttribute,
+  signal,
+  untracked,
+} from '@angular/core';
+import { rxResource, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -91,13 +101,9 @@ export class RunDetailComponent {
 
   private readonly searchWrite$ = new Subject<string>();
 
-  private params = toSignal(this.route.paramMap, {
-    initialValue: this.route.snapshot.paramMap,
-  });
-
-  readonly projectSlug = computed(() => this.params().get('projectSlug') ?? '');
-  readonly suiteSlug = computed(() => this.params().get('suiteSlug') ?? '');
-  readonly seqId = computed(() => Number(this.params().get('seqId') ?? 0));
+  readonly projectSlug = input('');
+  readonly suiteSlug = input('');
+  readonly seqId = input(0, { transform: numberAttribute });
 
   private readonly runResource = rxResource({
     params: () => ({ project: this.projectSlug(), suite: this.suiteSlug(), seq: this.seqId() }),

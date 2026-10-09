@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
-import { ActivatedRoute, provideRouter } from '@angular/router';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { provideRouter } from '@angular/router';
+import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
@@ -80,6 +80,14 @@ const HISTORY: TestHistory = {
   ],
 };
 
+function createFixture(key: string) {
+  const fixture = TestBed.createComponent(TestDetailComponent);
+  fixture.componentRef.setInput('projectSlug', 'acme-corp');
+  fixture.componentRef.setInput('suiteSlug', 'main-suite');
+  fixture.componentRef.setInput('key', key);
+  return fixture;
+}
+
 async function setup({
   apiSpy = vi.fn().mockReturnValue(of(HISTORY)),
   key = 'home-page-chrome-1280x800',
@@ -89,26 +97,12 @@ async function setup({
     imports: [TestDetailComponent],
     providers: [
       provideRouter([]),
-      {
-        provide: ActivatedRoute,
-        useValue: {
-          snapshot: { paramMap: { get: () => key } },
-          paramMap: of({
-            get: (k: string) => {
-              if (k === 'projectSlug') return 'acme-corp';
-              if (k === 'suiteSlug') return 'main-suite';
-              if (k === 'key') return key;
-              return null;
-            },
-          }),
-        },
-      },
       { provide: InspectreApiService, useValue: { testHistory: apiSpy } },
       { provide: MatDialog, useValue: dialogSpy },
     ],
   }).compileComponents();
 
-  const fixture = TestBed.createComponent(TestDetailComponent);
+  const fixture = createFixture(key);
   fixture.detectChanges();
   await fixture.whenStable();
   return { fixture, dialogSpy };
@@ -360,17 +354,7 @@ describe('TestDetailComponent error state', () => {
 describe('TestDetailComponent route param change', () => {
   afterEach(() => TestBed.resetTestingModule());
 
-  const paramsFor = (key: string) => ({
-    get: (k: string) => {
-      if (k === 'projectSlug') return 'acme-corp';
-      if (k === 'suiteSlug') return 'main-suite';
-      if (k === 'key') return key;
-      return null;
-    },
-  });
-
   it('refetches history for the new key and clears a previous load error', async () => {
-    const paramMap$ = new BehaviorSubject(paramsFor('first-key'));
     const apiSpy = vi
       .fn()
       .mockReturnValueOnce(throwError(() => new Error('x')))
@@ -380,16 +364,12 @@ describe('TestDetailComponent route param change', () => {
       imports: [TestDetailComponent],
       providers: [
         provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: { snapshot: { paramMap: paramsFor('first-key') }, paramMap: paramMap$ },
-        },
         { provide: InspectreApiService, useValue: { testHistory: apiSpy } },
         { provide: MatDialog, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
 
-    const fixture = TestBed.createComponent(TestDetailComponent);
+    const fixture = createFixture('first-key');
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -397,7 +377,7 @@ describe('TestDetailComponent route param change', () => {
     expect(apiSpy).toHaveBeenLastCalledWith('acme-corp', 'main-suite', 'first-key');
     expect(component.loadError()).toBe(true);
 
-    paramMap$.next(paramsFor('second-key'));
+    fixture.componentRef.setInput('key', 'second-key');
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -466,5 +446,15 @@ describe('TestDetailComponent breadcrumb', () => {
     const nav = el.querySelector('nav.breadcrumb');
     expect(nav?.textContent).toContain('Home page (firefox, 375x667)');
     expect(nav?.textContent).not.toContain('(chrome, 1280x800)');
+  });
+});
+
+describe('TestDetailComponent route inputs', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('accepts projectSlug, suiteSlug and key as inputs and loads history with them', async () => {
+    const apiSpy = vi.fn().mockReturnValue(of(HISTORY));
+    await setup({ apiSpy, key: 'k-1' });
+    expect(apiSpy).toHaveBeenCalledWith('acme-corp', 'main-suite', 'k-1');
   });
 });

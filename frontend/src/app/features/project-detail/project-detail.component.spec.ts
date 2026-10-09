@@ -67,6 +67,14 @@ function paramMapOf(values: Record<string, string>) {
   return { get: (k: string) => values[k] ?? null };
 }
 
+let currentSlug = 'acme';
+
+function createFixture() {
+  const fixture = TestBed.createComponent(ProjectDetailComponent);
+  fixture.componentRef.setInput('projectSlug', currentSlug);
+  return fixture;
+}
+
 function configureModule(opts: {
   projectDetail?: () => ReturnType<InspectreApiService['projectDetail']>;
   sortGet?: ReturnType<typeof vi.fn>;
@@ -78,7 +86,7 @@ function configureModule(opts: {
   const sortServiceGet = opts.sortGet ?? vi.fn().mockReturnValue({ active: '', direction: '' });
   const sortServiceSave = opts.sortSave ?? vi.fn();
   const queryParamMap = paramMapOf(opts.queryParams ?? {});
-  const projectSlug = opts.projectSlug ?? 'acme';
+  currentSlug = opts.projectSlug ?? 'acme';
 
   return TestBed.configureTestingModule({
     imports: [ProjectDetailComponent],
@@ -92,11 +100,7 @@ function configureModule(opts: {
       {
         provide: ActivatedRoute,
         useValue: {
-          snapshot: {
-            paramMap: paramMapOf({ projectSlug }),
-            queryParamMap,
-          },
-          paramMap: of(paramMapOf({ projectSlug })),
+          snapshot: { queryParamMap },
           queryParamMap: of(queryParamMap),
         },
       },
@@ -110,7 +114,7 @@ describe('ProjectDetailComponent fetch', () => {
   it('fetches project detail by projectSlug route param', async () => {
     const spy = vi.fn(() => of(PROJECT));
     await configureModule({ projectDetail: spy, projectSlug: 'acme' });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(spy).toHaveBeenCalled();
@@ -118,7 +122,7 @@ describe('ProjectDetailComponent fetch', () => {
 
   it('renders project name in an h1', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
@@ -127,7 +131,7 @@ describe('ProjectDetailComponent fetch', () => {
 
   it('renders one row per suite', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance.rows().length).toBe(4);
@@ -139,7 +143,7 @@ describe('ProjectDetailComponent breadcrumb', () => {
 
   it('renders a breadcrumb back to /projects and the project name', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -159,7 +163,7 @@ describe('ProjectDetailComponent suite links', () => {
 
   it('links suite name to the suite detail route', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -172,7 +176,7 @@ describe('ProjectDetailComponent suite links', () => {
 
   it('links the last-run cell to the specific run when latest_run is present', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -185,7 +189,7 @@ describe('ProjectDetailComponent suite links', () => {
 
   it('shows a placeholder (no crash) for the last-run cell when latest_run is null', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -203,7 +207,7 @@ describe('ProjectDetailComponent status chips', () => {
 
   it('renders run-stats chips for a suite with a latest_run', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -214,7 +218,7 @@ describe('ProjectDetailComponent status chips', () => {
 
   it('does not render run-stats chips for a suite with no runs yet, and shows a neutral placeholder', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -251,7 +255,7 @@ describe('ProjectDetailComponent status chip links', () => {
       ],
     } as ProjectDetail;
     await configureModule({ projectDetail: () => of(project) });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -271,7 +275,7 @@ describe('ProjectDetailComponent sorting', () => {
   it('restores sort from SortStateService under the "project-detail" key', async () => {
     const getSpy = vi.fn().mockReturnValue({ active: 'suite', direction: 'asc' });
     await configureModule({ sortGet: getSpy });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(getSpy).toHaveBeenCalledWith('project-detail');
@@ -280,7 +284,7 @@ describe('ProjectDetailComponent sorting', () => {
   it('saves sort to SortStateService under the "project-detail" key on sort change', async () => {
     const saveSpy = vi.fn();
     await configureModule({ sortSave: saveSpy });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -296,7 +300,7 @@ describe('ProjectDetailComponent sorting', () => {
     const saveSpy = vi.fn();
     const project$ = new BehaviorSubject<ProjectDetail>(PROJECT);
     await configureModule({ sortSave: saveSpy, projectDetail: () => project$ });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const oldSort = fixture.componentInstance['matSort']()!;
@@ -316,7 +320,7 @@ describe('ProjectDetailComponent sorting', () => {
 
   it('sortingDataAccessor returns suite name and last-run timestamp (null as earliest)', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const ds = fixture.componentInstance.dataSource;
@@ -333,7 +337,7 @@ describe('ProjectDetailComponent search', () => {
 
   it('shows only matching rows when search term matches suite name', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -347,7 +351,7 @@ describe('ProjectDetailComponent search', () => {
 
   it('shows no-data row when search term matches nothing', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -363,7 +367,7 @@ describe('ProjectDetailComponent status filter', () => {
 
   it('shows all rows when no status filter is active', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance.visibleRows().length).toBe(4);
@@ -371,7 +375,7 @@ describe('ProjectDetailComponent status filter', () => {
 
   it('classifies suites with no runs yet as "pass" for filter purposes', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance.toggleStatus('pass');
@@ -386,7 +390,7 @@ describe('ProjectDetailComponent status filter', () => {
 
   it('shows failing rows (including unbaselined ones) when fail filter is active', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance.toggleStatus('fail');
@@ -399,7 +403,7 @@ describe('ProjectDetailComponent status filter', () => {
 
   it('shows only new rows when new filter is active', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance.toggleStatus('new');
@@ -411,7 +415,7 @@ describe('ProjectDetailComponent status filter', () => {
 
   it('clears filter when the same status is toggled twice', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance.toggleStatus('pass');
@@ -429,7 +433,7 @@ describe('ProjectDetailComponent query params', () => {
 
   it('seeds searchTerm, activeStatuses, and sortState from URL query params on init', async () => {
     await configureModule({ queryParams: { q: 'desk', status: 'fail,new', sort: 'suite', dir: 'desc' } });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -440,7 +444,7 @@ describe('ProjectDetailComponent query params', () => {
 
   it('updates the URL query params immediately when sort changes', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const router = TestBed.inject(Router);
@@ -462,7 +466,7 @@ describe('ProjectDetailComponent query params', () => {
 
   it('updates the URL query params immediately when a status filter is toggled', async () => {
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const router = TestBed.inject(Router);
@@ -481,7 +485,7 @@ describe('ProjectDetailComponent query params', () => {
   it('debounces search term updates to the URL by ~300ms', async () => {
     vi.useFakeTimers();
     await configureModule({});
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await vi.advanceTimersByTimeAsync(0);
     const router = TestBed.inject(Router);
@@ -511,7 +515,7 @@ describe('ProjectDetailComponent empty state', () => {
   it('shows an empty state when the project has zero suites', async () => {
     const emptyProject: ProjectDetail = { id: 2, name: 'Bare', slug: 'bare', suites: [] };
     await configureModule({ projectDetail: () => of(emptyProject), projectSlug: 'bare' });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -525,7 +529,7 @@ describe('ProjectDetailComponent API failure', () => {
 
   it('renders without crashing when api.projectDetail() errors', async () => {
     await configureModule({ projectDetail: () => throwError(() => new Error('network')) });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance).toBeTruthy();
@@ -533,7 +537,7 @@ describe('ProjectDetailComponent API failure', () => {
 
   it('shows an error/empty state and no h1 when api.projectDetail() errors', async () => {
     await configureModule({ projectDetail: () => throwError(() => new Error('network')) });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -542,7 +546,7 @@ describe('ProjectDetailComponent API failure', () => {
   });
   it('exposes project() null and loading() false on API error without throwing', async () => {
     await configureModule({ projectDetail: () => throwError(() => new Error('x')) });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -559,7 +563,7 @@ describe('ProjectDetailComponent loading', () => {
   it('is loading until the first response arrives, without the not-found message', async () => {
     const response$ = new Subject<ProjectDetail>();
     await configureModule({ projectDetail: () => response$ });
-    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    const fixture = createFixture();
     // No whenStable() here: the in-flight request keeps the app unstable.
     fixture.detectChanges();
     const component = fixture.componentInstance;

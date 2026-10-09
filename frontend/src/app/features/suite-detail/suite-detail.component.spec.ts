@@ -66,6 +66,18 @@ const SUITE: SuiteDetail = {
   ],
 };
 
+const NO_QUERY_PARAMS_ROUTE = {
+  provide: ActivatedRoute,
+  useValue: { snapshot: { queryParamMap: { get: () => null } } },
+};
+
+function createSuite() {
+  const fixture = TestBed.createComponent(SuiteDetailComponent);
+  fixture.componentRef.setInput('projectSlug', 'proj');
+  fixture.componentRef.setInput('suiteSlug', 'web');
+  return fixture;
+}
+
 describe('SuiteDetailComponent sorting', () => {
   let sortServiceGet: ReturnType<typeof vi.fn>;
   let sortServiceSave: ReturnType<typeof vi.fn>;
@@ -83,13 +95,7 @@ describe('SuiteDetailComponent sorting', () => {
       imports: [SuiteDetailComponent],
       providers: [
         provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
-          },
-        },
+        NO_QUERY_PARAMS_ROUTE,
         { provide: InspectreApiService, useValue: { suite: () => of(SUITE) } },
         { provide: SortStateService, useValue: { get: sortServiceGet, save: sortServiceSave } },
       ],
@@ -99,21 +105,21 @@ describe('SuiteDetailComponent sorting', () => {
   afterEach(() => localStorage.clear());
 
   it('restores runs sort from SortStateService on init', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(sortServiceGet).toHaveBeenCalledWith('suite-runs');
   });
 
   it('restores baselines sort from SortStateService on init', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(sortServiceGet).toHaveBeenCalledWith('suite-baselines');
   });
 
   it('sortedRuns() returns runs sorted by seq desc by default', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -123,7 +129,7 @@ describe('SuiteDetailComponent sorting', () => {
   });
 
   it('baselinesDataSource is populated with suite baselines on load', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -132,7 +138,7 @@ describe('SuiteDetailComponent sorting', () => {
   });
 
   it('saves runs sort on change', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -144,7 +150,7 @@ describe('SuiteDetailComponent sorting', () => {
   });
 
   it('saves baselines sort to SortStateService on sort change', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -156,7 +162,7 @@ describe('SuiteDetailComponent sorting', () => {
   });
 
   it('baselinesDataSource filterPredicate matches on name only', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -166,7 +172,7 @@ describe('SuiteDetailComponent sorting', () => {
   });
 
   it('renders project name in h1 heading', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
@@ -190,13 +196,7 @@ describe('SuiteDetailComponent baselines search', () => {
       imports: [SuiteDetailComponent],
       providers: [
         provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
-          },
-        },
+        NO_QUERY_PARAMS_ROUTE,
         { provide: InspectreApiService, useValue: { suite: () => of(SUITE) } },
         { provide: SortStateService, useValue: { get: sortServiceGet, save: sortServiceSave } },
       ],
@@ -204,7 +204,7 @@ describe('SuiteDetailComponent baselines search', () => {
   });
 
   it('shows only matching baselines when search term matches name', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -217,7 +217,7 @@ describe('SuiteDetailComponent baselines search', () => {
   });
 
   it('shows no results when baselines search matches nothing', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -245,13 +245,7 @@ describe('SuiteDetailComponent unbaselined chip', () => {
       imports: [SuiteDetailComponent],
       providers: [
         provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
-          },
-        },
+        NO_QUERY_PARAMS_ROUTE,
         { provide: InspectreApiService, useValue: { suite: () => of(SUITE) } },
         { provide: SortStateService, useValue: { get: sortServiceGet, save: sortServiceSave } },
       ],
@@ -259,7 +253,7 @@ describe('SuiteDetailComponent unbaselined chip', () => {
   });
 
   it('renders "N new" chip for runs with unbaselined > 0', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('.chip');
@@ -268,7 +262,7 @@ describe('SuiteDetailComponent unbaselined chip', () => {
   });
 
   it('does not render "new" chip for runs with unbaselined === 0', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('.chip');
@@ -301,13 +295,7 @@ describe('SuiteDetailComponent status chip links', () => {
       imports: [SuiteDetailComponent],
       providers: [
         provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
-          },
-        },
+        NO_QUERY_PARAMS_ROUTE,
         { provide: InspectreApiService, useValue: { suite: () => of(suite) } },
         {
           provide: SortStateService,
@@ -315,7 +303,7 @@ describe('SuiteDetailComponent status chip links', () => {
         },
       ],
     }).compileComponents();
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -347,13 +335,7 @@ describe('SuiteDetailComponent tabs', () => {
         // Tab bodies attach on transition end, which never fires in the test DOM.
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
         provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
-          },
-        },
+        NO_QUERY_PARAMS_ROUTE,
         { provide: InspectreApiService, useValue: { suite: () => of(SUITE) } },
         { provide: SortStateService, useValue: { get: sortServiceGet, save: sortServiceSave } },
       ],
@@ -361,7 +343,7 @@ describe('SuiteDetailComponent tabs', () => {
   });
 
   it('renders both tab labels', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const labels = Array.from(
@@ -372,7 +354,7 @@ describe('SuiteDetailComponent tabs', () => {
   });
 
   it('renders baselines search field after switching to Baselines tab', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     // Click the Baselines tab to activate it
@@ -404,13 +386,7 @@ describe('SuiteDetailComponent API failure', () => {
       imports: [SuiteDetailComponent],
       providers: [
         provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
-          },
-        },
+        NO_QUERY_PARAMS_ROUTE,
         {
           provide: InspectreApiService,
           useValue: { suite: () => throwError(() => new Error('network')) },
@@ -421,14 +397,14 @@ describe('SuiteDetailComponent API failure', () => {
   });
 
   it('renders without crashing when api.suite() errors', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance).toBeTruthy();
   });
 
   it('does not render suite h1 when api.suite() errors (suite is null)', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
@@ -436,7 +412,7 @@ describe('SuiteDetailComponent API failure', () => {
   });
 
   it('exposes suite() null on API error without throwing', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -472,11 +448,7 @@ describe('SuiteDetailComponent query params', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: {
-              paramMap: { get: () => 'test' },
-              queryParamMap: paramMap,
-            },
-            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
+            snapshot: { queryParamMap: paramMap },
             queryParamMap: of(paramMap),
           },
         },
@@ -494,7 +466,7 @@ describe('SuiteDetailComponent query params', () => {
       baselinesSort: 'browser',
       baselinesDir: 'desc',
     });
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -510,7 +482,7 @@ describe('SuiteDetailComponent query params', () => {
       if (key === 'suite-baselines') return { active: 'name', direction: 'asc' };
       return { active: '', direction: '' };
     });
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -521,7 +493,7 @@ describe('SuiteDetailComponent query params', () => {
 
   it('writes runsSort/runsDir to the URL immediately when runs sort changes', async () => {
     await configureWithQueryParams({});
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const router = TestBed.inject(Router);
@@ -540,7 +512,7 @@ describe('SuiteDetailComponent query params', () => {
 
   it('writes baselinesSort/baselinesDir to the URL immediately when baselines sort changes', async () => {
     await configureWithQueryParams({});
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     const router = TestBed.inject(Router);
@@ -560,7 +532,7 @@ describe('SuiteDetailComponent query params', () => {
   it('debounces baselinesQ updates to the URL by ~300ms', async () => {
     vi.useFakeTimers();
     await configureWithQueryParams({});
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await vi.advanceTimersByTimeAsync(0);
     const router = TestBed.inject(Router);
@@ -592,13 +564,7 @@ describe('SuiteDetailComponent breadcrumb', () => {
       imports: [SuiteDetailComponent],
       providers: [
         provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            snapshot: { paramMap: { get: () => 'test' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'projectSlug' ? 'proj' : 'web') }),
-          },
-        },
+        NO_QUERY_PARAMS_ROUTE,
         { provide: InspectreApiService, useValue: { suite: () => of(SUITE) } },
         {
           provide: SortStateService,
@@ -611,7 +577,7 @@ describe('SuiteDetailComponent breadcrumb', () => {
   afterEach(() => localStorage.clear());
 
   it('links the project name to the project suites overview', async () => {
-    const fixture = TestBed.createComponent(SuiteDetailComponent);
+    const fixture = createSuite();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();

@@ -1,9 +1,9 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
-import { rxResource, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
 import { MatDialog } from '@angular/material/dialog';
 import { MatTableModule } from '@angular/material/table';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -22,19 +22,14 @@ import { TestHistory, TestHistoryEntry } from '../../core/models/api';
   styleUrl: './test-detail.component.scss',
 })
 export class TestDetailComponent {
-  private route = inject(ActivatedRoute);
   private api = inject(InspectreApiService);
   private dialog = inject(MatDialog);
 
   readonly columns = ['run', 'date', 'thumbnail', 'status'];
 
-  private params = toSignal(this.route.paramMap, {
-    initialValue: this.route.snapshot.paramMap,
-  });
-
-  readonly projectSlug = computed(() => this.params().get('projectSlug') ?? '');
-  readonly suiteSlug = computed(() => this.params().get('suiteSlug') ?? '');
-  readonly key = computed(() => this.params().get('key') ?? '');
+  readonly projectSlug = input('');
+  readonly suiteSlug = input('');
+  readonly key = input('');
 
   private readonly historyResource = rxResource({
     params: () => ({ project: this.projectSlug(), suite: this.suiteSlug(), key: this.key() }),

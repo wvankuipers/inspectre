@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
-import { Component, DestroyRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { rxResource, takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, computed, effect, inject, input, signal, viewChild } from '@angular/core';
+import { rxResource, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
@@ -80,11 +80,7 @@ export class ProjectDetailComponent {
     });
   }
 
-  private params = toSignal(this.route.paramMap, {
-    initialValue: this.route.snapshot.paramMap,
-  });
-
-  readonly projectSlug = computed(() => this.params().get('projectSlug') ?? '');
+  readonly projectSlug = input('');
 
   private readonly chipLinks = new ChipLinkCache();
 

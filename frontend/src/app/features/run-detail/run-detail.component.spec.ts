@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSelectChange } from '@angular/material/select';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
-import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { RunDetail, TestRow } from '../../core/models/api';
@@ -215,6 +215,14 @@ const RUN_WITH_THUMBS: RunDetail = {
   ],
 };
 
+function createRun(seqId = 1) {
+  const fixture = TestBed.createComponent(RunDetailComponent);
+  fixture.componentRef.setInput('projectSlug', 'test');
+  fixture.componentRef.setInput('suiteSlug', 'test');
+  fixture.componentRef.setInput('seqId', seqId);
+  return fixture;
+}
+
 describe('RunDetailComponent sorting', () => {
   let sortServiceGet: ReturnType<typeof vi.fn>;
   let sortServiceSave: ReturnType<typeof vi.fn>;
@@ -231,8 +239,7 @@ describe('RunDetailComponent sorting', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -247,14 +254,14 @@ describe('RunDetailComponent sorting', () => {
   afterEach(() => localStorage.clear());
 
   it('restores sort from SortStateService on init', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(sortServiceGet).toHaveBeenCalledWith('run-tests');
   });
 
   it('sortedTests() returns tests sorted by name asc', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -264,7 +271,7 @@ describe('RunDetailComponent sorting', () => {
   });
 
   it('sortedTests() returns passing tests first when sorted by result asc', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -275,7 +282,7 @@ describe('RunDetailComponent sorting', () => {
   });
 
   it('saves sort on change', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -287,7 +294,7 @@ describe('RunDetailComponent sorting', () => {
   });
 
   it('renders project name in h1 heading', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
@@ -309,8 +316,7 @@ describe('RunDetailComponent filtering', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -324,7 +330,7 @@ describe('RunDetailComponent filtering', () => {
       ],
     }).compileComponents();
 
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     component = fixture.componentInstance;
@@ -418,8 +424,7 @@ describe('RunDetailComponent browser/size filtering', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '4' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '4' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -437,7 +442,7 @@ describe('RunDetailComponent browser/size filtering', () => {
       ],
     }).compileComponents();
 
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun(4);
     fixture.detectChanges();
     await fixture.whenStable();
     component = fixture.componentInstance;
@@ -507,8 +512,7 @@ describe('RunDetailComponent empty run', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '2' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '2' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -530,7 +534,7 @@ describe('RunDetailComponent empty run', () => {
   afterEach(() => localStorage.clear());
 
   it('does not show filter empty-state when run has no tests', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun(2);
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -554,8 +558,7 @@ describe('RunDetailComponent onImgError guard', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -569,7 +572,7 @@ describe('RunDetailComponent onImgError guard', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(RunDetailComponent);
+    fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     component = fixture.componentInstance;
@@ -618,8 +621,7 @@ describe('RunDetailComponent rebaseline refresh', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -633,7 +635,7 @@ describe('RunDetailComponent rebaseline refresh', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(RunDetailComponent);
+    fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     component = fixture.componentInstance;
@@ -681,8 +683,7 @@ describe('RunDetailComponent image viewer', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '3' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '3' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -702,7 +703,7 @@ describe('RunDetailComponent image viewer', () => {
       .overrideProvider(MatDialog, { useValue: { open: dialogOpen } })
       .compileComponents();
 
-    fixture = TestBed.createComponent(RunDetailComponent);
+    fixture = createRun(3);
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -745,8 +746,7 @@ describe('RunDetailComponent API failure', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -766,14 +766,14 @@ describe('RunDetailComponent API failure', () => {
   });
 
   it('renders without crashing when api.run() errors', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.componentInstance).toBeTruthy();
   });
 
   it('does not render the page h1 when api.run() errors (run is null)', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const h1 = (fixture.nativeElement as HTMLElement).querySelector('h1');
@@ -781,7 +781,7 @@ describe('RunDetailComponent API failure', () => {
   });
 
   it('exposes loadError() true and run() null on API error without throwing', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -806,8 +806,7 @@ async function setup({
       {
         provide: ActivatedRoute,
         useValue: {
-          snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-          paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+          snapshot: { queryParamMap: { get: () => null } },
         },
       },
       {
@@ -821,7 +820,7 @@ async function setup({
     ],
   }).compileComponents();
 
-  const fixture = TestBed.createComponent(RunDetailComponent);
+  const fixture = createRun();
   fixture.detectChanges();
   await fixture.whenStable();
   return fixture;
@@ -963,8 +962,7 @@ describe('RunDetailComponent thumbnail skeleton', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: { get: () => '1' }, queryParamMap: { get: () => null } },
-            paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -982,7 +980,7 @@ describe('RunDetailComponent thumbnail skeleton', () => {
   afterEach(() => localStorage.clear());
 
   it('thumbnail wrapper has img-skeleton class before load fires', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
@@ -991,7 +989,7 @@ describe('RunDetailComponent thumbnail skeleton', () => {
   });
 
   it('thumbnail wrapper switches to img-loaded after load event fires', async () => {
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     const comp = fixture.componentInstance;
     fixture.detectChanges();
     await fixture.whenStable();
@@ -1218,10 +1216,6 @@ describe('RunDetailComponent pending-test polling', () => {
 });
 
 describe('RunDetailComponent switching runs while polling', () => {
-  const paramsFor = (seqId: number) => ({
-    get: (k: string) => (k === 'seqId' ? String(seqId) : 'test'),
-  });
-
   const RUN_ONE: RunDetail = {
     ...PENDING_RUN,
     id: 10,
@@ -1237,7 +1231,6 @@ describe('RunDetailComponent switching runs while polling', () => {
 
   async function setupSwitchable(testsBulkSpy: ReturnType<typeof vi.fn>) {
     localStorage.clear();
-    const paramMap$ = new BehaviorSubject(paramsFor(1));
     const runSpy = vi.fn((_p: string, _s: string, seq: number) => of(seq === 1 ? RUN_ONE : RUN_TWO));
 
     await TestBed.configureTestingModule({
@@ -1247,8 +1240,7 @@ describe('RunDetailComponent switching runs while polling', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            snapshot: { paramMap: paramsFor(1), queryParamMap: { get: () => null } },
-            paramMap: paramMap$,
+            snapshot: { queryParamMap: { get: () => null } },
           },
         },
         {
@@ -1262,14 +1254,14 @@ describe('RunDetailComponent switching runs while polling', () => {
       ],
     }).compileComponents();
 
-    const fixture = TestBed.createComponent(RunDetailComponent);
+    const fixture = createRun();
     fixture.detectChanges();
     const stable = fixture.whenStable();
     await vi.advanceTimersByTimeAsync(0);
     await stable;
 
     const switchTo = async (seqId: number) => {
-      paramMap$.next(paramsFor(seqId));
+      fixture.componentRef.setInput('seqId', seqId);
       fixture.detectChanges();
       const switched = fixture.whenStable();
       await vi.advanceTimersByTimeAsync(0);
@@ -1374,10 +1366,8 @@ async function setupWithQueryParams({
         provide: ActivatedRoute,
         useValue: {
           snapshot: {
-            paramMap: { get: () => '1' },
             queryParamMap: buildQueryParamMap(queryParams),
           },
-          paramMap: of({ get: (k: string) => (k === 'seqId' ? '1' : 'test') }),
         },
       },
       {
@@ -1390,7 +1380,7 @@ async function setupWithQueryParams({
     .overrideProvider(Router, { useValue: { navigate: navigateSpy } })
     .compileComponents();
 
-  const fixture = TestBed.createComponent(RunDetailComponent);
+  const fixture = createRun();
   fixture.detectChanges();
   await fixture.whenStable();
   return fixture;
