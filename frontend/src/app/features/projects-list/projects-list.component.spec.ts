@@ -111,6 +111,7 @@ describe('ProjectsListComponent sorting', () => {
     const fixture = TestBed.createComponent(ProjectsListComponent);
     fixture.detectChanges();
     await fixture.whenStable();
+    const oldSort = fixture.componentInstance['matSort']()!;
     // Empty data removes the table from the DOM; new data recreates it.
     projects$.next([]);
     fixture.detectChanges();
@@ -118,7 +119,11 @@ describe('ProjectsListComponent sorting', () => {
     projects$.next(PROJECTS);
     fixture.detectChanges();
     await fixture.whenStable();
+    expect(fixture.componentInstance['matSort']()).not.toBe(oldSort);
     saveSpy.mockClear();
+    // A subscription left on the destroyed MatSort must not react.
+    oldSort.sortChange.emit({ active: 'project', direction: 'asc' });
+    expect(saveSpy).not.toHaveBeenCalled();
     fixture.componentInstance['matSort']()!.sort({ id: 'project', start: 'asc', disableClear: false });
     expect(saveSpy).toHaveBeenCalledTimes(1);
   });

@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { BehaviorSubject, of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { ProjectDetail } from '../../core/models/api';
@@ -290,6 +290,28 @@ describe('ProjectDetailComponent sorting', () => {
       disableClear: false,
     });
     expect(saveSpy).toHaveBeenCalledWith('project-detail', expect.objectContaining({ active: 'suite' }));
+  });
+
+  it('ignores a destroyed MatSort after the table is recreated', async () => {
+    const saveSpy = vi.fn();
+    const project$ = new BehaviorSubject<ProjectDetail>(PROJECT);
+    await configureModule({ sortSave: saveSpy, projectDetail: () => project$ });
+    const fixture = TestBed.createComponent(ProjectDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const oldSort = fixture.componentInstance['matSort']()!;
+    // No suites removes the table from the DOM; suites again recreates it.
+    project$.next({ ...PROJECT, suites: [] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    project$.next(PROJECT);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance['matSort']()).not.toBe(oldSort);
+    oldSort.sortChange.emit({ active: 'suite', direction: 'asc' });
+    expect(saveSpy).not.toHaveBeenCalled();
+    fixture.componentInstance['matSort']()!.sort({ id: 'suite', start: 'asc', disableClear: false });
+    expect(saveSpy).toHaveBeenCalledTimes(1);
   });
 
   it('sortingDataAccessor returns suite name and last-run timestamp (null as earliest)', async () => {
