@@ -16,7 +16,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subject, catchError, debounceTime, of } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
-import { RunStatsChipsComponent } from '../../core/components/run-stats-chips/run-stats-chips.component';
+import { ChipLinkCache } from '../../core/components/run-stats-chips/chip-link-cache';
+import { ChipLinkFn, RunStatsChipsComponent } from '../../core/components/run-stats-chips/run-stats-chips.component';
 import { SearchFieldComponent } from '../../core/components/search-field/search-field.component';
 import { ProjectSummary } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
@@ -74,6 +75,15 @@ export class ProjectsListComponent {
   readonly activeStatuses = signal<Set<Status>>(this.readInitialStatuses());
   readonly dataSource = new MatTableDataSource<ProjectSummary>();
 
+  private readonly chipLinks = new ChipLinkCache();
+
+  chipLinkFor(row: ProjectSummary): ChipLinkFn {
+    if (!row.single_suite_slug) return this.chipLinks.get(['/projects', row.slug], 'except-flaky');
+    const suite = ['/projects', row.slug, 'suites', row.single_suite_slug];
+    const seq = row.single_suite_latest_run_seq;
+    return seq == null ? this.chipLinks.get(suite, 'none') : this.chipLinks.get([...suite, 'runs', seq]);
+  }
+
   private readonly searchWrite$ = new Subject<string>();
 
   private readInitialSort(): Sort {
@@ -112,19 +122,28 @@ export class ProjectsListComponent {
 
   readonly rows = computed<ProjectSummary[]>(() => this.projects() ?? []);
 
-  private classifyRow(row: ProjectSummary): 'pass' | 'fail' | 'new' {
-    if (row.totals.unbaselined > 0) return 'new';
-    if (row.totals.failing > 0) return 'fail';
-    return 'pass';
+  // Count-based matching: a row can match several statuses at once (e.g. a
+  // row with passing and failing tests shows under both Pass and Fail). Fail
+  // also matches unbaselined rows. A project with all-zero totals (no runs
+  // yet) stays neutral and counts as pass.
+  private matches(row: ProjectSummary, status: Status): boolean {
+    const t = row.totals;
+    switch (status) {
+      case 'pass':
+        return t.passing > 0 || (t.failing === 0 && t.unbaselined === 0);
+      case 'fail':
+        return t.failing > 0 || t.unbaselined > 0;
+      case 'new':
+        return t.unbaselined > 0;
+      default:
+        return false;
+    }
   }
 
   readonly visibleRows = computed<ProjectSummary[]>(() => {
     const statuses = this.activeStatuses();
     if (statuses.size === 0) return this.rows();
-    return this.rows().filter((row) => {
-      const cls = this.classifyRow(row);
-      return statuses.has(cls) || (cls === 'new' && statuses.has('fail'));
-    });
+    return this.rows().filter((row) => [...statuses].some((st) => this.matches(row, st)));
   });
 
   constructor() {

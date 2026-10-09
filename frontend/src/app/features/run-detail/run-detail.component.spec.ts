@@ -377,6 +377,18 @@ describe('RunDetailComponent filtering', () => {
     expect(names).toEqual(['Alpha page', 'Beta new', 'Zeta page']);
   });
 
+  it('status filter Pass includes passed tests without a baseline, which also match New', () => {
+    const base = RUN.tests[2];
+    component['runData'].set({
+      ...RUN,
+      tests: [...RUN.tests, { ...base, id: 9, name: 'Gamma passed new', passed: true }],
+    });
+    component.activeStatuses.set(new Set(['pass']));
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Alpha page', 'Gamma passed new']);
+    component.activeStatuses.set(new Set(['new']));
+    expect(component.visibleTests().map((t) => t.name)).toEqual(['Beta new', 'Gamma passed new']);
+  });
+
   it('search and status filter compose: search "page" + status Fail', () => {
     component.searchTerm.set('page');
     component.activeStatuses.set(new Set(['fail']));
@@ -1258,6 +1270,13 @@ describe('RunDetailComponent query param sync', () => {
   afterEach(() => {
     localStorage.clear();
     TestBed.resetTestingModule();
+  });
+
+  it('ignores unknown values in the ?status= query param', async () => {
+    const fixture = await setupWithQueryParams({
+      queryParams: { status: 'bogus,flaky,PASS,new' },
+    });
+    expect(fixture.componentInstance.activeStatuses()).toEqual(new Set(['flaky', 'new']));
   });
 
   it('seeds search/status/browser/size/sort signals from URL query params on init', async () => {

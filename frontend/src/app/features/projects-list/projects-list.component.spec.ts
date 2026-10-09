@@ -17,6 +17,7 @@ const PROJECTS: ProjectSummary[] = [
     slug: 'beta',
     suite_count: 1,
     single_suite_slug: 's1',
+    single_suite_latest_run_seq: 7,
     last_run_at: '2026-01-01T00:00:00Z',
     totals: { passing: 0, failing: 3, unbaselined: 3, flaky: 0 },
   },
@@ -26,6 +27,7 @@ const PROJECTS: ProjectSummary[] = [
     slug: 'alpha',
     suite_count: 1,
     single_suite_slug: 's2',
+    single_suite_latest_run_seq: 2,
     last_run_at: '2026-01-05T00:00:00Z',
     totals: { passing: 6, failing: 0, unbaselined: 0, flaky: 0 },
   },
@@ -35,6 +37,7 @@ const PROJECTS: ProjectSummary[] = [
     slug: 'gamma',
     suite_count: 2,
     single_suite_slug: null,
+    single_suite_latest_run_seq: null,
     last_run_at: '2026-01-03T00:00:00Z',
     totals: { passing: 2, failing: 3, unbaselined: 0, flaky: 0 },
   },
@@ -44,6 +47,7 @@ const PROJECTS: ProjectSummary[] = [
     slug: 'delta',
     suite_count: 1,
     single_suite_slug: 's4',
+    single_suite_latest_run_seq: null,
     last_run_at: null,
     totals: { passing: 0, failing: 0, unbaselined: 0, flaky: 0 },
   },
@@ -320,7 +324,7 @@ describe('ProjectsListComponent unbaselined chip', () => {
     const fixture = TestBed.createComponent(ProjectsListComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-    const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('span.chip');
+    const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('.chip');
     const texts = Array.from(chips).map((c) => c.textContent?.trim());
     expect(texts).toContain('3 new');
   });
@@ -329,7 +333,7 @@ describe('ProjectsListComponent unbaselined chip', () => {
     const fixture = TestBed.createComponent(ProjectsListComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-    const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('span.chip');
+    const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('.chip');
     const texts = Array.from(chips).map((c) => c.textContent?.trim());
     expect(texts.filter((t) => t?.includes('new')).length).toBe(1); // only Beta row has chip
   });
@@ -376,7 +380,9 @@ describe('ProjectsListComponent status filter', () => {
     const names = rows.map((r) => r.name);
     expect(names).toContain('Alpha');
     expect(names).toContain('Delta');
-    expect(rows.length).toBe(2);
+    // Gamma has 2 passing + 3 failing: count-based filter keeps it under pass.
+    expect(names).toContain('Gamma');
+    expect(rows.length).toBe(3);
   });
 
   it('shows failing rows (including unbaselined ones) when fail filter is active', async () => {
@@ -646,5 +652,103 @@ describe('ProjectsListComponent project name link target', () => {
     ) as HTMLAnchorElement | undefined;
     expect(link).toBeTruthy();
     expect(link!.getAttribute('href')).toBe('/projects/gamma');
+  });
+});
+
+describe('ProjectsListComponent chip links', () => {
+  const ROWS: ProjectSummary[] = [
+    {
+      id: 1,
+      name: 'Multi',
+      slug: 'multi',
+      suite_count: 2,
+      single_suite_slug: null,
+      single_suite_latest_run_seq: null,
+      last_run_at: '2026-01-01T00:00:00Z',
+      totals: { passing: 1, failing: 2, unbaselined: 3, flaky: 4 },
+    },
+    {
+      id: 2,
+      name: 'Single',
+      slug: 'single',
+      suite_count: 1,
+      single_suite_slug: 'desk',
+      single_suite_latest_run_seq: 9,
+      last_run_at: '2026-01-02T00:00:00Z',
+      totals: { passing: 1, failing: 2, unbaselined: 3, flaky: 4 },
+    },
+    {
+      id: 3,
+      name: 'Norun',
+      slug: 'norun',
+      suite_count: 1,
+      single_suite_slug: 'mob',
+      single_suite_latest_run_seq: null,
+      last_run_at: null,
+      totals: { passing: 1, failing: 2, unbaselined: 3, flaky: 4 },
+    },
+  ];
+
+  let el: HTMLElement;
+
+  beforeEach(async () => {
+    localStorage.clear();
+    await TestBed.configureTestingModule({
+      imports: [ProjectsListComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        { provide: InspectreApiService, useValue: { projects: () => of(ROWS) } },
+        {
+          provide: SortStateService,
+          useValue: { get: vi.fn().mockReturnValue({ active: '', direction: '' }), save: vi.fn() },
+        },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ProjectsListComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+  });
+
+  afterEach(() => localStorage.clear());
+
+  function hrefs(projectName: string): Record<string, string | null> {
+    const row = Array.from(el.querySelectorAll('tr.mat-mdc-row')).find((r) =>
+      r.textContent?.includes(projectName),
+    )!;
+    const out: Record<string, string | null> = {};
+    for (const chip of Array.from(row.querySelectorAll('.chip'))) {
+      out[chip.textContent!.trim().split(' ')[1]] = chip.getAttribute('href');
+    }
+    return out;
+  }
+
+  it('links multi-suite pills to the project page with ?status, flaky without a query', () => {
+    expect(hrefs('Multi')).toEqual({
+      pass: '/projects/multi?status=pass',
+      fail: '/projects/multi?status=fail',
+      flaky: '/projects/multi',
+      new: '/projects/multi?status=new',
+    });
+  });
+
+  it('links single-suite pills (including flaky) to the latest run with ?status', () => {
+    expect(hrefs('Single')).toEqual({
+      pass: '/projects/single/suites/desk/runs/9?status=pass',
+      fail: '/projects/single/suites/desk/runs/9?status=fail',
+      flaky: '/projects/single/suites/desk/runs/9?status=flaky',
+      new: '/projects/single/suites/desk/runs/9?status=new',
+    });
+  });
+
+  it('falls back to the suite page without a status when the single suite has no run', () => {
+    expect(hrefs('Norun')).toEqual({
+      pass: '/projects/norun/suites/mob',
+      fail: '/projects/norun/suites/mob',
+      flaky: '/projects/norun/suites/mob',
+      new: '/projects/norun/suites/mob',
+    });
   });
 });

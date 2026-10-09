@@ -1,14 +1,34 @@
 @if (stats().passing > 0) {
-  <span class="chip chip-pass">{{ stats().passing }} pass</span>
+  @let target = link()?.('pass');
+  @if (target) {
+    <a class="chip chip-pass chip-link" [routerLink]="target.commands" [queryParams]="target.queryParams">{{ stats().passing }} pass</a>
+  } @else {
+    <span class="chip chip-pass">{{ stats().passing }} pass</span>
+  }
 }
 @if (stats().failing > 0) {
-  <span class="chip chip-fail">{{ stats().failing }} fail</span>
+  @let target = link()?.('fail');
+  @if (target) {
+    <a class="chip chip-fail chip-link" [routerLink]="target.commands" [queryParams]="target.queryParams">{{ stats().failing }} fail</a>
+  } @else {
+    <span class="chip chip-fail">{{ stats().failing }} fail</span>
+  }
 }
 @if (stats().flaky > 0) {
-  <span class="chip chip-flaky">{{ stats().flaky }} flaky</span>
+  @let target = link()?.('flaky');
+  @if (target) {
+    <a class="chip chip-flaky chip-link" [routerLink]="target.commands" [queryParams]="target.queryParams">{{ stats().flaky }} flaky</a>
+  } @else {
+    <span class="chip chip-flaky">{{ stats().flaky }} flaky</span>
+  }
 }
 @if (stats().unbaselined > 0) {
-  <span class="chip chip-new">{{ stats().unbaselined }} new</span>
+  @let target = link()?.('new');
+  @if (target) {
+    <a class="chip chip-new chip-link" [routerLink]="target.commands" [queryParams]="target.queryParams">{{ stats().unbaselined }} new</a>
+  } @else {
+    <span class="chip chip-new">{{ stats().unbaselined }} new</span>
+  }
 }
 @if (stats().passing === 0 && stats().failing === 0 && stats().unbaselined === 0) {
   <span class="chip chip-none">No tests</span>

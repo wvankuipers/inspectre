@@ -9,7 +9,11 @@ import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
-import { RunStatsChipsComponent } from '../../core/components/run-stats-chips/run-stats-chips.component';
+import { ChipLinkCache } from '../../core/components/run-stats-chips/chip-link-cache';
+import {
+  ChipLinkFn,
+  RunStatsChipsComponent,
+} from '../../core/components/run-stats-chips/run-stats-chips.component';
 import { SearchFieldComponent } from '../../core/components/search-field/search-field.component';
 import { ProjectDetail, SuiteSummary } from '../../core/models/api';
 import { SortStateService } from '../../core/services/sort-state.service';
@@ -100,6 +104,14 @@ export class ProjectDetailComponent {
 
   readonly projectSlug = computed(() => this.params().get('projectSlug') ?? '');
 
+  private readonly chipLinks = new ChipLinkCache();
+
+  chipLinkFor(row: SuiteSummary): ChipLinkFn | undefined {
+    const run = row.latest_run;
+    if (!run) return undefined;
+    return this.chipLinks.get(['/projects', this.projectSlug(), 'suites', row.slug, 'runs', run.sequential_id]);
+  }
+
   private projectData = toSignal(
     this.route.paramMap.pipe(
       switchMap((p) =>
@@ -116,26 +128,30 @@ export class ProjectDetailComponent {
 
   readonly rows = computed<SuiteSummary[]>(() => this.project()?.suites ?? []);
 
-  // A suite with no runs yet (`latest_run: null`) has no pass/fail/new signal
-  // of its own. We classify it as "pass" for filtering purposes so it stays
-  // neutral, mirroring the "all-zero totals -> pass" convention the main
-  // projects list already uses for projects with no runs yet, rather than
-  // inventing a fourth filter bucket or hiding the row entirely.
-  private classifyRow(row: SuiteSummary): 'pass' | 'fail' | 'new' {
+  // Count-based matching: a suite can match several statuses at once (e.g.
+  // passing and failing tests show under both Pass and Fail). Fail also
+  // matches unbaselined suites. A suite with no runs yet (`latest_run: null`)
+  // has no signal of its own and counts as "pass" so it stays neutral rather
+  // than inventing a fourth bucket or hiding the row.
+  private matches(row: SuiteSummary, status: Status): boolean {
     const stats = row.latest_run;
-    if (!stats) return 'pass';
-    if (stats.unbaselined > 0) return 'new';
-    if (stats.failing > 0) return 'fail';
-    return 'pass';
+    if (!stats) return status === 'pass';
+    switch (status) {
+      case 'pass':
+        return stats.passing > 0 || (stats.failing === 0 && stats.unbaselined === 0);
+      case 'fail':
+        return stats.failing > 0 || stats.unbaselined > 0;
+      case 'new':
+        return stats.unbaselined > 0;
+      default:
+        return false;
+    }
   }
 
   readonly visibleRows = computed<SuiteSummary[]>(() => {
     const statuses = this.activeStatuses();
     if (statuses.size === 0) return this.rows();
-    return this.rows().filter((row) => {
-      const cls = this.classifyRow(row);
-      return statuses.has(cls) || (cls === 'new' && statuses.has('fail'));
-    });
+    return this.rows().filter((row) => [...statuses].some((st) => this.matches(row, st)));
   });
 
   constructor() {

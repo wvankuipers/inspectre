@@ -54,7 +54,7 @@
             <th mat-header-cell *matHeaderCellDef>Status</th>
             <td mat-cell *matCellDef="let row">
               @if (row.latest_run) {
-                <app-run-stats-chips [stats]="row.latest_run" />
+                <app-run-stats-chips [stats]="row.latest_run" [link]="chipLinkFor(row)" />
               } @else {
                 <span class="muted">No runs yet</span>
               }

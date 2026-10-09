@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { RunStatsChipsComponent } from './run-stats-chips.component';
+import { provideRouter } from '@angular/router';
+import { ChipLinkFn, RunStatsChipsComponent } from './run-stats-chips.component';
 import { RunStats, RunSummary } from '../../models/api';
 
 const base: RunSummary = {
@@ -14,6 +15,7 @@ describe('RunStatsChipsComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [RunStatsChipsComponent],
+      providers: [provideRouter([])],
     }).compileComponents();
     fixture = TestBed.createComponent(RunStatsChipsComponent);
   });
@@ -87,5 +89,61 @@ describe('RunStatsChipsComponent', () => {
     fixture.componentRef.setInput('stats', { ...base, failing: 2 });
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).querySelector('.chip-flaky')).toBeNull();
+  });
+
+  describe('link mode', () => {
+    const all = { ...base, passing: 1, failing: 2, flaky: 3, unbaselined: 4 };
+    const link: ChipLinkFn = (status) => ({
+      commands: ['/p', 1],
+      queryParams: { status },
+    });
+
+    for (const [status, cls] of [
+      ['pass', 'chip-pass'], ['fail', 'chip-fail'], ['new', 'chip-new'], ['flaky', 'chip-flaky'],
+    ] as const) {
+      it(`renders ${status} chip as a link`, () => {
+        fixture.componentRef.setInput('stats', all);
+        fixture.componentRef.setInput('link', link);
+        fixture.detectChanges();
+        const a = (fixture.nativeElement as HTMLElement).querySelector(`a.${cls}.chip-link`);
+        expect(a).not.toBeNull();
+        expect(a!.getAttribute('href')).toBe(`/p/1?status=${status}`);
+        expect(a!.classList.contains('chip')).toBe(true);
+      });
+    }
+
+    it('keeps text identical in link mode', () => {
+      fixture.componentRef.setInput('stats', all);
+      fixture.componentRef.setInput('link', link);
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).querySelector('a.chip-fail')!.textContent).toContain('2 fail');
+    });
+
+    it('renders a span when link returns null', () => {
+      fixture.componentRef.setInput('stats', all);
+      fixture.componentRef.setInput('link', (s: string) => (s === 'fail' ? null : { commands: ['/x'] }));
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('span.chip-fail')).not.toBeNull();
+      expect(el.querySelector('a.chip-fail')).toBeNull();
+      expect(el.querySelector('a.chip-pass')).not.toBeNull();
+    });
+
+    it('renders spans only without link input', () => {
+      fixture.componentRef.setInput('stats', all);
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('a')).toBeNull();
+      expect(el.querySelectorAll('span.chip').length).toBe(4);
+    });
+
+    it('keeps "No tests" a span in link mode', () => {
+      fixture.componentRef.setInput('stats', { ...base });
+      fixture.componentRef.setInput('link', link);
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('span.chip-none')).not.toBeNull();
+      expect(el.querySelector('a')).toBeNull();
+    });
   });
 });

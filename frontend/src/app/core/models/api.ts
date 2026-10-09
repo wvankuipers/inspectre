@@ -15,6 +15,7 @@ export interface ProjectSummary {
   slug: string;
   suite_count: number;
   single_suite_slug: string | null;
+  single_suite_latest_run_seq: number | null; // latest run of the only suite; null if multi-suite or never run
   last_run_at: string | null; // ISO-8601 from DRF, null if no suite has ever run
   totals: RunStats;
 }

@@ -103,6 +103,33 @@ class TestProjectsList:
         assert body[0]["suite_count"] == 1
         assert body[0]["single_suite_slug"] == "desktop"
 
+    def test_single_suite_project_exposes_latest_run_seq(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+        run_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite = suite_factory(project=project, name="Desktop")
+        run_factory(suite=suite)
+        latest = run_factory(suite=suite)
+
+        body = api.get("/api/projects/").json()
+        assert body[0]["single_suite_latest_run_seq"] == latest.sequential_id
+
+    def test_single_suite_latest_run_seq_is_null_without_runs(
+        self,
+        api,
+        project_factory,
+        suite_factory,
+    ):
+        project = project_factory(name="Acme")
+        suite_factory(project=project, name="Desktop")
+
+        body = api.get("/api/projects/").json()
+        assert body[0]["single_suite_latest_run_seq"] is None
+
     def test_last_run_at_and_totals_reflect_latest_run_across_suites(
         self,
         api,
