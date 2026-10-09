@@ -261,6 +261,8 @@ export class RunDetailComponent {
         if (statuses.size === 0) return true;
         const cls = this.classifyTest(testRow);
         if (statuses.has('flaky') && !testRow.passed && testRow.is_flaky) return true;
+        // Pass is count-based (passed=true) so it also matches a passed test without a baseline.
+        if (statuses.has('pass') && testRow.passed) return true;
         return statuses.has(cls) || (cls === 'new' && statuses.has('fail'));
       })
       .filter((testRow) => browsers.size === 0 || browsers.has(testRow.browser))
