@@ -51,6 +51,8 @@ The table is sortable by column (persisted to `localStorage` via `SortStateServi
 
 **Status filter semantics** (project overview and project details) are count-based, so a row can match several statuses: `pass` matches rows with passing tests > 0, `fail` matches rows with failing > 0 or unbaselined > 0, `new` matches rows with unbaselined > 0. A project or suite with nothing failing or unbaselined and no passing tests (no runs yet) counts as `pass`. This guarantees a status pill never links to a filtered view that hides its own row.
 
+The run-detail filter follows the same rule: `pass` matches every test with `passed=true`, including one without a baseline (which also matches `new`), so the Pass pill count always equals the rows shown.
+
 **Pill drill-down**: project overview pill -> project details (`?status=<pill>`) -> run overview of the suite's latest run (`?status=<pill>`, the same `?status=` the run-detail filter reads). Special cases: flaky pills have no project/suite-level filter, so on the project overview they link without a query and on project details they go straight to the latest run with `?status=flaky`; single-suite projects skip project details and go directly to the suite's latest run; a suite without runs has no pill links.
 
 ### `ProjectDetailComponent`
