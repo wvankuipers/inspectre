@@ -1,7 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
@@ -81,6 +80,14 @@ const HISTORY: TestHistory = {
   ],
 };
 
+function createFixture(key: string) {
+  const fixture = TestBed.createComponent(TestDetailComponent);
+  fixture.componentRef.setInput('projectSlug', 'acme-corp');
+  fixture.componentRef.setInput('suiteSlug', 'main-suite');
+  fixture.componentRef.setInput('key', key);
+  return fixture;
+}
+
 async function setup({
   apiSpy = vi.fn().mockReturnValue(of(HISTORY)),
   key = 'home-page-chrome-1280x800',
@@ -89,28 +96,13 @@ async function setup({
   await TestBed.configureTestingModule({
     imports: [TestDetailComponent],
     providers: [
-      provideNoopAnimations(),
       provideRouter([]),
-      {
-        provide: ActivatedRoute,
-        useValue: {
-          snapshot: { paramMap: { get: () => key } },
-          paramMap: of({
-            get: (k: string) => {
-              if (k === 'projectSlug') return 'acme-corp';
-              if (k === 'suiteSlug') return 'main-suite';
-              if (k === 'key') return key;
-              return null;
-            },
-          }),
-        },
-      },
       { provide: InspectreApiService, useValue: { testHistory: apiSpy } },
       { provide: MatDialog, useValue: dialogSpy },
     ],
   }).compileComponents();
 
-  const fixture = TestBed.createComponent(TestDetailComponent);
+  const fixture = createFixture(key);
   fixture.detectChanges();
   await fixture.whenStable();
   return { fixture, dialogSpy };
@@ -345,6 +337,54 @@ describe('TestDetailComponent error state', () => {
     });
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('h1')).toBeNull();
+  });
+
+  it('exposes loadError() true and history() null on API error without throwing', async () => {
+    const { fixture } = await setup({
+      apiSpy: vi.fn().mockReturnValue(throwError(() => new Error('x'))),
+    });
+    const component = fixture.componentInstance;
+    expect(component.loadError()).toBe(true);
+    expect(() => component.history()).not.toThrow();
+    expect(component.history()).toBeNull();
+    expect(component.breadcrumbLabel()).toBe('home-page-chrome-1280x800');
+  });
+});
+
+describe('TestDetailComponent route param change', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('refetches history for the new key and clears a previous load error', async () => {
+    const apiSpy = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new Error('x')))
+      .mockReturnValue(of(HISTORY));
+
+    await TestBed.configureTestingModule({
+      imports: [TestDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: InspectreApiService, useValue: { testHistory: apiSpy } },
+        { provide: MatDialog, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const fixture = createFixture('first-key');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+
+    expect(apiSpy).toHaveBeenLastCalledWith('acme-corp', 'main-suite', 'first-key');
+    expect(component.loadError()).toBe(true);
+
+    fixture.componentRef.setInput('key', 'second-key');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(apiSpy).toHaveBeenCalledTimes(2);
+    expect(apiSpy).toHaveBeenLastCalledWith('acme-corp', 'main-suite', 'second-key');
+    expect(component.loadError()).toBe(false);
+    expect(component.history()).toEqual(HISTORY);
   });
 });
 

@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, input, model } from '@angular/core';
+import { Component, ElementRef, input, model, viewChild } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -14,7 +14,7 @@ export class SearchFieldComponent {
   readonly label = input<string>('Search…');
   readonly value = model<string>('');
 
-  @ViewChild('inputEl') private inputEl!: ElementRef<HTMLInputElement>;
+  private readonly inputEl = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
 
   onInput(event: Event): void {
     this.value.set((event.target as HTMLInputElement).value);
@@ -22,7 +22,7 @@ export class SearchFieldComponent {
 
   clear(): void {
     this.value.set('');
-    const el = this.inputEl.nativeElement;
+    const el = this.inputEl().nativeElement;
     el.value = '';
     el.focus();
   }

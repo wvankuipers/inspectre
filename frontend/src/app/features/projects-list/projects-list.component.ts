@@ -2,11 +2,11 @@ import { DatePipe } from '@angular/common';
 import {
   Component,
   DestroyRef,
-  ViewChild,
   computed,
   effect,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
@@ -47,25 +47,7 @@ export class ProjectsListComponent {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
-  private _sort: MatSort | undefined;
-
-  private get sort(): MatSort | undefined {
-    return this._sort;
-  }
-
-  @ViewChild(MatSort)
-  private set sort(sort: MatSort | undefined) {
-    if (!sort) return;
-    this._sort = sort;
-    this.dataSource.sort = sort;
-    sort.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s: Sort) => {
-      this.sortState.set(s);
-      this.sortService.save('projects', s);
-      this.writeQueryParams(
-        s.active && s.direction ? { sort: s.active, dir: s.direction } : { sort: null, dir: null },
-      );
-    });
-  }
+  private readonly matSort = viewChild(MatSort);
 
   private readonly initialQueryParams = this.route.snapshot.queryParamMap;
 
@@ -162,6 +144,20 @@ export class ProjectsListComponent {
           return '';
       }
     };
+
+    effect((onCleanup) => {
+      const sort = this.matSort();
+      if (!sort) return;
+      this.dataSource.sort = sort;
+      const sub = sort.sortChange.subscribe((s: Sort) => {
+        this.sortState.set(s);
+        this.sortService.save('projects', s);
+        this.writeQueryParams(
+          s.active && s.direction ? { sort: s.active, dir: s.direction } : { sort: null, dir: null },
+        );
+      });
+      onCleanup(() => sub.unsubscribe());
+    });
 
     effect(() => {
       this.dataSource.data = this.visibleRows();

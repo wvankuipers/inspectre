@@ -1,11 +1,11 @@
 import { DatePipe } from '@angular/common';
-import { Component, DestroyRef, ViewChild, computed, effect, inject, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, computed, effect, inject, input, signal, viewChild } from '@angular/core';
+import { rxResource, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatTabsModule } from '@angular/material/tabs';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Subject, catchError, debounceTime, of, switchMap } from 'rxjs';
+import { Subject, debounceTime } from 'rxjs';
 
 import { InspectreApiService } from '../../core/api/inspectre-api.service';
 import { BreadcrumbComponent } from '../../core/components/breadcrumb/breadcrumb.component';
@@ -41,27 +41,7 @@ export class SuiteDetailComponent {
   private sortService = inject(SortStateService);
   private destroyRef = inject(DestroyRef);
 
-  private _baselinesSort: MatSort | undefined;
-
-  get baselinesSort(): MatSort | undefined {
-    return this._baselinesSort;
-  }
-
-  @ViewChild('baselinesSort')
-  set baselinesSort(sort: MatSort | undefined) {
-    if (!sort) return;
-    this._baselinesSort = sort;
-    this.baselinesDataSource.sort = sort;
-    sort.sortChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s: Sort) => {
-      this.baselineSortState.set(s);
-      this.sortService.save('suite-baselines', s);
-      this.writeQueryParams(
-        s.active && s.direction
-          ? { baselinesSort: s.active, baselinesDir: s.direction }
-          : { baselinesSort: null, baselinesDir: null },
-      );
-    });
-  }
+  readonly baselinesSort = viewChild<MatSort>('baselinesSort');
 
   readonly runColumns = ['seq', 'when', 'status'];
   readonly baselineColumns = ['name', 'browser', 'size', 'thumb'];
@@ -111,12 +91,8 @@ export class SuiteDetailComponent {
     });
   }
 
-  private params = toSignal(this.route.paramMap, {
-    initialValue: this.route.snapshot.paramMap,
-  });
-
-  readonly projectSlug = computed(() => this.params().get('projectSlug') ?? '');
-  readonly suiteSlug = computed(() => this.params().get('suiteSlug') ?? '');
+  readonly projectSlug = input('');
+  readonly suiteSlug = input('');
 
   private readonly chipLinks = new ChipLinkCache();
 
@@ -131,19 +107,14 @@ export class SuiteDetailComponent {
     ]);
   }
 
-  private suiteData = toSignal(
-    this.route.paramMap.pipe(
-      switchMap((p) =>
-        this.api
-          .suite(p.get('projectSlug')!, p.get('suiteSlug')!)
-          .pipe(catchError(() => of<SuiteDetail | null>(null))),
-      ),
-      takeUntilDestroyed(),
-    ),
-    { initialValue: undefined },
-  );
+  private readonly suiteResource = rxResource({
+    params: () => ({ project: this.projectSlug(), suite: this.suiteSlug() }),
+    stream: ({ params }) => this.api.suite(params.project, params.suite),
+  });
 
-  readonly suite = computed(() => this.suiteData() ?? null);
+  readonly suite = computed<SuiteDetail | null>(() =>
+    this.suiteResource.hasValue() ? this.suiteResource.value() : null,
+  );
 
   readonly sortedRuns = computed<RunSummary[]>(() => {
     const { active, direction } = this.runSortState();
@@ -165,6 +136,22 @@ export class SuiteDetailComponent {
   constructor() {
     this.baselinesDataSource.filterPredicate = (baseline: Baseline, filter: string) =>
       baseline.name.toLowerCase().includes(filter);
+
+    effect((onCleanup) => {
+      const sort = this.baselinesSort();
+      if (!sort) return;
+      this.baselinesDataSource.sort = sort;
+      const sub = sort.sortChange.subscribe((s: Sort) => {
+        this.baselineSortState.set(s);
+        this.sortService.save('suite-baselines', s);
+        this.writeQueryParams(
+          s.active && s.direction
+            ? { baselinesSort: s.active, baselinesDir: s.direction }
+            : { baselinesSort: null, baselinesDir: null },
+        );
+      });
+      onCleanup(() => sub.unsubscribe());
+    });
 
     effect(() => {
       this.baselinesDataSource.data = this.suite()?.baselines ?? [];

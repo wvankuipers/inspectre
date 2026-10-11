@@ -1,5 +1,4 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SearchFieldComponent } from './search-field.component';
 
@@ -9,7 +8,6 @@ describe('SearchFieldComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [SearchFieldComponent],
-      providers: [provideNoopAnimations()],
     }).compileComponents();
     fixture = TestBed.createComponent(SearchFieldComponent);
   });
@@ -59,5 +57,16 @@ describe('SearchFieldComponent', () => {
     clearBtn.click();
     fixture.detectChanges();
     expect(emitted).toBe('');
+  });
+
+  it('clear() empties the value and focuses the input', async () => {
+    fixture.componentRef.setInput('value', 'abc');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+    fixture.componentInstance.clear();
+    expect(fixture.componentInstance.value()).toBe('');
+    expect(input.value).toBe('');
+    expect(document.activeElement).toBe(input);
   });
 });
