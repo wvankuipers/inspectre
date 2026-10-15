@@ -1,7 +1,9 @@
 name: Dependabot auto-merge
 
 on:
-  pull_request_target:
+  # `pull_request` (not `pull_request_target`): Dependabot-triggered runs of this
+  # event are documented to read Dependabot secrets, which TAGPR_TOKEN needs.
+  pull_request:
     branches: [main]
 
 permissions:
@@ -31,4 +33,11 @@ jobs:
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Must be a PAT (not GITHUB_TOKEN): merges performed with GITHUB_TOKEN
+          # do not trigger other workflows, so tagpr.yml (on: push to main)
+          # would never run and the release PR would go stale.
+          # This workflow is triggered by dependabot[bot], so the same PAT must
+          # ALSO be stored as a Dependabot secret named TAGPR_TOKEN
+          # (Settings > Secrets and variables > Dependabot); Dependabot-triggered
+          # runs only see Dependabot secrets, not repository secrets.
+          GH_TOKEN: ${{ secrets.TAGPR_TOKEN }}
