@@ -8,3 +8,8 @@ reviews:
     # manually with `@coderabbitai review`.
     ignore_usernames:
       - "dependabot[bot]"
+    # Skip tagpr release PRs ("Release for x.y.z") by title: they are authored by
+    # a PAT, so username matching can't identify them. A review can still be
+    # requested manually with `@coderabbitai review`.
+    ignore_title_keywords:
+      - "Release for"
