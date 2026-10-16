@@ -3,3 +3,4 @@ releaseBranch = main
 versionFile = VERSION
 vPrefix = false
 changelog = true
+template = .github/tagpr-template.md
