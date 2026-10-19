@@ -12,11 +12,11 @@ asgiref==3.12.1
     #   django-cors-headers
 billiard==4.3.1
     # via celery
-boto3==1.43.112
+boto3==1.43.114
     # via
     #   django-storages
     #   inspectre (pyproject.toml)
-botocore==1.43.112
+botocore==1.43.114
     # via
     #   boto3
     #   s3transfer
@@ -80,7 +80,7 @@ packaging==26.3
     #   wheel
 pip-tools==7.6.2
     # via inspectre (pyproject.toml)
-pluggy==1.6.0
+pluggy==1.7.0
     # via
     #   pytest
     #   pytest-cov
@@ -117,7 +117,7 @@ python-json-logger==4.2.0
     # via inspectre (pyproject.toml)
 redis==6.4.0
     # via kombu
-ruff==0.17.0
+ruff==0.17.1
     # via inspectre (pyproject.toml)
 s3transfer==0.19.2
     # via boto3
