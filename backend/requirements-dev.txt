@@ -12,11 +12,11 @@ asgiref==3.12.1
     #   django-cors-headers
 billiard==4.3.1
     # via celery
-boto3==1.43.114
+boto3==1.43.115
     # via
     #   django-storages
     #   inspectre (pyproject.toml)
-botocore==1.43.114
+botocore==1.43.115
     # via
     #   boto3
     #   s3transfer
@@ -119,7 +119,7 @@ redis==6.4.0
     # via kombu
 ruff==0.17.1
     # via inspectre (pyproject.toml)
-s3transfer==0.19.2
+s3transfer==0.19.3
     # via boto3
 six==1.17.0
     # via python-dateutil
