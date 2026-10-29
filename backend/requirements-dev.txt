@@ -138,7 +138,7 @@ vine==5.1.0
     #   amqp
     #   celery
     #   kombu
-wcwidth==0.9.3
+wcwidth==0.9.4
     # via prompt-toolkit
 wheel==0.48.0
     # via pip-tools
