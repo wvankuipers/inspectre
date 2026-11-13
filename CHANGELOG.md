@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.6.2](https://github.com/wvankuipers/inspectre/compare/1.6.1...1.6.2) - 2026-11-13
+
+- chore(deps-dev): bump typescript-eslint from 8.71.1 to 8.71.2 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/173
+- chore(deps): bump the backend-pip group in /backend with 2 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/174
+- chore(deps): bump the backend-pip group in /backend with 4 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/177
+- chore(deps): bump python from 3.14-slim to 3.15-slim in /backend in the backend-docker group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/178
+- chore(deps): bump the backend-pip group across 1 directory with 7 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/181
+- chore(deps): bump the frontend-npm group across 1 directory with 16 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/179
+- chore(deps): bump fast-uri from 3.1.8 to 3.1.9 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/182
+- chore(deps): bump the backend-pip group in /backend with 3 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/184
+- chore(deps): bump wcwidth from 0.9.3 to 0.9.4 in /backend in the backend-pip group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/186
+- chore(deps): bump the backend-pip group across 1 directory with 6 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/189
+- chore(deps): bump the frontend-npm group across 1 directory with 14 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/191
+- chore(deps): bump the backend-pip group in /backend with 5 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/192
+- chore(deps): bump the backend-pip group in /backend with 5 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/195
+- chore(deps): bump the frontend-npm group across 1 directory with 13 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/198
+- chore(deps): bump the backend-pip group across 1 directory with 8 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/199
+- chore(deps): bump gunicorn from 26.2.0 to 27.0.0 in /backend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/203
+- chore(deps): bump the backend-pip group across 1 directory with 3 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/202
+- chore(deps-dev): bump typescript-eslint from 8.72.1 to 8.72.2 in /frontend in the frontend-npm group across 1 directory by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/201
+- chore(deps-dev): bump jsdom from 30.1.3 to 31.0.0 in /frontend by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/200
+
 ## [1.6.1](https://github.com/wvankuipers/inspectre/compare/1.6.0...1.6.1) - 2026-10-16
 
 - Feat/footer GitHub link by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/155
