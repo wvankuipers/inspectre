@@ -15,8 +15,8 @@ and promote results. Full architecture reference: `docs/README.md` and its linke
 3. After rebuilding the SPA container, verify in browser with Chrome DevTools MCP
    (`http://localhost:4200`, screenshot) before reporting a frontend task complete.
 4. Never load assets (fonts, icons) from a CDN — self-host/inline them.
-5. `make test` and `make lint` must pass, and `make lint-fix` must be run, before
-   finishing a branch or opening a PR.
+5. `make test`, `make lint` and `make smoke` must pass, and `make lint-fix` must be
+   run, before finishing a branch or opening a PR.
 6. Never commit or push directly to `main` — always a feature branch + PR.
 7. Update `docs/` (and this file, if workflow rules change) in the same task whenever
    architecture, API surface, routes, or models change.

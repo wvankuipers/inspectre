@@ -38,13 +38,13 @@ The (project, suite, name, browser, size) tuple is parameterized into a **key** 
 
 2. Client posts one or more tests on that run:
      POST /tests
-       test[run_id]=…
-       test[name]=…  test[browser]=…  test[size]=…
-       test[screenshot]=<file>
-       test[crop_area]=WxH+X+Y          (optional)
-       test[fuzz_level]=30%             (optional, default 30%)
-       test[highlight_colour]=ff0000    (optional, default ff0000)
-       test[source_url]=…               (optional)
+       run_id=…
+       name=…  browser=…  size=…
+       screenshot=<file>
+       crop_area=WxH+X+Y          (optional)
+       fuzz_level=30%             (optional, default 30%)
+       highlight_colour=ff0000    (optional, default ff0000)
+       source_url=…               (optional)
 
 3. Inspectre handles each test asynchronously:
    a. Validates params; creates Test(status="pending").

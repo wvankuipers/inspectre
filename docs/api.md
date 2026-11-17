@@ -89,16 +89,18 @@ Request (multipart/form-data):
 POST /tests
 Content-Type: multipart/form-data; boundary=…
 
-test[run_id]=42
-test[name]=Homepage
-test[browser]=Chrome
-test[size]=1024
-test[screenshot]=@homepage.png         # required
-test[crop_area]=640x480+50+100         # optional, ImageMagick crop spec
-test[fuzz_level]=30%                   # optional, default "30%"
-test[highlight_colour]=ff0000          # optional, default "ff0000" (no leading #)
-test[source_url]=https://example.com/  # optional
+run_id=42
+name=Homepage
+browser=Chrome
+size=1024
+screenshot=@homepage.png         # required
+crop_area=640x480+50+100         # optional, ImageMagick crop spec
+fuzz_level=30%                   # optional, default "30%"
+highlight_colour=ff0000          # optional, default "ff0000" (no leading #)
+source_url=https://example.com/  # optional
 ```
+
+These are plain, **unprefixed** multipart fields (not `test[...]`); only `PATCH /tests/:id` uses the Rails-style `test[baseline]=true`. A first-ever upload for a key is *not* a baseline: it stays `passed=false` until approved via `PATCH /tests/:id` (or the SPA's set-baseline endpoint); only after that do later uploads for the same key get diffed.
 
 Server flow:
 
