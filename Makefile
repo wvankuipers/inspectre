@@ -33,7 +33,7 @@ PYTEST_SLOW_PACKS := \
 .DEFAULT_GOAL := help
 .PHONY: help up down restart logs shell-api shell-db migrate makemigrations \
         admin-user seed lint lint-fix test test-fast test-slow test-frontend \
-        check-deps freeze build clean reset perf
+        check-deps freeze build clean reset perf smoke
 
 # ---- Help -----------------------------------------------------------------
 
@@ -53,6 +53,9 @@ down: ## Stop and remove all containers (preserves volumes)
 	$(COMPOSE) down
 
 restart: down up ## Restart the full stack
+
+smoke: ## Boot the full stack production-style and run smoke checks
+	./deploy/smoke/run.sh
 
 logs: ## Tail logs from the api service
 	$(COMPOSE) logs -f api

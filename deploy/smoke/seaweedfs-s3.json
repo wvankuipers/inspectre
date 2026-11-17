@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "smoke",
+      "credentials": [
+        { "accessKey": "smokeaccess", "secretKey": "smokesecretkey" }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

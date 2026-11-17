@@ -1,0 +1,159 @@
+# Production-style stack for `make smoke`. Standalone: reads only smoke.env, publishes
+# only host ports 18000 (api) and 18080 (spa). See docs/deployment-and-config.md.
+name: inspectre-smoke
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: inspectre
+      POSTGRES_USER: inspectre
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inspectre"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # S3-compatible object store (SeaweedFS). Static identity from seaweedfs-s3.json,
+  # matching S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY in smoke.env.
+  seaweedfs:
+    image: chrislusf/seaweedfs
+    entrypoint: ["weed"]
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json"]
+    volumes:
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8333/status"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # One-shot: create the bucket with boto3 from the api image (path-style).
+  s3-init:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      target: runtime
+    env_file: smoke.env
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        import os, time, boto3
+        from botocore.config import Config
+        s3 = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT_URL"],
+            aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
+            region_name=os.environ["S3_REGION"], config=Config(s3={"addressing_style": "path"}))
+        for attempt in range(30):
+            try:
+                s3.create_bucket(Bucket=os.environ["S3_BUCKET_NAME"])
+                break
+            except Exception as e:
+                if attempt == 29:
+                    raise
+                print("retrying:", e); time.sleep(1)
+        print("bucket ready")
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+
+  # TLS-only listener with an ACL user (default user disabled), mirroring a
+  # managed Valkey/ElastiCache with in-transit encryption and auth.
+  valkey:
+    image: valkey/valkey:8-alpine
+    command:
+      - valkey-server
+      - --port
+      - "0"
+      - --tls-port
+      - "6379"
+      - --tls-cert-file
+      - /certs/valkey.crt
+      - --tls-key-file
+      - /certs/valkey.key
+      - --tls-ca-cert-file
+      - /certs/ca.crt
+      - --tls-auth-clients
+      - "no"
+      - --user
+      - smoke
+      - "on"
+      - ">smokepass"
+      - "~*"
+      - "&*"
+      - "+@all"
+      - --user
+      - default
+      - "off"
+    volumes:
+      - ./certs:/certs:ro
+    healthcheck:
+      test: ["CMD", "valkey-cli", "--tls", "--cacert", "/certs/ca.crt", "--user", "smoke", "--pass", "smokepass", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      target: runtime
+    env_file: smoke.env
+    depends_on:
+      db:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    ports:
+      - "18000:8000"
+    # Flips healthy only once gunicorn serves, i.e. after start.sh finished migrating.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/projects/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  # Started like the Helm chart does: no tini entrypoint, bare celery command,
+  # resource limits, default image user, and no restart policy (a crash must show).
+  worker:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      target: runtime
+    entrypoint: []
+    command: ["celery", "-A", "inspectre", "worker", "--concurrency=2"]
+    mem_limit: 1g
+    cpus: 2
+    env_file: smoke.env
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  spa:
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "18080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
