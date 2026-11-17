@@ -12,11 +12,11 @@ asgiref==3.13.0
     #   django-cors-headers
 billiard==4.3.2
     # via celery
-boto3==1.43.127
+boto3==1.44.3
     # via
     #   django-storages
     #   inspectre (pyproject.toml)
-botocore==1.43.127
+botocore==1.44.3
     # via
     #   boto3
     #   s3transfer
@@ -48,7 +48,7 @@ django-storages[s3]==1.14.6
     # via inspectre (pyproject.toml)
 djangorestframework==3.18.3
     # via inspectre (pyproject.toml)
-gunicorn==27.0.0
+gunicorn==27.0.1
     # via inspectre (pyproject.toml)
 jmespath==1.1.0
     # via
@@ -62,9 +62,9 @@ packaging==26.3
     #   kombu
 prompt-toolkit==3.0.53
     # via click-repl
-psycopg[binary]==3.3.8
+psycopg[binary]==3.3.9
     # via inspectre (pyproject.toml)
-psycopg-binary==3.3.8
+psycopg-binary==3.3.9
     # via psycopg
 python-dateutil==2.9.0.post0
     # via
