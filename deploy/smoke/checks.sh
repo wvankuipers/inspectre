@@ -6,6 +6,8 @@ API=http://localhost:18000
 SPA=http://localhost:18080
 BOOT_TIMEOUT=180   # seconds, overall budget for services to become ready
 SETTLE_SECONDS=10  # grace period before re-checking for crash loops
+UPLOAD_TIMEOUT=60  # seconds to wait for the worker to process an upload
+FIXTURES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixtures"
 
 pass() { echo "PASS: $*"; }
 
@@ -19,7 +21,7 @@ fail() {
 # ("-" when the service has no healthcheck, so `read` never sees an empty field).
 _service_states() {
     "${COMPOSE[@]}" ps -a --format json |
-        jq -r '[.Service, .State, (if (.Health // "") == "" then "-" else .Health end), (.ExitCode | tostring)] | join(" ")'
+        jq -rs 'flatten | .[] | [.Service, .State, (if (.Health // "") == "" then "-" else .Health end), (.ExitCode | tostring)] | join(" ")'
 }
 
 # Succeeds when every service is running (and healthy where a healthcheck is
@@ -52,7 +54,8 @@ check_boot() {
     pass "all services running and healthy, s3-init exited 0"
 
     # (b) a crash-looping container can look "running" at any single instant, so
-    # wait, then require no restarting state and zero worker restarts.
+    # wait, then require no restarting state. The worker has no restart policy (a
+    # crash shows as exited, caught above), so its RestartCount check is a backstop.
     sleep "$SETTLE_SECONDS"
     offender=$(_services_ready) || fail "service unstable after ${SETTLE_SECONDS}s settle ($offender)"
     if _service_states | grep -q ' restarting '; then
@@ -84,13 +87,78 @@ check_boot() {
     pass "spa proxies /api/projects/ to the api (200)"
 
     # (g) the worker is actually consuming from the broker
-    local ping
-    ping=$("${COMPOSE[@]}" exec -T worker celery -A inspectre inspect ping --timeout 10 2>&1) ||
-        fail "celery inspect ping failed: $ping"
-    case "$ping" in *pong*) ;; *) fail "celery inspect ping did not return pong: $ping" ;; esac
+    local ping ping_deadline=$((SECONDS + 60))
+    until ping=$("${COMPOSE[@]}" exec -T worker celery -A inspectre inspect ping --timeout 10 2>&1) &&
+        [[ "$ping" == *pong* ]]; do
+        [ "$SECONDS" -lt "$ping_deadline" ] || fail "worker never answered celery inspect ping: $ping"
+        sleep 5
+    done
     pass "worker answers celery inspect ping"
+}
+
+# POST a screenshot as a new test in run $1 (image $2); print the response JSON.
+_upload_test() {
+    curl -fsS --max-time 30 -X POST "$API/tests" \
+        -F "run_id=$1" -F "name=Home" -F "browser=Chrome" \
+        -F "size=1024" -F "screenshot=@$FIXTURES/$2"
+}
+
+# Poll test $1 until status is done (prints the final JSON); fail at once on
+# status "failed", or when still not done after UPLOAD_TIMEOUT seconds.
+_wait_test_done() {
+    local deadline=$((SECONDS + UPLOAD_TIMEOUT)) body status
+    while :; do
+        body=$(curl -fsS --max-time 10 "$API/tests/$1/status") || fail "GET $API/tests/$1/status failed"
+        status=$(jq -r .status <<<"$body")
+        case "$status" in
+            done) echo "$body"; return 0 ;;
+            failed) fail "test $1 processing failed (status=failed): $body" ;;
+        esac
+        [ "$SECONDS" -lt "$deadline" ] || fail "test $1 not done after ${UPLOAD_TIMEOUT}s (status=$status)"
+        sleep 1
+    done
+}
+
+# Create a run in Smoke/Boot; print "<id> <sequential_id>".
+_create_run() {
+    curl -fsS --max-time 10 -X POST "$API/runs" -d project=Smoke -d suite=Boot | jq -r '"\(.id) \(.sequential_id)"'
+}
+
+# Full pipeline: api -> S3 -> worker -> ImageMagick diff -> validate verdict.
+check_upload_roundtrip() {
+    local run_id seq test_id body verdict
+
+    # First submission for a fresh key: nothing to diff against, so a new baseline.
+    read -r run_id seq < <(_create_run)
+    [ -n "$run_id" ] && [ "$run_id" != null ] || fail "POST /runs returned no run id"
+    test_id=$(_upload_test "$run_id" baseline.png | jq -r .id)
+    [ -n "$test_id" ] && [ "$test_id" != null ] || fail "POST /tests returned no test id"
+    body=$(_wait_test_done "$test_id")
+    [ "$(jq -r .is_new_baseline <<<"$body")" = true ] || fail "first upload is not a new baseline: $body"
+    pass "baseline upload processed by the worker (is_new_baseline)"
+
+    # Approve it as the baseline (PATCH /tests/:id, docs/api.md), so the next
+    # upload for the same key is actually diffed.
+    curl -fsS --max-time 10 -X PATCH "$API/tests/$test_id" -d "test[baseline]=true" >/dev/null ||
+        fail "PATCH $API/tests/$test_id (set baseline) failed"
+
+    # Same key, different image: ImageMagick must run and report a failed diff.
+    read -r run_id seq < <(_create_run)
+    test_id=$(_upload_test "$run_id" changed.png | jq -r .id)
+    [ -n "$test_id" ] && [ "$test_id" != null ] || fail "second POST /tests returned no test id"
+    body=$(_wait_test_done "$test_id")
+    [ "$(jq -r .pass <<<"$body")" = false ] || fail "changed screenshot unexpectedly passed: $body"
+    [ "$(jq -r .is_new_baseline <<<"$body")" = false ] || fail "changed screenshot was not diffed against the baseline: $body"
+    pass "changed upload diffed against baseline (pass=false)"
+
+    # The CI-facing verdict for that run must be "failed".
+    verdict=$(curl -fsS --max-time 10 "$SPA/api/projects/smoke/suites/boot/runs/$seq/validate/" | jq -r .status) ||
+        fail "GET run validate failed"
+    [ "$verdict" = failed ] || fail "run validate status is '$verdict', expected 'failed'"
+    pass "run validate endpoint reports failed"
 }
 
 run_checks() {
     check_boot
+    check_upload_roundtrip
 }
