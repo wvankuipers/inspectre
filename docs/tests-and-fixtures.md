@@ -279,6 +279,17 @@ Shorter, more mechanical packs — each pins one narrow piece of infrastructure 
 - **`test_iam_postgres_backend.py`** — the custom `DatabaseWrapper.get_connection_params()`: when `AWS_IAM_AUTH_ENABLED=True`, generates an RDS auth token via `boto3.client("rds").generate_db_auth_token(...)`, injects it as the password, and forces `sslmode=require`; when disabled, uses the configured static password unchanged and never touches boto3.
 - **`test_seed_demo.py`** (`@pytest.mark.slow`, `@pytest.mark.django_db(transaction=True)`) — integration tests for the `seed_demo` management command used to populate a demo environment: creates the expected four projects with the expected suite/run counts and backdated timestamps; is idempotent (re-running wipes and recreates without changing final counts — this now exercises the real async S3-cleanup signal path via `CELERY_TASK_ALWAYS_EAGER`); and produces the expected mix of real screenshots — a passing test with an attached baseline/thumbnail, a failing test with a non-empty diff image, and an unapproved first-upload test (`new_unbaselined_page`) that has a screenshot but explicitly no baseline screenshot and `passed=False`, pinning the manual-approval design at the seed-data level too.
 
+## `deploy/smoke/` — production smoke test
+
+Not part of the pytest suite: a shell-driven end-to-end check of the built images, run with `make smoke` (see [deployment-and-config.md](deployment-and-config.md#production-smoke-test)).
+
+- `run.sh` — entry point: checks host tools, generates throwaway TLS certs into `certs/` (untracked), `docker compose up --build --wait`, runs the checks, always tears down.
+- `checks.sh` — `check_boot` (service health, no restarts, `/healthz/`, SPA + `/api` proxy, `celery inspect ping`) and `check_upload_roundtrip` (baseline upload, `PATCH` approve, changed upload diffed to `pass=false`, run validate verdict `failed`).
+- `docker-compose.smoke.yml`, `smoke.env`, `seaweedfs-s3.json` — the production-style stack and its throwaway config.
+- `fixtures/baseline.png`, `fixtures/changed.png` — two different images uploaded under the same test key.
+
+Run it with `make smoke` (needs docker compose, `jq`, `openssl`, `curl`). CI runs it on PRs and gates release image publishing on it.
+
 ## What's still worth adding
 
 - End-to-end (Playwright/Cypress) coverage against the built Angular SPA — none exists yet; everything above is backend-only.

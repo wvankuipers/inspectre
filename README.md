@@ -231,11 +231,11 @@ RUN=$(curl -s -X POST http://inspectre.example.com/runs \
 
 # 2. Submit a screenshot (returns immediately with status=pending)
 TEST_ID=$(curl -s -X POST http://inspectre.example.com/tests \
-  -F "test[run_id]=$RUN" \
-  -F "test[name]=Homepage" \
-  -F "test[browser]=Chrome" \
-  -F "test[size]=1440" \
-  -F "test[screenshot]=@homepage.png" | jq -r .id)
+  -F "run_id=$RUN" \
+  -F "name=Homepage" \
+  -F "browser=Chrome" \
+  -F "size=1440" \
+  -F "screenshot=@homepage.png" | jq -r .id)
 
 # 3. Poll for result
 while true; do

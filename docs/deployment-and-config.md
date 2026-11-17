@@ -50,10 +50,12 @@ Services start at:
 | `db`         | PostgreSQL                                                                  | —                    |
 | `valkey`     | Redis-protocol broker for Celery                                            | —                    |
 | `worker`     | Celery worker (`celery -A inspectre worker`) — runs the image diff pipeline | —                    |
-| `minio`      | S3-compatible image storage (dev)                                          | 9000, 9001 (console) |
+| `minio`      | S3-compatible image storage (dev; see note below)                          | 9000, 9001 (console) |
 | `minio-init` | Creates `inspectre-screenshots` bucket on first boot                       | —                    |
 | `api-dev`    | api + dev tools, bind-mounted source (`--profile dev`)                     | —                    |
 | `spa-dev`    | Node container for `npm` (`--profile dev`)                                 | —                    |
+
+> **Note:** the dev stack still uses the `minio/minio` image, which is no longer pullable from Docker Hub. A machine that already has the image cached keeps working, but a fresh pull (new machine, cleared cache, CI) fails, so `make up` and anything depending on `minio` (including `api-dev`) cannot start there. The production smoke test below uses SeaweedFS instead; the dev compose file has not been migrated.
 
 ### Useful make targets
 
@@ -78,6 +80,29 @@ Services start at:
 **Backend:** `docker compose -f deploy/docker-compose.yml build api worker && docker compose -f deploy/docker-compose.yml up -d api worker`
 
 **Frontend:** `docker compose -f deploy/docker-compose.yml build spa && docker compose -f deploy/docker-compose.yml up -d spa`
+
+---
+
+## Production smoke test
+
+`make smoke` (runs `deploy/smoke/run.sh`) boots the whole stack the way production runs it and checks that it works end to end. It is independent of the dev stack: separate compose project (`inspectre-smoke`), separate file (`deploy/smoke/docker-compose.smoke.yml`), throwaway values in `deploy/smoke/smoke.env`.
+
+**What it boots:** images built from the repo (backend `runtime` target, and the frontend SPA image), then `api`, `worker` (started with the Helm chart's bare `celery` command), `spa`, Postgres, **SeaweedFS** as the S3 endpoint (a boto3 `s3-init` one-shot creates the bucket), and Valkey with TLS (`rediss://`) and an ACL user, using a throwaway CA and certificate generated per run (never committed). SeaweedFS is used because `minio/minio` is no longer pullable from Docker Hub. Only two host ports are published: **18000** (api) and **18080** (spa, with its `/api` proxy).
+
+**Checks** (`deploy/smoke/checks.sh`):
+
+1. Boot: every service is running and healthy (the `s3-init` one-shot exited 0), nothing is restarting after a settle period, the worker has `RestartCount` 0.
+2. `GET /healthz/` on the api returns 200; the SPA serves its index and proxies `/api`.
+3. `celery inspect ping` reaches the worker over the TLS/ACL broker.
+4. Upload round trip: create a run, upload `fixtures/baseline.png` (worker finishes, `is_new_baseline`), approve it with `PATCH /tests/:id` (`test[baseline]=true`), upload `fixtures/changed.png` under the same key (diffed, `pass=false`), and `GET .../runs/<seq>/validate/` reports `failed`.
+
+The stack is always torn down (`down -v`); on failure container state and logs are printed first.
+
+**Host requirements:** `docker` with the `compose` v2 plugin, `jq`, `openssl`, `curl`. `run.sh` exits with a clear message if one is missing.
+
+**CI gating:** the `smoke` job in `.github/workflows/ci.yml` runs on PRs and `main`. In `.github/workflows/release.yml` a `smoke` matrix (`ubuntu-latest` and `ubuntu-24.04-arm`) runs first and all four `build-*` image jobs `needs: smoke`, so an image is only published if the stack boots and works on both amd64 and arm64. Both jobs have `timeout-minutes: 30` (cold arm runners).
+
+**Not covered:** Kubernetes, Helm, Vault, IRSA, AWS IAM auth (`AWS_IAM_AUTH_ENABLED=1`, `credential_provider` broker URL, RDS IAM), real ElastiCache.
 
 ---
 
