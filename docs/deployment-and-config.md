@@ -73,6 +73,7 @@ Services start at:
 | `make lint`          | Ruff + Angular ESLint                                 |
 | `make lint-fix`      | Auto-fix both                                         |
 | `make seed`          | Load demo data (wipes existing demo data first)      |
+| `make smoke`         | Boot the production-style stack and run the smoke checks |
 | `make clean`         | Stop containers and remove volumes — DESTROYS local data |
 
 ### Rebuilding after code changes
@@ -87,7 +88,7 @@ Services start at:
 
 `make smoke` (runs `deploy/smoke/run.sh`) boots the whole stack the way production runs it and checks that it works end to end. It is independent of the dev stack: separate compose project (`inspectre-smoke`), separate file (`deploy/smoke/docker-compose.smoke.yml`), throwaway values in `deploy/smoke/smoke.env`.
 
-**What it boots:** images built from the repo (backend `runtime` target, and the frontend SPA image), then `api`, `worker` (started with the Helm chart's bare `celery` command), `spa`, Postgres, **SeaweedFS** as the S3 endpoint (a boto3 `s3-init` one-shot creates the bucket), and Valkey with TLS (`rediss://`) and an ACL user, using a throwaway CA and certificate generated per run (never committed). SeaweedFS is used because `minio/minio` is no longer pullable from Docker Hub. Only two host ports are published: **18000** (api) and **18080** (spa, with its `/api` proxy).
+**What it boots:** images built from the repo (backend `runtime` target, and the frontend SPA image), then `api`, `worker` (started with the bare `celery` command a typical Helm/Kubernetes worker spec uses), `spa`, Postgres, **SeaweedFS** as the S3 endpoint (a boto3 `s3-init` one-shot creates the bucket), and Valkey with TLS (`rediss://`) and an ACL user, using a throwaway CA and certificate generated per run (never committed). SeaweedFS is used because `minio/minio` is no longer pullable from Docker Hub. Only two host ports are published: **18000** (api) and **18080** (spa, with its `/api` proxy).
 
 **Checks** (`deploy/smoke/checks.sh`):
 
@@ -101,6 +102,8 @@ The stack is always torn down (`down -v`); on failure container state and logs a
 **Host requirements:** `docker` with the `compose` v2 plugin, `jq`, `openssl`, `curl`. `run.sh` exits with a clear message if one is missing.
 
 **CI gating:** the `smoke` job in `.github/workflows/ci.yml` runs on PRs and `main`. In `.github/workflows/release.yml` a `smoke` matrix (`ubuntu-latest` and `ubuntu-24.04-arm`) runs first and all four `build-*` image jobs `needs: smoke`, so an image is only published if the stack boots and works on both amd64 and arm64. Both jobs have `timeout-minutes: 30` (cold arm runners).
+
+**A green run does not rule out the 1.6.2 failure.** The backend that broke production in 1.6.2 (`python:3.15-slim`, celery/kombu 5.7.0) passes this smoke test. The cause is environment-specific and still unknown, so a green run does NOT rule out that class of failure, and this gate would not have stopped 1.6.2. Extend the test once the cause is found.
 
 **Not covered:** Kubernetes, Helm, Vault, IRSA, AWS IAM auth (`AWS_IAM_AUTH_ENABLED=1`, `credential_provider` broker URL, RDS IAM), real ElastiCache.
 
