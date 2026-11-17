@@ -1,0 +1,10 @@
+# BuildKit reads <Dockerfile>.dockerignore in preference to a .dockerignore at
+# the context root. The build context is the repo root (see Dockerfile and the
+# compose/release build config), so patterns here are relative to the repo root.
+# A frontend/.dockerignore is never consulted for this build.
+**/node_modules
+frontend/dist
+frontend/.angular
+frontend/coverage
+.vscode
+**/*.log
