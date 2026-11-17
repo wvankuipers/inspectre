@@ -7,6 +7,7 @@ SPA=http://localhost:18080
 BOOT_TIMEOUT=180   # seconds, overall budget for services to become ready
 SETTLE_SECONDS=10  # grace period before re-checking for crash loops
 UPLOAD_TIMEOUT=60  # seconds to wait for the worker to process an upload
+SMOKE_HOST=inspectre-smoke.test  # non-default ALLOWED_HOSTS entry (smoke.env), sent as the Host header
 FIXTURES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixtures"
 
 pass() { echo "PASS: $*"; }
@@ -64,25 +65,28 @@ check_boot() {
     local worker_id restarts
     worker_id=$("${COMPOSE[@]}" ps -q worker)
     [ -n "$worker_id" ] || fail "worker container not found"
+    local entry
+    entry=$(docker inspect -f '{{.Path}}' "$worker_id")
+    [ "$entry" = celery ] || fail "worker entrypoint is '$entry', expected bare 'celery' (tini must be bypassed)"
     restarts=$(docker inspect -f '{{.RestartCount}}' "$worker_id")
     [ "$restarts" = 0 ] || fail "worker restarted $restarts time(s)"
     pass "no restarts after ${SETTLE_SECONDS}s settle (worker RestartCount 0)"
 
     # (c) API liveness
-    curl -fsS --max-time 10 "$API/healthz/" >/dev/null || fail "GET $API/healthz/ failed"
+    curl -fsS --max-time 10 -H "Host: $SMOKE_HOST" "$API/healthz/" >/dev/null || fail "GET $API/healthz/ failed"
     pass "api /healthz/ returns 200"
 
     # (d) SPA liveness
-    curl -fsS --max-time 10 "$SPA/healthz" >/dev/null || fail "GET $SPA/healthz failed"
+    curl -fsS --max-time 10 -H "Host: $SMOKE_HOST" "$SPA/healthz" >/dev/null || fail "GET $SPA/healthz failed"
     pass "spa /healthz returns 200"
 
     # (e) SPA serves the Angular shell
-    body=$(curl -fsS --max-time 10 "$SPA/") || fail "GET $SPA/ failed"
+    body=$(curl -fsS --max-time 10 -H "Host: $SMOKE_HOST" "$SPA/") || fail "GET $SPA/ failed"
     case "$body" in *"<app-root"*) ;; *) fail "$SPA/ does not contain <app-root" ;; esac
     pass "spa / serves the Angular index"
 
     # (f) nginx proxies /api/ to the backend
-    code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "$SPA/api/projects/") || fail "GET $SPA/api/projects/ failed"
+    code=$(curl -sS --max-time 10 -H "Host: $SMOKE_HOST" -o /dev/null -w '%{http_code}' "$SPA/api/projects/") || fail "GET $SPA/api/projects/ failed"
     [ "$code" = 200 ] || fail "GET $SPA/api/projects/ returned $code"
     pass "spa proxies /api/projects/ to the api (200)"
 
@@ -98,7 +102,7 @@ check_boot() {
 
 # POST a screenshot as a new test in run $1 (image $2); print the response JSON.
 _upload_test() {
-    curl -fsS --max-time 30 -X POST "$API/tests" \
+    curl -sS --fail-with-body --max-time 30 -H "Host: $SMOKE_HOST" -X POST "$API/tests" \
         -F "run_id=$1" -F "name=Home" -F "browser=Chrome" \
         -F "size=1024" -F "screenshot=@$FIXTURES/$2"
 }
@@ -108,7 +112,7 @@ _upload_test() {
 _wait_test_done() {
     local deadline=$((SECONDS + UPLOAD_TIMEOUT)) body status
     while :; do
-        body=$(curl -fsS --max-time 10 "$API/tests/$1/status") || fail "GET $API/tests/$1/status failed"
+        body=$(curl -fsS --max-time 10 -H "Host: $SMOKE_HOST" "$API/tests/$1/status") || fail "GET $API/tests/$1/status failed"
         status=$(jq -r .status <<<"$body")
         case "$status" in
             done) echo "$body"; return 0 ;;
@@ -121,7 +125,7 @@ _wait_test_done() {
 
 # Create a run in Smoke/Boot; print "<id> <sequential_id>".
 _create_run() {
-    curl -fsS --max-time 10 -X POST "$API/runs" -d project=Smoke -d suite=Boot | jq -r '"\(.id) \(.sequential_id)"'
+    curl -sS --fail-with-body --max-time 10 -H "Host: $SMOKE_HOST" -X POST "$API/runs" -d project=Smoke -d suite=Boot | jq -r '"\(.id) \(.sequential_id)"'
 }
 
 # Full pipeline: api -> S3 -> worker -> ImageMagick diff -> validate verdict.
@@ -139,7 +143,7 @@ check_upload_roundtrip() {
 
     # Approve it as the baseline (PATCH /tests/:id, docs/api.md), so the next
     # upload for the same key is actually diffed.
-    curl -fsS --max-time 10 -X PATCH "$API/tests/$test_id" -d "test[baseline]=true" >/dev/null ||
+    curl -sS --fail-with-body --max-time 10 -H "Host: $SMOKE_HOST" -X PATCH "$API/tests/$test_id" -d "test[baseline]=true" >/dev/null ||
         fail "PATCH $API/tests/$test_id (set baseline) failed"
 
     # Same key, different image: ImageMagick must run and report a failed diff.
@@ -152,7 +156,7 @@ check_upload_roundtrip() {
     pass "changed upload diffed against baseline (pass=false)"
 
     # The CI-facing verdict for that run must be "failed".
-    verdict=$(curl -fsS --max-time 10 "$SPA/api/projects/smoke/suites/boot/runs/$seq/validate/" | jq -r .status) ||
+    verdict=$(curl -fsS --max-time 10 -H "Host: $SMOKE_HOST" "$SPA/api/projects/smoke/suites/boot/runs/$seq/validate/" | jq -r .status) ||
         fail "GET run validate failed"
     [ "$verdict" = failed ] || fail "run validate status is '$verdict', expected 'failed'"
     pass "run validate endpoint reports failed"
@@ -161,4 +165,7 @@ check_upload_roundtrip() {
 run_checks() {
     check_boot
     check_upload_roundtrip
+    local offender
+    offender=$(_services_ready) || fail "service not healthy after the upload round trip ($offender)"
+    pass "all services still running and healthy after the upload round trip"
 }

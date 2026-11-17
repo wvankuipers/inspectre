@@ -155,6 +155,7 @@ Populates three projects with runs, pass/fail tests, and baselines so you can ex
 | `make shell-api`              | Django shell inside api container          |
 | `make reset`                  | Nuke and rebuild everything from scratch   |
 | `make perf`                   | Performance stress test (needs `make up`)  |
+| `make smoke`                  | Production-style stack + smoke checks      |
 
 ### Rebuilding after code changes
 

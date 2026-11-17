@@ -294,4 +294,4 @@ Run it with `make smoke` (needs docker compose, `jq`, `openssl`, `curl`). CI run
 
 - End-to-end (Playwright/Cypress) coverage against the built Angular SPA — none exists yet; everything above is backend-only.
 - Frontend unit tests live under `frontend/` (Vitest + jsdom) and are out of scope for this document.
-- A dedicated moto-based (or MinIO-via-testcontainers) integration pack for the raw S3 client paths that the hermetic `FileSystemStorage` swap currently bypasses in most tests — today only the IAM-auth and presigned-URL tests exercise real signing logic; nothing exercises a real S3-compatible `PUT`/`GET` round trip end-to-end.
+- A dedicated moto-based (or MinIO-via-testcontainers) integration pack for the raw S3 client paths that the hermetic `FileSystemStorage` swap currently bypasses in most tests — today only the IAM-auth and presigned-URL tests exercise real signing logic; nothing in the pytest suite exercises a real S3-compatible `PUT`/`GET` round trip end-to-end (the production smoke test does, via SeaweedFS).

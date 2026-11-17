@@ -8,3 +8,6 @@ frontend/.angular
 frontend/coverage
 .vscode
 **/*.log
+.env
+.git
+backend
