@@ -53,6 +53,14 @@ generated from the connection hostname.
 Cache names are lowercased at creation time; the app lowercases this value before
 signing.
 
+### Required ACL permissions
+
+The ElastiCache user needs at least `+@connection +@read +@write +@transaction
++@pubsub +@scripting +time` (kombu >= 5.7 runs Lua scripts that call `TIME`; without
+`+time` the Celery worker crashes with `ACL failure in script ... 'time'`) and
+key/channel access `~* &*` (adjust if you use narrower patterns). The production-style
+smoke test (`make smoke`) uses exactly this access string for its Valkey user.
+
 ## Error behavior
 
 There is no fallback to static credentials if IAM auth fails (missing IRSA
