@@ -61,6 +61,11 @@ services:
 
   # TLS-only listener with an ACL user (default user disabled), mirroring a
   # managed Valkey/ElastiCache with in-transit encryption and auth.
+  # The smoke user's permissions (everything after "&*") must mirror the production
+  # user's access string exactly: on ~* &* -@all +@connection +@read +@write
+  # +@transaction +@pubsub +@scripting +time. `+time` is required by kombu >= 5.7
+  # (Celery 5.7), whose Lua scripts call TIME. If production permissions change,
+  # change this list too.
   valkey:
     image: valkey/valkey:8-alpine
     command:
@@ -83,7 +88,14 @@ services:
       - ">smokepass"
       - "~*"
       - "&*"
-      - "+@all"
+      - "-@all"
+      - "+@connection"
+      - "+@read"
+      - "+@write"
+      - "+@transaction"
+      - "+@pubsub"
+      - "+@scripting"
+      - "+time"
       - --user
       - default
       - "off"

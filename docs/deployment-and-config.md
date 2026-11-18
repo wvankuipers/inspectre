@@ -103,9 +103,9 @@ The stack is always torn down (`down -v`); on failure container state and logs a
 
 **CI gating:** the `smoke` job in `.github/workflows/ci.yml` runs on PRs and `main`. In `.github/workflows/release.yml` a `smoke` matrix (`ubuntu-latest` and `ubuntu-24.04-arm`) runs first and all four `build-*` image jobs `needs: smoke`, so an image is only published if the stack boots and works on both amd64 and arm64. Both jobs have `timeout-minutes: 30` (cold arm runners).
 
-**A green run does not rule out the 1.6.2 failure.** The backend that broke production in 1.6.2 (`python:3.15-slim`, celery/kombu 5.7.0) passes this smoke test. The cause is environment-specific and still unknown, so a green run does NOT rule out that class of failure, and this gate would not have stopped 1.6.2. Extend the test once the cause is found.
+**Valkey ACL:** the smoke Valkey user (`smoke`, with the default user disabled) mirrors the production user's access string: `on ~* &* -@all +@connection +@read +@write +@transaction +@pubsub +@scripting +time`. `+time` is required because kombu >= 5.7 (Celery 5.7) runs Lua scripts that call `redis.call('TIME')`; without it the worker fails with `ACL failure in script ... 'time'` (an unrecoverable worker error, so the smoke run fails). This is the failure class behind the 1.6.2 worker crash (missing Valkey command permissions), so the smoke test now covers it. The smoke ACL is kept in sync with the real one by hand: if the production user's permissions change, update the `valkey` command in `deploy/smoke/docker-compose.smoke.yml` too.
 
-**Not covered:** Kubernetes, Helm, Vault, IRSA, AWS IAM auth (`AWS_IAM_AUTH_ENABLED=1`, `credential_provider` broker URL, RDS IAM), real ElastiCache.
+**Not covered** (so a green run says nothing about them): Kubernetes, Helm, Vault, IRSA, AWS IAM auth (`AWS_IAM_AUTH_ENABLED=1`, `credential_provider` broker URL, RDS IAM), real ElastiCache.
 
 ---
 
