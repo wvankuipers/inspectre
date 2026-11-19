@@ -6,7 +6,7 @@
 - **Task queue:** Celery workers, Valkey broker
 - **Frontend:** Angular SPA served by nginx
 - **Database:** PostgreSQL
-- **Object storage:** S3-compatible (MinIO in dev, AWS S3 in prod)
+- **Object storage:** S3-compatible (SeaweedFS in dev, AWS S3 in prod)
 - **Orchestration:** Docker Compose (single-host), see `deploy/docker-compose.yml`
 
 The `spa` image renders its nginx config from `frontend/nginx.spa.conf.template`
@@ -39,7 +39,7 @@ Services start at:
 | SPA           | http://localhost:4200        |
 | API           | http://localhost:8000        |
 | Django admin  | http://localhost:8000/admin  |
-| MinIO console | http://localhost:9001        |
+| S3 API        | http://localhost:9000 (no web console) |
 
 ### Docker Compose services (`deploy/docker-compose.yml`)
 
@@ -50,12 +50,12 @@ Services start at:
 | `db`         | PostgreSQL                                                                  | —                    |
 | `valkey`     | Redis-protocol broker for Celery                                            | —                    |
 | `worker`     | Celery worker (`celery -A inspectre worker`) — runs the image diff pipeline | —                    |
-| `minio`      | S3-compatible image storage (dev; see note below)                          | 9000, 9001 (console) |
-| `minio-init` | Creates `inspectre-screenshots` bucket on first boot                       | —                    |
+| `seaweedfs`  | S3-compatible image storage (dev; `chrislusf/seaweedfs:4.54`, S3 on container port 8333, static identity from `deploy/seaweedfs-s3.json`, volume `seaweedfs-data`) | 9000 (→ 8333) |
+| `s3-init`    | boto3 one-shot that creates the `inspectre-screenshots` bucket; idempotent (re-runs against the persisted volume are a no-op) | —                    |
 | `api-dev`    | api + dev tools, bind-mounted source (`--profile dev`)                     | —                    |
 | `spa-dev`    | Node container for `npm` (`--profile dev`)                                 | —                    |
 
-> **Note:** the dev stack still uses the `minio/minio` image, which is no longer pullable from Docker Hub. A machine that already has the image cached keeps working, but a fresh pull (new machine, cleared cache, CI) fails, so `make up` and anything depending on `minio` (including `api-dev`) cannot start there. The production smoke test below uses SeaweedFS instead; the dev compose file has not been migrated.
+> **Note:** the dev stack previously used MinIO (`minio/minio`, no longer pullable from Docker Hub) and now uses SeaweedFS, as the production smoke test does. There is no web console, and the bucket is private (presigned URLs only). A local `.env` from the MinIO era must be updated; see the README.
 
 ### Useful make targets
 
@@ -88,7 +88,7 @@ Services start at:
 
 `make smoke` (runs `deploy/smoke/run.sh`) boots the whole stack the way production runs it and checks that it works end to end. It is independent of the dev stack: separate compose project (`inspectre-smoke`), separate file (`deploy/smoke/docker-compose.smoke.yml`), throwaway values in `deploy/smoke/smoke.env`.
 
-**What it boots:** images built from the repo (backend `runtime` target, and the frontend SPA image), then `api`, `worker` (started with the bare `celery` command a typical Helm/Kubernetes worker spec uses), `spa`, Postgres, **SeaweedFS** as the S3 endpoint (a boto3 `s3-init` one-shot creates the bucket), and Valkey with TLS (`rediss://`) and an ACL user, using a throwaway CA and certificate generated per run (never committed). SeaweedFS is used because `minio/minio` is no longer pullable from Docker Hub. Only two host ports are published: **18000** (api) and **18080** (spa, with its `/api` proxy).
+**What it boots:** images built from the repo (backend `runtime` target, and the frontend SPA image), then `api`, `worker` (started with the bare `celery` command a typical Helm/Kubernetes worker spec uses), `spa`, Postgres, **SeaweedFS** as the S3 endpoint (a boto3 `s3-init` one-shot creates the bucket), and Valkey with TLS (`rediss://`) and an ACL user, using a throwaway CA and certificate generated per run (never committed). SeaweedFS is used (as in dev) because `minio/minio` is no longer pullable from Docker Hub. Only two host ports are published: **18000** (api) and **18080** (spa, with its `/api` proxy).
 
 **Checks** (`deploy/smoke/checks.sh`):
 
@@ -122,11 +122,11 @@ All runtime config is passed via `.env` (dev) or environment variables (prod).
 | `CORS_ALLOWED_ORIGINS`       | no       | `` (empty)                        | Set in split-host deployments only                                                            |
 | `DATABASE_URL`               | yes      | postgres://inspectre:inspectre@db | Full postgres DSN                                                                             |
 | `S3_BUCKET_NAME`             | yes      | `inspectre-screenshots`           | Bucket must exist before first run                                                            |
-| `S3_REGION`                  | yes      | `us-east-1`                       | AWS region or any value for MinIO                                                             |
-| `S3_ENDPOINT_URL`            | no       | —                                 | Set to MinIO URL in dev; omit for AWS S3                                                      |
-| `S3_ACCESS_KEY_ID`           | yes      | —                                 | AWS access key or MinIO root user                                                             |
-| `S3_SECRET_ACCESS_KEY`       | yes      | —                                 | AWS secret key or MinIO root password                                                         |
-| `S3_PUBLIC_BASE_URL`         | no       | —                                 | Browser-reachable origin used to derive the presigning endpoint (e.g. `http://localhost:9000/inspectre-screenshots` in dev, so presigned URLs are signed against `http://localhost:9000` instead of the container-internal MinIO endpoint; omit in prod where the real S3 endpoint is already browser-reachable). SigV4 signs the request's `Host` header (`X-Amz-SignedHeaders=host`), so setting this to a CDN origin does not by itself make presigned URLs work through that CDN — the CDN must forward requests to S3 preserving the exact viewer host and query string, or you need CloudFront signed URLs/cookies instead of S3 presigning |
+| `S3_REGION`                  | yes      | `us-east-1`                       | AWS region or any value for SeaweedFS                                                           |
+| `S3_ENDPOINT_URL`            | no       | —                                 | Set to SeaweedFS URL in dev (`http://seaweedfs:8333`); omit for AWS S3                                                      |
+| `S3_ACCESS_KEY_ID`           | yes      | —                                 | AWS access key or SeaweedFS dev key (`devaccess`)                                                           |
+| `S3_SECRET_ACCESS_KEY`       | yes      | —                                 | AWS secret key or SeaweedFS dev secret (`devsecretkey`)                                                       |
+| `S3_PUBLIC_BASE_URL`         | no       | —                                 | Browser-reachable origin used to derive the presigning endpoint (e.g. `http://localhost:9000/inspectre-screenshots` in dev, so presigned URLs are signed against `http://localhost:9000` instead of the container-internal SeaweedFS endpoint; omit in prod where the real S3 endpoint is already browser-reachable). SigV4 signs the request's `Host` header (`X-Amz-SignedHeaders=host`), so setting this to a CDN origin does not by itself make presigned URLs work through that CDN — the CDN must forward requests to S3 preserving the exact viewer host and query string, or you need CloudFront signed URLs/cookies instead of S3 presigning |
 | `ADMIN_USERNAME`             | no       | `admin`                           | Django admin username                                                                         |
 | `ADMIN_PASSWORD`             | no       | —                                 | Django admin password; if unset, `ensure_admin_user` skips bootstrap (no admin account created) |
 | `AWS_REGION`                 | no       | `us-east-1`                       | AWS region used for RDS IAM token signing (`core/db_backends/iam_postgres/base.py`) and ElastiCache SigV4 signing (`core/cache_backends/iam_credential_provider.py`) when `AWS_IAM_AUTH_ENABLED=1`. Must be set to the region the RDS/ElastiCache resources actually live in, or IAM auth token generation will fail |

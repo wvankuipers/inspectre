@@ -49,7 +49,7 @@ The first submission for any (project, suite, name, browser, size) combination h
 | Task queue     | Celery + Valkey (Redis-protocol broker)                   |
 | Web UI         | Angular, standalone/zoneless components, Angular Material |
 | Database       | PostgreSQL                                                |
-| Object storage | S3-compatible — MinIO in dev, AWS S3 in prod              |
+| Object storage | S3-compatible — SeaweedFS in dev, AWS S3 in prod          |
 | Serving        | gunicorn (API) + nginx (SPA + reverse proxy)              |
 | Orchestration  | Docker Compose                                            |
 
@@ -129,7 +129,9 @@ Services:
 | SPA           | http://localhost:4200                                 |
 | API           | http://localhost:8000                                 |
 | Django admin  | http://localhost:8000/admin                           |
-| MinIO console | http://localhost:9001 (login: `minio` / `miniominio`) |
+| S3 API (SeaweedFS) | http://localhost:9000 (no web console) |
+
+> **Upgrading from the MinIO dev stack?** The dev object store is now SeaweedFS. If your local `.env` predates this change (it has `S3_ENDPOINT_URL=http://minio:9000` and `MINIO_*` values), set `S3_ENDPOINT_URL=http://seaweedfs:8333`, `S3_ACCESS_KEY_ID=devaccess` and `S3_SECRET_ACCESS_KEY=devsecretkey` (see `.env.example`) and drop the `MINIO_*` entries, then `make up`. The old `minio-data` volume is no longer used.
 
 The SPA's nginx reverse-proxies `/api`, `/runs`, `/tests`, `/baselines`, and `/admin` to the API container — everything is same-origin from the browser.
 
@@ -185,10 +187,10 @@ docker compose build spa && docker compose up -d spa
 | `CORS_ALLOWED_ORIGINS`      | no       | Comma-separated origins; empty means same-origin only                        |
 | `DATABASE_URL`              | yes      | Full postgres DSN                                                            |
 | `S3_BUCKET_NAME`            | yes      | Must exist before first run                                                  |
-| `S3_REGION`                 | yes      | AWS region or any value for MinIO                                            |
-| `S3_ENDPOINT_URL`           | no       | Set for MinIO; omit for AWS S3                                               |
-| `S3_ACCESS_KEY_ID`          | yes      | AWS key or MinIO root user                                                   |
-| `S3_SECRET_ACCESS_KEY`      | yes      | AWS secret or MinIO root password                                            |
+| `S3_REGION`                 | yes      | AWS region or any value for SeaweedFS                                          |
+| `S3_ENDPOINT_URL`           | no       | Set for SeaweedFS; omit for AWS S3                                           |
+| `S3_ACCESS_KEY_ID`          | yes      | AWS key or SeaweedFS dev access key                                            |
+| `S3_SECRET_ACCESS_KEY`      | yes      | AWS secret or SeaweedFS dev secret key                                            |
 | `S3_PUBLIC_BASE_URL`        | no       | CDN prefix for browser-reachable image URLs                                  |
 | `ADMIN_USERNAME`            | no       | Default: `admin`                                                             |
 | `ADMIN_PASSWORD`            | no       | If unset, `ensure_admin_user` skips bootstrap (no admin account created)     |

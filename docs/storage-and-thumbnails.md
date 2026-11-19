@@ -66,7 +66,7 @@ A Run with 50 tests, each 1 MB → ~150 MB of original PNGs on Spectre per run. 
 
 ## Rebuild: S3-compatible only
 
-User decision: drop the local-filesystem datastore. Everything goes to object storage (AWS S3, MinIO, GCS via S3 API, Backblaze B2, etc.).
+User decision: drop the local-filesystem datastore. Everything goes to object storage (AWS S3, SeaweedFS, GCS via S3 API, Backblaze B2, etc.).
 
 ### Layout
 
@@ -124,7 +124,7 @@ S3 bucket is private, and URLs are presigned. Every screenshot/baseline/diff/thu
 
 The bucket must deny anonymous/public `s3:GetObject`; access is only via presigned URLs or the IAM/static credentials configured in `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (used for `PutObject`/`DeleteObject` and for generating presigned URLs).
 
-**Dev exception:** the MinIO setup in `deploy/docker-compose.yml` runs `mc anonymous set download local/inspectre-screenshots` on the `minio-init` service, which grants public anonymous `GetObject` on the whole bucket in local dev. This is a deliberate simplification for local development (lets you open an S3 URL directly in a browser without presigning) — it does not reflect the intended prod (AWS S3) bucket policy, which should keep denying anonymous access as described above.
+**Dev parity:** the dev stack's SeaweedFS (`seaweedfs` service in `deploy/docker-compose.yml`, static identity from `deploy/seaweedfs-s3.json`) also keeps the bucket private — there is no anonymous read, so the API's presigned URLs are the only way to fetch objects in dev, same as prod. (The earlier MinIO-based dev stack made the bucket anonymously readable; that exception is gone.) The `s3-init` one-shot creates the `inspectre-screenshots` bucket and is idempotent.
 
 ### Thumbnails in the rebuild
 
