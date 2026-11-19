@@ -14,6 +14,13 @@ at container start (via the base image's built-in envsubst-on-templates
 entrypoint), substituting `API_UPSTREAM` and `RESOLVER_ADDRESS`. Everything
 else in the config is static.
 
+**Image pinning.** Every Docker image (Dockerfiles, `deploy/docker-compose.yml`,
+`deploy/smoke/docker-compose.smoke.yml`, the CI Postgres service container) is pinned
+to an exact version tag (e.g. `postgres:16.16`, `valkey/valkey:8.1.11-alpine`), never a
+floating tag like `16` or `8-alpine`. Versions are bumped deliberately: Dependabot's
+`docker` ecosystem (`.github/dependabot.yml`, dirs `/backend`, `/frontend`, `/deploy`)
+opens minor/patch PRs; the `node` image is ignored there and is bumped by hand.
+
 ---
 
 ## Local Development

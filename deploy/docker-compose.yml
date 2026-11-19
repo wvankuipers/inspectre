@@ -66,11 +66,11 @@ services:
       retries: 10
       start_period: 10s
 
-  # Node-based image for `make lint` and `make test-frontend`. Uses node:24 directly
+  # Node-based image for `make lint` and `make test-frontend`. Uses node:24.22.3 directly
   # (the production spa image is nginx-only). Bind-mounts the source so lint --fix
   # writes back to the working tree; named volume preserves node_modules across runs.
   spa-dev:
-    image: node:24-alpine
+    image: node:24.22.3-alpine
     working_dir: /app
     volumes:
       - ../frontend:/app:rw
@@ -79,7 +79,7 @@ services:
     profiles: ["dev"]
 
   db:
-    image: postgres:16
+    image: postgres:16.16
     environment:
       POSTGRES_DB: inspectre
       POSTGRES_USER: inspectre
@@ -146,7 +146,7 @@ services:
         condition: service_healthy
 
   valkey:
-    image: valkey/valkey:8-alpine
+    image: valkey/valkey:8.1.11-alpine
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]

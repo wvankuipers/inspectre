@@ -1,5 +1,5 @@
 # ---- Stage 1: build the Angular bundle --------------------------------------
-FROM node:24-alpine AS builder
+FROM node:24.22.3-alpine AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ COPY frontend/ .
 RUN npm run build -- --configuration=production
 
 # ---- Stage 2: serve static assets with nginx --------------------------------
-FROM nginx/nginx-unprivileged:1.31-alpine
+FROM nginx/nginx-unprivileged:1.31.9-alpine
 
 COPY --from=builder /app/dist/inspectre-frontend/browser /usr/share/nginx/html
 COPY frontend/nginx.spa.conf.template /etc/nginx/templates/default.conf.template
