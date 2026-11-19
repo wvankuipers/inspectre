@@ -34,7 +34,7 @@
     "@angular/compiler-cli": "22.2.6",
     "@eslint/js": "10.0.1",
     "@vitest/coverage-istanbul": "5.1.0",
-    "angular-eslint": "22.6.0",
+    "angular-eslint": "22.7.0",
     "eslint": "10.15.0",
     "jsdom": "31.0.1",
     "prettier": "3.10.1",
