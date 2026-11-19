@@ -131,7 +131,7 @@ Services:
 | Django admin  | http://localhost:8000/admin                           |
 | S3 API (SeaweedFS) | http://localhost:9000 (no web console) |
 
-> **Upgrading from the MinIO dev stack?** The dev object store is now SeaweedFS. If your local `.env` predates this change (it has `S3_ENDPOINT_URL=http://minio:9000` and `MINIO_*` values), set `S3_ENDPOINT_URL=http://seaweedfs:8333`, `S3_ACCESS_KEY_ID=devaccess` and `S3_SECRET_ACCESS_KEY=devsecretkey` (see `.env.example`) and drop the `MINIO_*` entries, then `make up`. The old `minio-data` volume is no longer used.
+> **Upgrading from the MinIO dev stack?** The dev object store is now SeaweedFS. If your local `.env` predates this change (it has `S3_ENDPOINT_URL=http://minio:9000` and `MINIO_*` values), set `S3_ENDPOINT_URL=http://seaweedfs:8333`, `S3_ACCESS_KEY_ID=devaccess` and `S3_SECRET_ACCESS_KEY=devsecretkey` (see `.env.example`) and drop the `MINIO_*` entries. Before `make up`, run `docker compose -f deploy/docker-compose.yml --env-file .env down --remove-orphans`: the old `minio`/`minio-init` containers are orphans that still hold host port 9000, so `seaweedfs` would fail to bind. Optionally reclaim the old volume with `docker volume rm deploy_minio-data`.
 
 The SPA's nginx reverse-proxies `/api`, `/runs`, `/tests`, `/baselines`, and `/admin` to the API container — everything is same-origin from the browser.
 

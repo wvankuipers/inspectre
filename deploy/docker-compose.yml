@@ -130,7 +130,7 @@ services:
             try:
                 s3.create_bucket(Bucket=os.environ["S3_BUCKET_NAME"])
                 break
-            except s3.exceptions.BucketAlreadyOwnedByYou:
+            except (s3.exceptions.BucketAlreadyOwnedByYou, s3.exceptions.BucketAlreadyExists):
                 break  # volume persists across `make down`; re-runs must be idempotent
             except Exception as e:
                 if attempt == 29:

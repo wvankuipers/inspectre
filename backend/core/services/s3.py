@@ -38,10 +38,10 @@ def get_presign_s3_client():
 
     Presigned URLs must be signed against a host the browser can actually reach.
     In dev that's S3_PUBLIC_BASE_URL's origin (localhost:9000), not the
-    container-internal AWS_S3_ENDPOINT_URL (minio:9000) used for direct
+    container-internal AWS_S3_ENDPOINT_URL (seaweedfs:8333) used for direct
     upload/download/delete. In prod, both are the same real S3 endpoint.
 
-    Path-style addressing is hardcoded because MinIO in dev is addressed via
+    Path-style addressing is hardcoded because SeaweedFS in dev is addressed via
     a path prefix (http://localhost:9000/<bucket>/...), not a bucket subdomain;
     real S3 accepts path-style too, so this is a safe universal default.
 
