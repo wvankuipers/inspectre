@@ -8,11 +8,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      minio:
+      seaweedfs:
         condition: service_healthy
       # Wait for the bucket-creation one-shot to finish. This also tells
-      # `up --wait` that minio-init exiting 0 is expected (not a failure).
-      minio-init:
+      # `up --wait` that s3-init exiting 0 is expected (not a failure).
+      s3-init:
         condition: service_completed_successfully
       valkey:
         condition: service_healthy
@@ -46,7 +46,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      minio:
+      seaweedfs:
         condition: service_healthy
     profiles: ["dev"]   # not started by `docker compose up`
 
@@ -92,38 +92,52 @@ services:
       timeout: 3s
       retries: 5
 
-  minio:
-    image: minio/minio
-    command: server /data --console-address ":9001"
+  # S3-compatible object store (SeaweedFS). Static identity from seaweedfs-s3.json,
+  # matching S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY in .env.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.54
+    entrypoint: ["weed"]
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json"]
     ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      - "9000:8333"
     volumes:
-      - minio-data:/data
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+      - seaweedfs-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8333/status"]
+      interval: 3s
       timeout: 3s
-      retries: 10
-      start_period: 10s
+      retries: 30
+      start_period: 5s
 
-  minio-init:
-    image: minio/mc
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+  # One-shot: create the bucket with boto3 from the api image (path-style).
+  s3-init:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: runtime
+    env_file: ../.env
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        import os, time, boto3
+        from botocore.config import Config
+        s3 = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT_URL"],
+            aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
+            region_name=os.environ["S3_REGION"], config=Config(s3={"addressing_style": "path"}))
+        for attempt in range(30):
+            try:
+                s3.create_bucket(Bucket=os.environ["S3_BUCKET_NAME"])
+                break
+            except Exception as e:
+                if attempt == 29:
+                    raise
+                print("retrying:", e); time.sleep(1)
+        print("bucket ready")
     depends_on:
-      minio:
+      seaweedfs:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      until /usr/bin/mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do sleep 1; done;
-      /usr/bin/mc mb --ignore-existing local/inspectre-screenshots;
-      /usr/bin/mc anonymous set download local/inspectre-screenshots;
-      "
 
   valkey:
     image: valkey/valkey:8-alpine
@@ -146,12 +160,12 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
-      minio:
+      seaweedfs:
         condition: service_healthy
     restart: unless-stopped
 
 volumes:
   pg-data:
-  minio-data:
+  seaweedfs-data:
   api-dev-venv:   # named volume preserves the image's /app/.venv across bind mounts
   spa-dev-node-modules:   # cache npm install across spa-dev runs

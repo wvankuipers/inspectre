@@ -43,11 +43,10 @@ help: ## Show this help message
 
 # ---- Stack lifecycle ------------------------------------------------------
 
-up: ## Start the full stack (api, spa, db, minio) in the background
+up: ## Start the full stack (api, spa, db, seaweedfs) in the background
 	$(COMPOSE) up -d --wait
 	@echo "API:   http://localhost:8000"
 	@echo "SPA:   http://localhost:4200"
-	@echo "MinIO: http://localhost:9001  (minio / miniominio)"
 
 down: ## Stop and remove all containers (preserves volumes)
 	$(COMPOSE) down
