@@ -85,6 +85,25 @@ updates:
         update-types:
           - "minor"
           - "patch"
+  - package-ecosystem: "docker"
+    directory: "/deploy/smoke"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "deploy"
+    assignees:
+      - "wvankuipers"
+    groups:
+      smoke-docker:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
