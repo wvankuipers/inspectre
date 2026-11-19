@@ -66,11 +66,11 @@ services:
       retries: 10
       start_period: 10s
 
-  # Node-based image for `make lint` and `make test-frontend`. Uses node:24.22.3 directly
+  # Node-based image for `make lint` and `make test-frontend`. Uses node:26.13.1 directly
   # (the production spa image is nginx-only). Bind-mounts the source so lint --fix
   # writes back to the working tree; named volume preserves node_modules across runs.
   spa-dev:
-    image: node:24.22.3-alpine
+    image: node:26.13.1-alpine
     working_dir: /app
     volumes:
       - ../frontend:/app:rw
