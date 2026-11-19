@@ -6,7 +6,7 @@ There is **no authentication** on any endpoint. CSRF protection is not required 
 
 This is the current Django/DRF backend. All routes are unauthenticated (`AllowAny`); there is no session/CSRF layer on any of them.
 
-> **Historical note:** an earlier Rails-era (and, in places, purely aspirational) version of this doc described HTML routes — `GET /`, `GET /projects`, `GET /projects/:project_slug/suites/:slug`, `GET /projects/:project_slug/suites/:suite_slug/runs/:sequential_id` (HTML), `GET /runs/new`, `GET /tests/new` — and a Dragonfly-backed `/media/:job/:name` image route. None of these exist in the current backend. The SPA is served as a static Angular bundle by nginx and talks to the API purely over JSON under `/api/*`; there are no server-rendered HTML pages. Screenshots are served from S3/MinIO via presigned URLs, not a Dragonfly middleware route.
+> **Historical note:** an earlier Rails-era (and, in places, purely aspirational) version of this doc described HTML routes — `GET /`, `GET /projects`, `GET /projects/:project_slug/suites/:slug`, `GET /projects/:project_slug/suites/:suite_slug/runs/:sequential_id` (HTML), `GET /runs/new`, `GET /tests/new` — and a Dragonfly-backed `/media/:job/:name` image route. None of these exist in the current backend. The SPA is served as a static Angular bundle by nginx and talks to the API purely over JSON under `/api/*`; there are no server-rendered HTML pages. Screenshots are served from S3/SeaweedFS via presigned URLs, not a Dragonfly middleware route.
 
 ### Legacy (Client API) routes — frozen, un-prefixed
 
@@ -207,7 +207,7 @@ Public read of a baseline by its key. The extension selects the response format:
 
 404 if no Baseline matches the key.
 
-> **Historical note:** an earlier version of this doc described `GET /projects/:project_slug/suites/:suite_slug/runs/:sequential_id` as an HTML-or-JSON Rails route, plus `GET /runs/new` / `GET /tests/new` hand-testing forms and a Dragonfly-backed `/media/:job/:name` image route. None of these exist in the current Django backend — there are no server-rendered HTML pages, and screenshots are served from S3/MinIO. The current equivalent of the run page is the SPA endpoint `GET /api/projects/<slug>/suites/<slug>/runs/<seq>/` (below), which returns JSON only.
+> **Historical note:** an earlier version of this doc described `GET /projects/:project_slug/suites/:suite_slug/runs/:sequential_id` as an HTML-or-JSON Rails route, plus `GET /runs/new` / `GET /tests/new` hand-testing forms and a Dragonfly-backed `/media/:job/:name` image route. None of these exist in the current Django backend — there are no server-rendered HTML pages, and screenshots are served from S3/SeaweedFS. The current equivalent of the run page is the SPA endpoint `GET /api/projects/<slug>/suites/<slug>/runs/<seq>/` (below), which returns JSON only.
 
 ### `/admin/*`
 

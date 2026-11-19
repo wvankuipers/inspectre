@@ -58,7 +58,7 @@ Image fixtures: `testcard`, `testcard_large`, `run1`, `run2` — each a `pathlib
 
 Two autouse fixtures keep the suite hermetic:
 
-- `_filesystem_storage(settings, tmp_path)` — swaps `settings.STORAGES` to `FileSystemStorage` pointed at a per-test `tmp_path`, so no test needs a real S3/MinIO bucket. Tests that need real S3 semantics (IAM auth, presigning behaviour) mock at the `boto3` boundary directly instead.
+- `_filesystem_storage(settings, tmp_path)` — swaps `settings.STORAGES` to `FileSystemStorage` pointed at a per-test `tmp_path`, so no test needs a real S3 bucket. Tests that need real S3 semantics (IAM auth, presigning behaviour) mock at the `boto3` boundary directly instead.
 - `_clear_presign_client_cache()` — `get_presign_s3_client` is `lru_cache`'d for performance; since the `settings` fixture mutates and reverts settings per test, a cached client from one test could otherwise leak a stale endpoint/region into the next. Clears the cache before and after every test.
 
 ## `test_screenshot_comparison.py` — the diff pipeline
@@ -294,4 +294,4 @@ Run it with `make smoke` (needs docker compose, `jq`, `openssl`, `curl`). CI run
 
 - End-to-end (Playwright/Cypress) coverage against the built Angular SPA — none exists yet; everything above is backend-only.
 - Frontend unit tests live under `frontend/` (Vitest + jsdom) and are out of scope for this document.
-- A dedicated moto-based (or MinIO-via-testcontainers) integration pack for the raw S3 client paths that the hermetic `FileSystemStorage` swap currently bypasses in most tests — today only the IAM-auth and presigned-URL tests exercise real signing logic; nothing in the pytest suite exercises a real S3-compatible `PUT`/`GET` round trip end-to-end (the production smoke test does, via SeaweedFS).
+- A dedicated moto-based (or SeaweedFS-via-testcontainers) integration pack for the raw S3 client paths that the hermetic `FileSystemStorage` swap currently bypasses in most tests — today only the IAM-auth and presigned-URL tests exercise real signing logic; nothing in the pytest suite exercises a real S3-compatible `PUT`/`GET` round trip end-to-end (the production smoke test does, via SeaweedFS).
