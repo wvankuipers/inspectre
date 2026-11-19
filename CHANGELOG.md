@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.7.0](https://github.com/wvankuipers/inspectre/compare/1.6.2...1.7.0) - 2026-11-19
+
+- chore(deps): bump the frontend-npm group in /frontend with 13 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/204
+- chore(deps): bump the backend-pip group across 1 directory with 8 updates by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/205
+- chore(deps-dev): bump eslint from 10.14.0 to 10.15.0 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/208
+- Feat/production smoke test by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/207
+- chore(docker): switch to nginx/nginx-unprivileged image by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/209
+- Chore/dev seaweedfs by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/210
+- Chore/pin docker images by @wvankuipers in https://github.com/wvankuipers/inspectre/pull/211
+- chore(deps-dev): bump pip-tools from 7.6.2 to 7.7.0 in /backend in the backend-pip group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/214
+
 ## [1.6.2](https://github.com/wvankuipers/inspectre/compare/1.6.1...1.6.2) - 2026-11-13
 
 - chore(deps-dev): bump typescript-eslint from 8.71.1 to 8.71.2 in /frontend in the frontend-npm group by @dependabot[bot] in https://github.com/wvankuipers/inspectre/pull/173
