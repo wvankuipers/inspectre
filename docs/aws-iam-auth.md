@@ -55,11 +55,14 @@ signing.
 
 ### Required ACL permissions
 
-The ElastiCache user needs at least `+@connection +@read +@write +@transaction
-+@pubsub +@scripting +time` (kombu >= 5.7 runs Lua scripts that call `TIME`; without
-`+time` the Celery worker crashes with `ACL failure in script ... 'time'`) and
-key/channel access `~* &*` (adjust if you use narrower patterns). The production-style
-smoke test (`make smoke`) uses exactly this access string for its Valkey user.
+The ElastiCache user needs at least the permissions `+@connection +@read +@write
++@transaction +@pubsub +@scripting +time` (kombu >= 5.7 runs Lua scripts that call
+`TIME`; without `+time` the Celery worker crashes with `ACL failure in script ... 'time'`)
+and key/channel access `~* &*` (adjust if you use narrower patterns). The
+production-style smoke test (`make smoke`) uses the full access string
+`on ~* &* -@all +@connection +@read +@write +@transaction +@pubsub +@scripting +time`
+for its Valkey user: the user is enabled (`on`), and `-@all` first removes every
+command so only the listed categories are allowed.
 
 ## Error behavior
 

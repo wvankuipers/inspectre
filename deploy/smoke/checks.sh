@@ -91,8 +91,11 @@ check_boot() {
     pass "spa proxies /api/projects/ to the api (200)"
 
     # (g) the worker is actually consuming from the broker
+    # `--timeout 10` only bounds reply collection, not broker connect, so wrap the
+    # whole probe in `timeout` (run inside the container: portable, kills celery
+    # itself). Expiry exits 124, which is just a failed attempt for the retry loop.
     local ping ping_deadline=$((SECONDS + 60))
-    until ping=$("${COMPOSE[@]}" exec -T worker celery -A inspectre inspect ping --timeout 10 2>&1) &&
+    until ping=$("${COMPOSE[@]}" exec -T worker timeout 30 celery -A inspectre inspect ping --timeout 10 2>&1) &&
         [[ "$ping" == *pong* ]]; do
         [ "$SECONDS" -lt "$ping_deadline" ] || fail "worker never answered celery inspect ping: $ping"
         sleep 5
