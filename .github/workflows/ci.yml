@@ -66,8 +66,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Install imagemagick
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
@@ -76,7 +74,22 @@ jobs:
             backend/requirements.txt
             backend/requirements-dev.txt
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
+        run: |
+          # Install ImageMagick in the background while pip runs.
+          sudo sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends imagemagick' >"$RUNNER_TEMP/apt.log" 2>&1 &
+          apt_pid=$!
+          pip install -r requirements.txt -r requirements-dev.txt
+          if wait "$apt_pid"; then
+            apt_ok=1
+          else
+            apt_ok=0
+          fi
+          cat "$RUNNER_TEMP/apt.log"
+          if [ "$apt_ok" -ne 1 ]; then
+            echo "ImageMagick install failed" >&2
+            exit 1
+          fi
+          convert -version | head -n1
         working-directory: backend
       - name: Run tests
         run: pytest -n auto --cov=core --cov-report=xml
