@@ -8,7 +8,10 @@ updates:
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
     cooldown:
       default-days: 3
     open-pull-requests-limit: 10
@@ -27,7 +30,10 @@ updates:
   - package-ecosystem: "docker"
     directory: "/backend"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
     cooldown:
       default-days: 3
     open-pull-requests-limit: 10
@@ -46,7 +52,10 @@ updates:
   - package-ecosystem: "docker"
     directory: "/frontend"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
     ignore:
       - dependency-name: "node"
     cooldown:
@@ -67,7 +76,10 @@ updates:
   - package-ecosystem: "docker"
     directory: "/deploy"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
     ignore:
       - dependency-name: "node"
     cooldown:
@@ -88,7 +100,10 @@ updates:
   - package-ecosystem: "docker"
     directory: "/deploy/smoke"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
     cooldown:
       default-days: 3
     open-pull-requests-limit: 10
@@ -107,7 +122,10 @@ updates:
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
     cooldown:
       default-days: 3
     open-pull-requests-limit: 10
@@ -127,7 +145,10 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
     cooldown:
       default-days: 3
     open-pull-requests-limit: 10

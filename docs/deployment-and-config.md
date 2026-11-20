@@ -20,6 +20,7 @@ to an exact version tag (e.g. `postgres:16.16`, `valkey/valkey:8.1.11-alpine`), 
 floating tag like `16` or `8-alpine`. Versions are bumped deliberately: Dependabot's
 `docker` ecosystem (`.github/dependabot.yml`, dirs `/backend`, `/frontend`, `/deploy`, `/deploy/smoke`)
 opens minor/patch PRs; the `node` image is ignored there and is bumped by hand.
+Version updates run weekly (Mondays 09:00 Europe/Amsterdam); security updates are still raised immediately.
 
 ---
 
